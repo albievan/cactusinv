@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { api, unwrap, type Product } from '../lib/api/client'
 import { fromMinor, lineAmount } from '../lib/money'
+import { uuid } from '../lib/uuid'
 
 export interface EditLine {
   key: string
@@ -14,7 +15,7 @@ export interface EditLine {
   discountPercent: string
 }
 
-export const newLine = (): EditLine => ({ key: crypto.randomUUID(), productId: '', productName: '', description: '', quantity: '1', unitPrice: '', discountPercent: '' })
+export const newLine = (): EditLine => ({ key: uuid(), productId: '', productName: '', description: '', quantity: '1', unitPrice: '', discountPercent: '' })
 
 /** LineEditor edits invoice or schedule lines. Every line is a product from the look-up. */
 export function LineEditor({ lines, onChange, currency, minorUnits }: {

@@ -6,6 +6,7 @@ import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
 import { Badge, Empty, ErrorBanner, Field, Page, Spinner, StickyActions } from '../../components/ui'
+import { uuid } from '../../lib/uuid'
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -132,7 +133,7 @@ export function ScheduleEditor() {
     if (!x) return
     setS(x)
     setPurpose(x.kind === 'email' ? ((x.emailScope ?? 'unsent') as Purpose) : 'invoice')
-    setLines(x.lines.map((l) => ({ key: crypto.randomUUID(), productId: l.productId, productName: l.description ?? '', description: l.description ?? '', quantity: l.quantity, unitPrice: l.unitPrice ?? '', discountPercent: l.discountPercent === '0' ? '' : l.discountPercent ?? '' })))
+    setLines(x.lines.map((l) => ({ key: uuid(), productId: l.productId, productName: l.description ?? '', description: l.description ?? '', quantity: l.quantity, unitPrice: l.unitPrice ?? '', discountPercent: l.discountPercent === '0' ? '' : l.discountPercent ?? '' })))
   }, [existing.data])
   useEffect(() => {
     const t = setTimeout(() => {

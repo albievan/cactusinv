@@ -6,6 +6,7 @@ import { groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Page, SearchBox, Sheet, Spinner } from '../../components/ui'
 import { IconCalendar, IconClockAlert, IconFilePdf, IconSend } from '../../components/icons'
+import { uuid } from '../../lib/uuid'
 
 type Summary = Schemas['StatementSummary']
 type Aging = Schemas['Aging']
@@ -245,7 +246,7 @@ export function StatementView() {
     setErr(null)
     setMsg('')
     try {
-      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': crypto.randomUUID() } }, body: {} }))
+      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: {} }))
       setMsg('Statement queued for e-mail.')
       history.reload()
     } catch (e) {

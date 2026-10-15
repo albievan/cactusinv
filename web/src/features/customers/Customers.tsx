@@ -5,6 +5,7 @@ import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { IconDownload, IconPlus, IconSend } from '../../components/icons'
+import { uuid } from '../../lib/uuid'
 
 export function CustomerList() {
   const [q, setQ] = useState('')
@@ -56,7 +57,7 @@ function StatementPanel({ customerId }: { customerId: string }) {
     setErr(null)
     setMsg('')
     try {
-      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': crypto.randomUUID() } }, body: {} }))
+      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: {} }))
       setMsg('Statement queued for e-mail.')
       reload()
     } catch (e) {

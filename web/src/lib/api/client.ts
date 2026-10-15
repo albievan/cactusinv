@@ -1,5 +1,6 @@
 import createClient, { type Middleware } from 'openapi-fetch'
 import type { components, paths } from './schema'
+import { uuid } from '../uuid'
 
 export type Schemas = components['schemas']
 export type Invoice = Schemas['Invoice']
@@ -58,5 +59,5 @@ export async function unwrap<T>(p: Promise<{ data?: T; error?: unknown; response
 
 /** A fresh key so a retried mutation is applied once (Idempotency-Key). */
 export function idempotencyKey(): string {
-  return crypto.randomUUID()
+  return uuid()
 }

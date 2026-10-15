@@ -6,6 +6,7 @@ import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
 import { ErrorBanner, Field, Page, Spinner, StickyActions } from '../../components/ui'
+import { uuid } from '../../lib/uuid'
 
 export function InvoiceEditor() {
   const { id } = useParams()
@@ -33,7 +34,7 @@ export function InvoiceEditor() {
     setHeader(inv.header)
     setLines(
       inv.lines.map((l) => ({
-        key: crypto.randomUUID(), productId: l.productId ?? '', productName: l.description, description: l.description,
+        key: uuid(), productId: l.productId ?? '', productName: l.description, description: l.description,
         quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent === '0' ? '' : l.discountPercent,
       })),
     )

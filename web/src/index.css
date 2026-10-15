@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 @layer base {
-  html { -webkit-tap-highlight-color: transparent; }
+  /* The app has a single, light theme; stop browsers in dark mode darkening the canvas and form controls. */
+  html { -webkit-tap-highlight-color: transparent; color-scheme: light; }
   body { @apply bg-cream-100 text-slate-900 antialiased; }
   h1, h2, h3 { @apply text-brand-900; }
 }
