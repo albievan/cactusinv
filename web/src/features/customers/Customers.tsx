@@ -92,7 +92,8 @@ function StatementPanel({ customerId }: { customerId: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <a className="btn-secondary" href={`/api/v1/customers/${customerId}/statement/pdf`} target="_blank" rel="noreferrer"><IconDownload width={16} height={16} /> Statement PDF</a>
         <button type="button" className="btn-primary" onClick={send}><IconSend width={16} height={16} /> E-mail statement</button>
-        <Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=email`}>Schedule e-mails…</Link>
+        <Link className="btn-secondary" to={`/statements/${customerId}`}>Open full statement</Link>
+        <Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link>
         {msg && <span className="text-sm text-green-700">{msg}</span>}
       </div>
     </section>

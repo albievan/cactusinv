@@ -253,6 +253,24 @@ func (e ScheduleStatus) Valid() bool {
 	}
 }
 
+// Aging defines model for Aging.
+type Aging struct {
+	// Current Example: 2701.16
+	Current Decimal `json:"current"`
+
+	// Days1to30 Example: 2701.16
+	Days1to30 Decimal `json:"days1to30"`
+
+	// Days31to60 Example: 2701.16
+	Days31to60 Decimal `json:"days31to60"`
+
+	// Days61to90 Example: 2701.16
+	Days61to90 Decimal `json:"days61to90"`
+
+	// Over90 Example: 2701.16
+	Over90 Decimal `json:"over90"`
+}
+
 // AuditEntry defines model for AuditEntry.
 type AuditEntry struct {
 	Action     string    `json:"action"`
@@ -601,6 +619,13 @@ type IssueRequest struct {
 	IssueDate *openapi_types.Date `json:"issueDate,omitempty"`
 }
 
+// LastStatementEmail defines model for LastStatementEmail.
+type LastStatementEmail struct {
+	CreatedAt time.Time  `json:"createdAt"`
+	SentAt    *time.Time `json:"sentAt,omitempty"`
+	Status    string     `json:"status"`
+}
+
 // Line defines model for Line.
 type Line struct {
 	// Amount Example: 2701.16
@@ -826,22 +851,7 @@ type SendRequest struct {
 
 // Statement defines model for Statement.
 type Statement struct {
-	Aging struct {
-		// Current Example: 2701.16
-		Current Decimal `json:"current"`
-
-		// Days1to30 Example: 2701.16
-		Days1to30 Decimal `json:"days1to30"`
-
-		// Days31to60 Example: 2701.16
-		Days31to60 Decimal `json:"days31to60"`
-
-		// Days61to90 Example: 2701.16
-		Days61to90 Decimal `json:"days61to90"`
-
-		// Over90 Example: 2701.16
-		Over90 Decimal `json:"over90"`
-	} `json:"aging"`
+	Aging      Aging              `json:"aging"`
 	AsOf       openapi_types.Date `json:"asOf"`
 	Currency   string             `json:"currency"`
 	CustomerId string             `json:"customerId"`
@@ -861,6 +871,35 @@ type StatementLine struct {
 	IssueDate   openapi_types.Date  `json:"issueDate"`
 	Number      string              `json:"number"`
 	Status      InvoiceStatus       `json:"status"`
+}
+
+// StatementList defines model for StatementList.
+type StatementList struct {
+	AsOf  openapi_types.Date `json:"asOf"`
+	Items []StatementSummary `json:"items"`
+}
+
+// StatementSkip defines model for StatementSkip.
+type StatementSkip struct {
+	CustomerId string `json:"customerId"`
+	Reason     string `json:"reason"`
+}
+
+// StatementSummary defines model for StatementSummary.
+type StatementSummary struct {
+	Aging          Aging               `json:"aging"`
+	Code           string              `json:"code"`
+	Currency       string              `json:"currency"`
+	CustomerId     string              `json:"customerId"`
+	Email          string              `json:"email"`
+	LastEmail      *LastStatementEmail `json:"lastEmail,omitempty"`
+	MaxDaysOverdue int                 `json:"maxDaysOverdue"`
+	Name           string              `json:"name"`
+	OpenCount      int                 `json:"openCount"`
+	OverdueCount   int                 `json:"overdueCount"`
+
+	// Total Example: 2701.16
+	Total Decimal `json:"total"`
 }
 
 // TestEmailRequest defines model for TestEmailRequest.
@@ -944,8 +983,11 @@ type SendStatementParams struct {
 type ListEmailsParams struct {
 	Status    EmailStatus `form:"status,omitempty" json:"status,omitempty"`
 	InvoiceId string      `form:"invoiceId,omitempty" json:"invoiceId,omitempty"`
-	Limit     Limit       `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset    Offset      `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// CustomerId A customer's statement e-mails.
+	CustomerId string `form:"customerId,omitempty" json:"customerId,omitempty"`
+	Limit      Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListInvoicesParams defines parameters for ListInvoices.
@@ -978,6 +1020,14 @@ type ListSchedulesParams struct {
 	Status     ScheduleStatus `form:"status,omitempty" json:"status,omitempty"`
 	Limit      Limit          `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset     Offset         `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// SendStatementsJSONBody defines parameters for SendStatements.
+type SendStatementsJSONBody struct {
+	CustomerIds []string `json:"customerIds"`
+
+	// IncludeZero Also e-mail customers who owe nothing.
+	IncludeZero bool `json:"includeZero,omitempty"`
 }
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
@@ -1045,6 +1095,9 @@ type UpdateEmailSettingsJSONRequestBody = EmailSettings
 
 // SendTestEmailJSONRequestBody defines body for SendTestEmail for application/json ContentType.
 type SendTestEmailJSONRequestBody = TestEmailRequest
+
+// SendStatementsJSONRequestBody defines body for SendStatements for application/json ContentType.
+type SendStatementsJSONRequestBody SendStatementsJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -1216,6 +1269,12 @@ type ServerInterface interface {
 
 	// (POST /settings/email/test)
 	SendTestEmail(w http.ResponseWriter, r *http.Request)
+
+	// (GET /statements)
+	ListStatements(w http.ResponseWriter, r *http.Request)
+
+	// (POST /statements/send)
+	SendStatements(w http.ResponseWriter, r *http.Request)
 
 	// (GET /version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -1888,6 +1947,19 @@ func (siw *ServerInterfaceWrapper) ListEmails(w http.ResponseWriter, r *http.Req
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "invoiceId"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "invoiceId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "customerId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customerId", r.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "customerId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "customerId", Err: err})
 		}
 		return
 	}
@@ -2854,6 +2926,34 @@ func (siw *ServerInterfaceWrapper) SendTestEmail(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListStatements operation middleware
+func (siw *ServerInterfaceWrapper) ListStatements(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListStatements(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendStatements operation middleware
+func (siw *ServerInterfaceWrapper) SendStatements(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendStatements(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetVersion operation middleware
 func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
 
@@ -3014,6 +3114,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/customers/{id}/statement", wrapper.GetStatement)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/customers/{id}/statement/pdf", wrapper.GetStatementPdf)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/customers/{id}/statement/send", wrapper.SendStatement)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/statements", wrapper.ListStatements)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/statements/send", wrapper.SendStatements)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/products", wrapper.ListProducts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/products", wrapper.CreateProduct)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/products/{id}", wrapper.DeleteProduct)
@@ -5238,6 +5340,86 @@ func (response SendTestEmaildefaultApplicationProblemPlusJSONResponse) VisitSend
 	return err
 }
 
+type ListStatementsRequestObject struct {
+}
+
+type ListStatementsResponseObject interface {
+	VisitListStatementsResponse(w http.ResponseWriter) error
+}
+
+type ListStatements200JSONResponse StatementList
+
+func (response ListStatements200JSONResponse) VisitListStatementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStatementsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListStatementsdefaultApplicationProblemPlusJSONResponse) VisitListStatementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendStatementsRequestObject struct {
+	Body *SendStatementsJSONRequestBody
+}
+
+type SendStatementsResponseObject interface {
+	VisitSendStatementsResponse(w http.ResponseWriter) error
+}
+
+type SendStatements202JSONResponse struct {
+	Queued  []string        `json:"queued"`
+	Skipped []StatementSkip `json:"skipped"`
+}
+
+func (response SendStatements202JSONResponse) VisitSendStatementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendStatementsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendStatementsdefaultApplicationProblemPlusJSONResponse) VisitSendStatementsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetVersionRequestObject struct {
 }
 
@@ -5429,6 +5611,12 @@ type StrictServerInterface interface {
 
 	// (POST /settings/email/test)
 	SendTestEmail(ctx context.Context, request SendTestEmailRequestObject) (SendTestEmailResponseObject, error)
+
+	// (GET /statements)
+	ListStatements(ctx context.Context, request ListStatementsRequestObject) (ListStatementsResponseObject, error)
+
+	// (POST /statements/send)
+	SendStatements(ctx context.Context, request SendStatementsRequestObject) (SendStatementsResponseObject, error)
 
 	// (GET /version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
@@ -7049,6 +7237,61 @@ func (sh *strictHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SendTestEmailResponseObject); ok {
 		if err := validResponse.VisitSendTestEmailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListStatements operation middleware
+func (sh *strictHandler) ListStatements(w http.ResponseWriter, r *http.Request) {
+	var request ListStatementsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListStatements(ctx, request.(ListStatementsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListStatements")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListStatementsResponseObject); ok {
+		if err := validResponse.VisitListStatementsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendStatements operation middleware
+func (sh *strictHandler) SendStatements(w http.ResponseWriter, r *http.Request) {
+	var request SendStatementsRequestObject
+
+	var body SendStatementsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendStatements(ctx, request.(SendStatementsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendStatements")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendStatementsResponseObject); ok {
+		if err := validResponse.VisitSendStatementsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -290,6 +290,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listStatements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/statements/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendStatements"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/products": {
         parameters: {
             query?: never;
@@ -745,14 +777,44 @@ export interface components {
             /** Format: date */
             asOf: string;
             lines: components["schemas"]["StatementLine"][];
-            aging: {
-                current: components["schemas"]["Decimal"];
-                days1to30: components["schemas"]["Decimal"];
-                days31to60: components["schemas"]["Decimal"];
-                days61to90: components["schemas"]["Decimal"];
-                over90: components["schemas"]["Decimal"];
-            };
+            aging: components["schemas"]["Aging"];
             total: components["schemas"]["Decimal"];
+        };
+        StatementSummary: {
+            customerId: string;
+            code: string;
+            name: string;
+            email: string;
+            currency: string;
+            total: components["schemas"]["Decimal"];
+            openCount: number;
+            overdueCount: number;
+            maxDaysOverdue: number;
+            aging: components["schemas"]["Aging"];
+            lastEmail?: components["schemas"]["LastStatementEmail"];
+        };
+        LastStatementEmail: {
+            status: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            sentAt?: string;
+        };
+        StatementSkip: {
+            customerId: string;
+            reason: string;
+        };
+        StatementList: {
+            /** Format: date */
+            asOf: string;
+            items: components["schemas"]["StatementSummary"][];
+        };
+        Aging: {
+            current: components["schemas"]["Decimal"];
+            days1to30: components["schemas"]["Decimal"];
+            days31to60: components["schemas"]["Decimal"];
+            days61to90: components["schemas"]["Decimal"];
+            over90: components["schemas"]["Decimal"];
         };
         Me: {
             id: string;
@@ -1816,6 +1878,59 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    listStatements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every active customer's statement position as of today, largest balance first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendStatements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    customerIds: string[];
+                    /** @description Also e-mail customers who owe nothing. */
+                    includeZero?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Statement e-mails queued; customers that were skipped say why. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        queued: string[];
+                        skipped: components["schemas"]["StatementSkip"][];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listProducts: {
         parameters: {
             query?: {
@@ -2437,6 +2552,8 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["EmailStatus"];
                 invoiceId?: string;
+                /** @description A customer's statement e-mails. */
+                customerId?: string;
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
             };

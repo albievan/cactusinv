@@ -122,7 +122,7 @@ export function ScheduleEditor() {
     customerId: params.get('customer') ?? '', name: '', kind: 'invoice', recurrence: blankRecurrence, lines: [], header: {}, notes: '',
     autoSend: false, emailDelayDays: 0, emailSubject: '', emailBody: '', version: 0,
   })
-  const [purpose, setPurpose] = useState<Purpose>(params.get('kind') === 'email' ? 'unsent' : 'invoice')
+  const [purpose, setPurpose] = useState<Purpose>(params.get('kind') === 'statement' ? 'statement' : params.get('kind') === 'email' ? 'unsent' : 'invoice')
   const [lines, setLines] = useState<EditLine[]>([newLine()])
   const [preview, setPreview] = useState<string[]>([])
   const [error, setError] = useState<Error | null>(null)

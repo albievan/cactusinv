@@ -472,6 +472,21 @@ func TestVersionSettingsAndStatements(t *testing.T) {
 	if m.Kind != "statement" || m.CustomerId != cust.ID || m.InvoiceId != "" {
 		t.Fatalf("statement e-mail: %+v", m)
 	}
+	var sl httpapi.StatementList
+	c.ok(c.do("GET", "/api/v1/statements", nil, &sl), 200, "statements")
+	if len(sl.Items) != 1 || sl.Items[0].CustomerId != cust.ID || sl.Items[0].LastEmail == nil || sl.Items[0].LastEmail.Status != "pending" {
+		t.Fatalf("statements: %+v", sl)
+	}
+	var bulk httpapi.SendStatements202JSONResponse
+	c.ok(c.do("POST", "/api/v1/statements/send", obj{"customerIds": []string{cust.ID, "nope"}}, &bulk), 202, "bulk send")
+	if len(bulk.Queued) != 0 || len(bulk.Skipped) != 2 || bulk.Skipped[0].Reason != "nothing owed" || bulk.Skipped[1].Reason != "customer not found" {
+		t.Fatalf("bulk: %+v", bulk)
+	}
+	c.ok(c.do("POST", "/api/v1/statements/send", obj{"customerIds": []string{cust.ID}, "includeZero": true}, &bulk), 202, "bulk send zero")
+	if len(bulk.Queued) != 1 {
+		t.Fatalf("bulk zero: %+v", bulk)
+	}
+	c.ok(c.do("POST", "/api/v1/statements/send", obj{"customerIds": []string{}}, nil), 422, "empty bulk")
 	var sd httpapi.ScheduleDetail
 	c.ok(c.do("POST", "/api/v1/schedules", obj{
 		"customerId": cust.ID, "name": "Monthly statement", "kind": "email", "emailScope": "statement",

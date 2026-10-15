@@ -83,11 +83,7 @@ func (h *handlers) GetStatement(ctx context.Context, req GetStatementRequestObje
 		CustomerId: st.Customer.ID, Currency: string(c), AsOf: toAPIDate(st.AsOf), Total: mu.format(st.Total, c),
 		Lines: []StatementLine{},
 	}
-	out.Aging.Current = mu.format(st.Aging.Current, c)
-	out.Aging.Days1to30 = mu.format(st.Aging.Days1to30, c)
-	out.Aging.Days31to60 = mu.format(st.Aging.Days31to60, c)
-	out.Aging.Days61to90 = mu.format(st.Aging.Days61to90, c)
-	out.Aging.Over90 = mu.format(st.Aging.Over90, c)
+	out.Aging = toAPIAging(mu, st.Aging, c)
 	for _, l := range st.Lines {
 		out.Lines = append(out.Lines, StatementLine{
 			InvoiceId: l.InvoiceID, Number: l.Number, IssueDate: toAPIDate(l.IssueDate), DueDate: toAPIDatePtr(l.DueDate),
@@ -149,4 +145,73 @@ func (h *handlers) VerifyAudit(ctx context.Context, _ VerifyAuditRequestObject) 
 		return nil, err
 	}
 	return VerifyAudit200JSONResponse{Ok: v.OK, Entries: v.Entries, BrokenAt: v.BrokenAt, Reason: v.Reason}, nil
+}
+
+func (h *handlers) ListStatements(ctx context.Context, _ ListStatementsRequestObject) (ListStatementsResponseObject, error) {
+	mu, err := h.units(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := h.svc.ListStatements(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := ListStatements200JSONResponse{Items: []StatementSummary{}}
+	for i, sum := range list {
+		st := sum.Statement
+		if i == 0 {
+			out.AsOf = toAPIDate(st.AsOf)
+		}
+		c := st.Currency
+		item := StatementSummary{
+			CustomerId: st.Customer.ID, Code: st.Customer.Code, Name: st.Customer.Name, Email: st.Customer.Email,
+			Currency: string(c), Total: mu.format(st.Total, c), OpenCount: len(st.Lines), Aging: toAPIAging(mu, st.Aging, c),
+		}
+		for _, l := range st.Lines {
+			if l.DaysOverdue > 0 {
+				item.OverdueCount++
+			}
+			item.MaxDaysOverdue = max(item.MaxDaysOverdue, l.DaysOverdue)
+		}
+		if m := sum.LastEmail; m != nil {
+			item.LastEmail = &LastStatementEmail{CreatedAt: m.CreatedAt.UTC(), Status: string(m.Status)}
+			if !m.SentAt.IsZero() {
+				t := m.SentAt.UTC()
+				item.LastEmail.SentAt = &t
+			}
+		}
+		out.Items = append(out.Items, item)
+	}
+	if len(list) == 0 {
+		today, err := h.svc.Today(ctx)
+		if err != nil {
+			return nil, err
+		}
+		out.AsOf = toAPIDate(today)
+	}
+	return out, nil
+}
+
+func toAPIAging(mu minorUnits, a domain.Aging, c domain.CurrencyCode) Aging {
+	return Aging{
+		Current: mu.format(a.Current, c), Days1to30: mu.format(a.Days1to30, c), Days31to60: mu.format(a.Days31to60, c),
+		Days61to90: mu.format(a.Days61to90, c), Over90: mu.format(a.Over90, c),
+	}
+}
+
+func (h *handlers) SendStatements(ctx context.Context, req SendStatementsRequestObject) (SendStatementsResponseObject, error) {
+	res, err := h.svc.SendStatements(ctx, req.Body.CustomerIds, req.Body.IncludeZero)
+	if err != nil {
+		return nil, err
+	}
+	out := SendStatements202JSONResponse{Queued: res.Queued, Skipped: []StatementSkip{}}
+	if out.Queued == nil {
+		out.Queued = []string{}
+	}
+	for _, id := range req.Body.CustomerIds {
+		if why, ok := res.Skipped[id]; ok {
+			out.Skipped = append(out.Skipped, StatementSkip{CustomerId: id, Reason: why})
+		}
+	}
+	return out, nil
 }

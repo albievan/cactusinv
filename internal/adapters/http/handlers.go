@@ -523,7 +523,7 @@ func (h *handlers) GetInvoicePdf(ctx context.Context, req GetInvoicePdfRequestOb
 
 func (h *handlers) ListEmails(ctx context.Context, req ListEmailsRequestObject) (ListEmailsResponseObject, error) {
 	p := req.Params
-	ms, total, err := h.svc.ListEmails(ctx, ports.EmailFilter{Status: domain.EmailStatus(p.Status), InvoiceID: p.InvoiceId, Page: page(p.Limit, p.Offset)})
+	ms, total, err := h.svc.ListEmails(ctx, ports.EmailFilter{Status: domain.EmailStatus(p.Status), InvoiceID: p.InvoiceId, CustomerID: p.CustomerId, Page: page(p.Limit, p.Offset)})
 	if err != nil {
 		return nil, err
 	}

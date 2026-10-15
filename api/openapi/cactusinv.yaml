@@ -28,6 +28,7 @@ tags:
   - name: emails
   - name: dashboard
   - name: audit
+  - name: statements
 
 paths:
   /auth/login:
@@ -383,6 +384,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /statements:
+    get:
+      tags: [statements]
+      operationId: listStatements
+      responses:
+        '200':
+          description: Every active customer's statement position as of today, largest balance first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatementList' }
+        default: { $ref: '#/components/responses/Problem' }
+  /statements/send:
+    post:
+      tags: [statements]
+      operationId: sendStatements
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerIds]
+              properties:
+                customerIds: { type: array, minItems: 1, maxItems: 500, items: { type: string } }
+                includeZero: { type: boolean, description: Also e-mail customers who owe nothing. }
+      responses:
+        '202':
+          description: Statement e-mails queued; customers that were skipped say why.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued, skipped]
+                properties:
+                  queued: { type: array, items: { type: string } }
+                  skipped: { type: array, items: { $ref: '#/components/schemas/StatementSkip' } }
         default: { $ref: '#/components/responses/Problem' }
 
   /products:
@@ -751,6 +790,7 @@ paths:
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/EmailStatus' } }
         - { name: invoiceId, in: query, schema: { type: string } }
+        - { name: customerId, in: query, description: A customer's statement e-mails., schema: { type: string } }
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Offset' }
       responses:
@@ -937,16 +977,53 @@ components:
         currency: { type: string }
         asOf: { type: string, format: date }
         lines: { type: array, items: { $ref: '#/components/schemas/StatementLine' } }
-        aging:
-          type: object
-          required: [current, days1to30, days31to60, days61to90, over90]
-          properties:
-            current: { $ref: '#/components/schemas/Decimal' }
-            days1to30: { $ref: '#/components/schemas/Decimal' }
-            days31to60: { $ref: '#/components/schemas/Decimal' }
-            days61to90: { $ref: '#/components/schemas/Decimal' }
-            over90: { $ref: '#/components/schemas/Decimal' }
+        aging: { $ref: '#/components/schemas/Aging' }
         total: { $ref: '#/components/schemas/Decimal' }
+    StatementSummary:
+      type: object
+      required: [customerId, code, name, email, currency, total, openCount, overdueCount, maxDaysOverdue, aging]
+      properties:
+        customerId: { type: string }
+        code: { type: string }
+        name: { type: string }
+        email: { type: string }
+        currency: { type: string }
+        total: { $ref: '#/components/schemas/Decimal' }
+        openCount: { type: integer }
+        overdueCount: { type: integer }
+        maxDaysOverdue: { type: integer }
+        aging: { $ref: '#/components/schemas/Aging' }
+        lastEmail:
+          allOf: [{ $ref: '#/components/schemas/LastStatementEmail' }]
+          x-go-type-skip-optional-pointer: false
+    LastStatementEmail:
+      type: object
+      required: [status, createdAt]
+      properties:
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+    StatementSkip:
+      type: object
+      required: [customerId, reason]
+      properties:
+        customerId: { type: string }
+        reason: { type: string }
+    StatementList:
+      type: object
+      required: [asOf, items]
+      properties:
+        asOf: { type: string, format: date }
+        items: { type: array, items: { $ref: '#/components/schemas/StatementSummary' } }
+    Aging:
+      type: object
+      required: [current, days1to30, days31to60, days61to90, over90]
+      properties:
+        current: { $ref: '#/components/schemas/Decimal' }
+        days1to30: { $ref: '#/components/schemas/Decimal' }
+        days31to60: { $ref: '#/components/schemas/Decimal' }
+        days61to90: { $ref: '#/components/schemas/Decimal' }
+        over90: { $ref: '#/components/schemas/Decimal' }
     Me:
       type: object
       required: [id, email]

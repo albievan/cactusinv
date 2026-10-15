@@ -12,6 +12,7 @@ export function More() {
   const { user, logout } = useAuth()
   const version = useVersion()
   const links = [
+    { to: '/statements', label: 'Statements', hint: "Every customer's balance and aging; e-mail statements in bulk" },
     { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency' },
     { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails' },
     { to: '/settings', label: 'Settings', hint: 'Business, e-mail server, currencies and bank accounts' },

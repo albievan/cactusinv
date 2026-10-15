@@ -261,9 +261,18 @@ tables. The production build is embedded in the binary and served with SPA fallb
 - **Statement** (`domain.NewStatement`): every open invoice of the customer in the customer's
   currency, oldest first, with aging buckets (current, 1–30, 31–60, 61–90, 90+ days past due).
   Rendered as PDF on demand and when a statement e-mail is delivered.
+- **Statements menu** (`app.ListStatements`, `GET /statements`): every active customer's
+  statement as of today in one pass over the open invoices — balance, aging, overdue count,
+  oldest days late and the last statement e-mail — owing customers first. `POST
+  /statements/send` (`app.SendStatements`) queues one statement e-mail per chosen customer,
+  each in its own transaction, skipping customers who owe nothing unless asked, and reports
+  why each skip happened. `/statements/{customerId}` in the web app is the full statement:
+  aging, unpaid invoices, statements e-mailed (`GET /emails?customerId=`), PDF and e-mail.
 - **Schedules** have a `kind`: `invoice` (issue from product lines, optional auto-send) or
   `email` with a scope — `unsent` (open, never e-mailed), `outstanding` (all open) or
-  `statement`. Runs are idempotent per period and invoice.
+  `statement`. Runs are idempotent per period and invoice. A recurring invoice workflow
+  raises the invoice and, with `autoSend`, e-mails it `emailDelayDays` (0–90) after raising
+  — the outbox message is simply created with `send_at` in the future.
 - **Outbox** messages have a `kind` (`invoice` | `statement`); statement e-mails belong to a
   customer and their PDF is rendered at send time.
 - **SMTP**: a single `smtp_settings` row (Gmail preset until saved); the password is AES-256-GCM
@@ -288,3 +297,19 @@ tables. The production build is embedded in the binary and served with SPA fallb
 | Uninstall | `--uninstall` keeps data; `--delete-uninstall` removes it | same; delete removes the namespace |
 
 ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning.
+
+## 11. Audit trail and dashboard
+
+- **Audit trail** (ADR-009): `audit_log` is append-only. Every use case that changes state
+  calls `s.audit(ctx, repos, action, entityType, entityID, summary)` inside its transaction;
+  the actor comes from the context (`app.WithActor`) — the signed-in user (set by the HTTP
+  auth middleware) or a system actor (Scheduler, E-mail dispatcher, Invoice archive). Appends
+  lock `audit_head`, seal the entry with SHA-256 over its fields and the previous hash, and
+  advance the head. MariaDB triggers (`migrations/triggers/`) reject UPDATE and DELETE.
+  `GET /audit` lists with filters; `GET /audit/verify` re-computes the chain
+  (`domain.VerifyAuditChain`) and names the first broken entry.
+- **Dashboard** (`app.GetDashboard`, `GET /dashboard`): per-currency outstanding and overdue
+  totals, the last 12 months invoiced (by issue month) and paid (by payment month) from two
+  `GROUP BY` queries, the top debtors, upcoming schedule runs and e-mails, and the latest
+  audit entries. The web chart is a dependency-free SVG column chart with a validated
+  two-colour categorical palette, hover tooltips and a table view.

@@ -25,8 +25,9 @@ Released into the public domain — see [LICENSE](LICENSE).
   text); each product has a unit cost per currency.
 - **Stages** — draft → issued → e-mailed → paid, or overdue / void, shown as a progress tracker;
   mark invoices paid, overdue or void.
-- **Statements** — a statement of account per customer with aging; download or e-mail it,
-  now or on a schedule.
+- **Statements** — a Statements menu with every customer's balance and aging; open any
+  customer's full statement, download the PDF, e-mail one or many statements at once, or
+  e-mail them on a schedule.
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button; the password is stored encrypted.
 - **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced.

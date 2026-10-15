@@ -187,6 +187,17 @@ inbound payment reconciliation, user management UI.
 | 10.4 | Dashboard: stat tiles, 12-month invoiced vs paid chart (validated palette), top debtors, upcoming, activity | done | web test; screenshot | `app/dashboard.go`, `web/src/features/dashboard` |
 | 10.5 | Recurring invoice workflow: raise, then e-mail immediately or N days later; timeline preview | done | app test: not sent before the delay, sent after | `migrations/00012`, `domain/schedule.go`, `Schedules.tsx` |
 
+### M11 — Statements menu (Albie, 2026-10-15)
+
+> Add the statement menu and build out the statements for each of the customers.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 11.1 | `ListStatements`: every active customer's statement as of today (one pass over open invoices) with last statement e-mail; owing first | done | app test: ordering, balances, last e-mail | `app/statements.go` |
+| 11.2 | `SendStatements` bulk e-mail with skip reasons (nothing owed, not found); `GET /statements`, `POST /statements/send`; outbox filter by customer | done | app + HTTP tests | `api/openapi/cactusinv.yaml`, `adapters/http/handlers_more.go` |
+| 11.3 | Statements menu: per-currency totals, Owing/Overdue/All filters, search, aging columns, select and e-mail many | done | web test: filter, select, bulk send payload | `web/src/features/statements` |
+| 11.4 | Full statement page per customer: balance, aging, unpaid invoices, e-mail history, PDF, e-mail, schedule | done | screenshot on a throwaway stack | `web/src/features/statements` |
+
 ---
 
 ## Decisions

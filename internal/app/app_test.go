@@ -1166,3 +1166,45 @@ func TestRecurringInvoiceWorkflowRaisesThenEmailsLater(t *testing.T) {
 		t.Fatal("delay bound")
 	}
 }
+
+func TestStatementOverviewAndBulkSend(t *testing.T) {
+	h := newHarness(t).seed()
+	other := must(h.svc.CreateCustomer(h.ctx, domain.Customer{
+		Code: "ZZ", Name: "Zulu Holdings", Email: "ap@zulu.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsDaysAfter, Value: 30}, Active: true,
+	}))
+	none := must(h.svc.CreateCustomer(h.ctx, domain.Customer{
+		Code: "AA", Name: "Alpha Paid Up", Email: "ap@alpha.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsDaysAfter, Value: 30}, Active: true,
+	}))
+	inv := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	in := h.referenceInput()
+	in.CustomerID = other.ID
+	must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, in)).ID, domain.Date{}))
+	must(h.svc.SendStatement(h.ctx, h.customer.ID, app.SendInput{}))
+
+	list := must(h.svc.ListStatements(h.ctx))
+	if len(list) != 3 || list[2].Statement.Customer.ID != none.ID || list[2].Statement.Total != 0 {
+		t.Fatalf("owing first, paid-up last: %+v", list)
+	}
+	for _, s := range list[:2] {
+		if s.Statement.Total != inv.Totals.Total {
+			t.Fatalf("balance %+v", s.Statement)
+		}
+	}
+	for _, s := range list {
+		if (s.Statement.Customer.ID == h.customer.ID) != (s.LastEmail != nil) {
+			t.Fatalf("last e-mail only for the customer sent one: %+v", s)
+		}
+	}
+
+	res := must(h.svc.SendStatements(h.ctx, []string{h.customer.ID, other.ID, none.ID, "nope"}, false))
+	if len(res.Queued) != 2 || res.Queued[0] != h.customer.ID || res.Queued[1] != other.ID ||
+		res.Skipped[none.ID] != "nothing owed" || res.Skipped["nope"] != "customer not found" {
+		t.Fatalf("bulk = %+v", res)
+	}
+	if res := must(h.svc.SendStatements(h.ctx, []string{none.ID}, true)); len(res.Queued) != 1 {
+		t.Fatal("include zero balances")
+	}
+	if _, err := h.svc.SendStatements(h.ctx, nil, false); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("no customers")
+	}
+}

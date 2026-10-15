@@ -4,13 +4,14 @@ import { useVersion } from '../lib/version'
 import { useAuth } from './auth'
 import { CactusMark } from './Logo'
 import {
-  IconBox, IconCalendar, IconShield, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
+  IconBox, IconCalendar, IconShield, IconStatement, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
 } from './icons'
 
 export const nav = [
   { to: '/', label: 'Dashboard', icon: IconHome, end: true },
   { to: '/invoices', label: 'Invoices', icon: IconInvoice },
   { to: '/customers', label: 'Customers', icon: IconUsers },
+  { to: '/statements', label: 'Statements', icon: IconStatement },
   { to: '/schedules', label: 'Schedules', icon: IconCalendar },
   { to: '/products', label: 'Products', icon: IconBox },
   { to: '/emails', label: 'Outbox', icon: IconMail },
