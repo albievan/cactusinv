@@ -101,6 +101,33 @@ function StatementPanel({ customerId }: { customerId: string }) {
   )
 }
 
+/**
+ * DisclaimerInUse shows the business disclaimer the customer falls back to and, for a saved
+ * customer, which disclaimer its PDFs print — as the server reports it (disclaimerSource).
+ */
+function DisclaimerInUse({ source, businessText, loading, error }: { source?: Customer['disclaimerSource']; businessText?: string; loading: boolean; error?: Error }) {
+  return (
+    <div className="space-y-2 text-sm">
+      {source && (
+        <p data-testid="disclaimer-source" className="font-medium text-brand-900">
+          Its PDFs use {source === 'customer' ? "this customer's own disclaimer" : 'the business disclaimer'}.
+        </p>
+      )}
+      <figure className="rounded-xl bg-cream-50 p-3 ring-1 ring-cream-200">
+        <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-brand-800">
+          Business disclaimer
+          <Link to="/settings/business" className="font-semibold normal-case tracking-normal text-brand-700 underline">Edit in Settings</Link>
+        </figcaption>
+        {error ? (
+          <div className="mt-1"><ErrorBanner error={error} /></div>
+        ) : (
+          <p className="mt-1 whitespace-pre-line text-slate-700">{loading ? 'Loading…' : businessText?.trim() || 'None set yet.'}</p>
+        )}
+      </figure>
+    </div>
+  )
+}
+
 const blank: Customer = {
   code: '', name: '', email: '', cc: [], attention: '', billingAddress: '', shippingName: '', shippingAddress: '', phone: '', taxNumber: '',
   currency: '', paymentTerms: { kind: 'days_after', value: 30 }, bankAccountId: '', defaultNotes: '', active: true, version: 0,
@@ -113,6 +140,7 @@ export function CustomerEditor() {
   const existing = useAsync(() => (id ? unwrap(api.GET('/customers/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
   const [c, setC] = useState<Customer>(blank)
   const [cc, setCc] = useState('')
+  const business = useAsync(() => unwrap(api.GET('/settings/business')), [])
   const banks = useAsync(() => (c.currency ? unwrap(api.GET('/bank-accounts', { params: { query: { currency: c.currency } } })).then((r) => r.items) : Promise.resolve([])), [c.currency])
   const [error, setError] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
@@ -201,8 +229,11 @@ export function CustomerEditor() {
           </div>
           <Field label="Tax number">{(f) => <input id={f} className="input" value={c.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
           <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => set({ active: e.target.checked })} /> Active</label>
-          <div className="md:col-span-2">
-            <Field label="Disclaimer for this customer" hint="Printed at the foot of every invoice and statement PDF for this customer, read fresh each time. Leave empty to use the business disclaimer.">{(f) => <textarea id={f} className="input min-h-[96px]" value={c.defaultNotes} onChange={(e) => set({ defaultNotes: e.target.value })} />}</Field>
+          <div className="space-y-2 md:col-span-2">
+            <Field label="Disclaimer for this customer" hint="Empty: the business disclaimer below is used. Printed at the foot of every invoice and statement PDF for this customer, read fresh each time.">
+              {(f) => <textarea id={f} className="input min-h-[96px]" value={c.defaultNotes} placeholder={business.data?.defaultNotes ?? ''} onChange={(e) => set({ defaultNotes: e.target.value })} />}
+            </Field>
+            <DisclaimerInUse source={existing.data?.disclaimerSource} businessText={business.data?.defaultNotes} loading={business.loading} error={business.error} />
           </div>
         </div>
         {id && <StatementPanel customerId={id} />}

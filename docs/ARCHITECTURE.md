@@ -147,10 +147,15 @@ Rounding: half away from zero, per line. Reference invoice: `14 × 192.94 = 2701
 
 ### 3.6 Invoice numbering
 
-Format template on the business profile, default `{code}/{seq}/{yy}`:
-`{code}` customer invoice code (e.g. `CD`), `{seq}` the global sequence value, `{yy}` /
-`{yyyy}` issue year. Sequence start is configurable (to continue from `1195`). Allocation:
-`SELECT next_value … FOR UPDATE` → use → `UPDATE … +1`, inside the issue transaction.
+Format template on the business profile; a new deployment starts with
+`{code}/{dd}{mm}-{seq}/{yy}` (`domain.DefaultNumberFormat`), e.g. `CD/2108-1195/26` for an
+invoice issued on 21 August 2026 with sequence 1195. Placeholders: `{code}` customer invoice
+code (e.g. `CD`), `{seq}` the global sequence value (required), `{dd}` / `{mm}` issue day /
+month (two digits), `{yy}` / `{yyyy}` issue year; anything else is literal text. A saved
+format is never rewritten — deployments that saved `{code}/{seq}/{yy}` (the example invoice,
+`CD/1195/26`) keep it until the user changes it. Sequence start is configurable (to continue
+from `1195`). Allocation: `SELECT next_value … FOR UPDATE` → use → `UPDATE … +1`, inside the
+issue transaction, whatever the format.
 
 ### 3.7 Schedules and recurrence
 
@@ -254,7 +259,12 @@ React 18 + TypeScript + Vite 5 + Tailwind 3, `openapi-fetch` client generated fr
 contract. Feature folders under `web/src/features/{dashboard,invoices,customers,products,
 schedules,settings,auth}`. Mobile layout: sticky top bar, bottom tab bar (Home, Invoices,
 Customers, Products, More), full-screen forms with a sticky action bar. ≥ `md`: side nav,
-tables. The production build is embedded in the binary and served with SPA fallback.
+tables. Settings has sub-pages — `/settings/business`, `/settings/email`,
+`/settings/currencies` (`/settings` opens the first) — listed once in
+`features/settings/settingsNav.ts`: the side nav nests them under Settings while a settings
+route is open, the phone More page lists them, and each settings page links its siblings.
+The app is light-only: Tailwind `darkMode: 'class'` (the class is never set) and no `dark:`
+classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in the binary and served with SPA fallback.
 
 ## 9. Statements, e-mail schedules, SMTP and the disclaimer
 
@@ -279,7 +289,11 @@ tables. The production build is embedded in the binary and served with SPA fallb
   ciphertext keyed by the `app_key` secret. `smtp.Dynamic` reads the settings on every send
   and falls back to the deployment server from `.env`.
 - **Disclaimer**: never copied onto invoices; `domain.Disclaimer(customer, business)` is
-  resolved for each PDF render.
+  resolved for each PDF render — the customer's own, else the business disclaimer — on every
+  path that makes a PDF (download, invoice and statement e-mails, the archive export,
+  scheduled invoices). `Customer.disclaimerSource` (`customer` | `business`, from
+  `domain.UsesOwnDisclaimer`) tells the web app which one a customer's PDFs print; the
+  customer form shows the business disclaimer as the fallback.
 - **Lines** always reference a product; description and unit price come from it.
 
 ## 10. Deployment, backups and the invoice archive

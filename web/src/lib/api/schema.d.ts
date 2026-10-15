@@ -829,7 +829,10 @@ export interface components {
             taxNumber: string;
             /** @description Default VAT for new invoices and schedules. "0" means no VAT — nothing VAT-related is printed. */
             vatPercent: components["schemas"]["Decimal"];
-            /** @example {code}/{seq}/{yy} */
+            /**
+             * @description Invoice number template. Must contain {seq}; may contain {code} (customer code), {dd} and {mm} (issue day and month, two digits), {yy} or {yyyy} (issue year) and literal text. '{code}/{dd}{mm}-{seq}/{yy}' gives CD/2108-1195/26 for 21 August 2026. New deployments start with that format; a saved format is kept.
+             * @example {code}/{dd}{mm}-{seq}/{yy}
+             */
             numberFormat: string;
             /** @example Africa/Johannesburg */
             timeZone: string;
@@ -900,7 +903,13 @@ export interface components {
             paymentTerms: components["schemas"]["PaymentTerms"];
             /** @description Override of the currency's default account. */
             bankAccountId: string;
+            /** @description The customer's own disclaimer. Empty means the business disclaimer is printed. */
             defaultNotes: string;
+            /**
+             * @description Which disclaimer this customer's invoice and statement PDFs print, resolved by the server.
+             * @enum {string}
+             */
+            readonly disclaimerSource?: "customer" | "business";
             active: boolean;
             version: number;
         };

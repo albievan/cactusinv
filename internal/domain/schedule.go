@@ -78,7 +78,7 @@ type Schedule struct {
 	Recurrence     Recurrence
 	Lines          []ScheduleLine
 	Header         InvoiceHeader
-	Notes          string       // empty → customer default notes
+	Notes          string       // invoice notes; the disclaimer is resolved at PDF render time
 	TaxRate        *BasisPoints // nil → the business default VAT at run time
 	AutoSend       bool
 	EmailDelayDays int    // invoice schedules: e-mail this many days after raising (0 = immediately)

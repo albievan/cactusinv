@@ -151,6 +151,10 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 
 	var settings httpapi.BusinessSettings
 	c.ok(c.do("GET", "/api/v1/settings/business", nil, &settings), 200, "get business")
+	if settings.NumberFormat != "{code}/{dd}{mm}-{seq}/{yy}" {
+		t.Fatalf("a new deployment's number format = %q", settings.NumberFormat)
+	}
+	settings.NumberFormat = "{code}/{seq}/{yy}" // the example invoice's format
 	settings.Name = "Example Software Consulting"
 	settings.TimeZone = "Africa/Johannesburg"
 	settings.NextSequence = 1195
@@ -223,6 +227,9 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	}, &customer), 201, "customer")
 	if customer.PaymentTerms.Text != "Payment due before 7th of the next month" {
 		t.Fatalf("terms text = %q", customer.PaymentTerms.Text)
+	}
+	if customer.DisclaimerSource != httpapi.CustomerDisclaimerSourceCustomer {
+		t.Fatalf("disclaimer source = %q", customer.DisclaimerSource)
 	}
 	var customers httpapi.CustomerList
 	c.ok(c.do("GET", "/api/v1/customers?q=acme&limit=10", nil, &customers), 200, "customers")
@@ -374,7 +381,11 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	c.ok(c.do("DELETE", "/api/v1/customers/"+customer.Id, nil, &p), 409, "customer in use")
 	c.ok(c.do("GET", "/api/v1/customers/"+customer.Id, nil, &customer), 200, "get customer")
 	customer.Active = false
+	customer.DefaultNotes = "  "
 	c.ok(c.do("PUT", "/api/v1/customers/"+customer.Id, customer, &customer), 200, "deactivate")
+	if customer.DisclaimerSource != httpapi.CustomerDisclaimerSourceBusiness {
+		t.Fatalf("a customer without a disclaimer uses the business one: %q", customer.DisclaimerSource)
+	}
 	c.ok(c.do("GET", "/api/v1/products/"+product.Id, nil, &product), 200, "get product")
 	c.ok(c.do("PUT", "/api/v1/products/"+product.Id, product, &product), 200, "put product")
 	c.ok(c.do("DELETE", "/api/v1/products/"+product.Id, nil, nil), 204, "delete product")

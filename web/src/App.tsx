@@ -11,7 +11,8 @@ import { InvoiceEditor } from './features/invoices/InvoiceEditor'
 import { InvoiceList } from './features/invoices/InvoiceList'
 import { ProductEditor, ProductList } from './features/products/Products'
 import { ScheduleDetailPage, ScheduleEditor, ScheduleList } from './features/schedules/Schedules'
-import { More, Settings } from './features/settings/Settings'
+import { BusinessSettingsPage, CurrencySettingsPage, EmailSettingsPage, More } from './features/settings/Settings'
+import { settingsHref, settingsNav } from './features/settings/settingsNav'
 
 export function AppRoutes() {
   return (
@@ -37,7 +38,13 @@ export function AppRoutes() {
         <Route path="statements/:customerId" element={<StatementView />} />
         <Route path="audit" element={<AuditLog />} />
         <Route path="more" element={<More />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="settings">
+          <Route index element={<Navigate to={settingsHref(settingsNav[0]!)} replace />} />
+          <Route path="business" element={<BusinessSettingsPage />} />
+          <Route path="email" element={<EmailSettingsPage />} />
+          <Route path="currencies" element={<CurrencySettingsPage />} />
+          <Route path="*" element={<Navigate to={settingsHref(settingsNav[0]!)} replace />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

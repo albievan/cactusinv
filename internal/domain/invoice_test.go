@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,7 +44,7 @@ func TestReferenceInvoice(t *testing.T) {
 	if inv.Totals != want {
 		t.Errorf("totals = %+v, want %+v", inv.Totals, want)
 	}
-	num, err := FormatInvoiceNumber(DefaultNumberFormat, c.Code, 1195, NewDate(2026, 8, 21))
+	num, err := FormatInvoiceNumber("{code}/{seq}/{yy}", c.Code, 1195, NewDate(2026, 8, 21))
 	if err != nil || num != "CD/1195/26" {
 		t.Fatalf("number = %q, %v", num, err)
 	}
@@ -237,19 +238,38 @@ func TestPaymentTerms(t *testing.T) {
 func TestInvoiceNumbering(t *testing.T) {
 	d := NewDate(2026, 8, 21)
 	tests := []struct {
-		format, want string
+		name, format string
+		issue        Date
+		seq          int64
+		want         string
 		wantErr      bool
 	}{
-		{"{code}/{seq}/{yy}", "CD/1195/26", false},
-		{"INV-{yyyy}{mm}-{seq}", "INV-202608-1195", false},
-		{"{code}-{yy}", "", true},
-		{"{seq}-{oops}", "", true},
+		{"example invoice", "{code}/{seq}/{yy}", d, 1195, "CD/1195/26", false},
+		{"day and month", "{code}/{dd}{mm}-{seq}/{yy}", d, 1195, "CD/2108-1195/26", false},
+		{"default format", DefaultNumberFormat, d, 1195, "CD/2108-1195/26", false},
+		{"single-digit day and month are padded", "{code}/{dd}{mm}-{seq}/{yy}", NewDate(2027, 1, 5), 1196, "CD/0501-1196/27", false},
+		{"last day of the year", "{code}/{dd}{mm}-{seq}/{yy}", NewDate(2026, 12, 31), 7, "CD/3112-7/26", false},
+		{"day beside the full year", "{yyyy}{mm}{dd}-{seq}", d, 1195, "20260821-1195", false},
+		{"month and full year", "INV-{yyyy}{mm}-{seq}", d, 1195, "INV-202608-1195", false},
+		{"no sequence", "{code}-{dd}{mm}", d, 1195, "", true},
+		{"unknown placeholder", "{seq}-{oops}", d, 1195, "", true},
+		{"three-letter day is not a placeholder", "{seq}-{ddd}", d, 1195, "", true},
+		{"one-letter day is not a placeholder", "{seq}-{d}", d, 1195, "", true},
+		{"placeholders are lower case", "{seq}-{DD}", d, 1195, "", true},
 	}
 	for _, tt := range tests {
-		got, err := FormatInvoiceNumber(tt.format, "CD", 1195, d)
-		if (err != nil) != tt.wantErr || got != tt.want {
-			t.Errorf("FormatInvoiceNumber(%q) = %q, %v", tt.format, got, err)
-		}
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FormatInvoiceNumber(tt.format, "CD", tt.seq, tt.issue)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Errorf("FormatInvoiceNumber(%q) = %q, %v; want %q", tt.format, got, err, tt.want)
+			}
+		})
+	}
+	if err := ValidateNumberFormat("{seq}-{oops}"); err == nil || !strings.Contains(err.Error(), "{dd}") {
+		t.Errorf("the unknown-placeholder error names {dd}: %v", err)
+	}
+	if DefaultNumberFormat != "{code}/{dd}{mm}-{seq}/{yy}" {
+		t.Errorf("default format = %q", DefaultNumberFormat)
 	}
 	if _, err := FormatInvoiceNumber(DefaultNumberFormat, "CD", 0, d); err == nil {
 		t.Error("seq 0 must fail")
@@ -352,5 +372,20 @@ func TestOverdueStageAndDisclaimer(t *testing.T) {
 	}
 	if Disclaimer(Customer{DefaultNotes: "Customer disclaimer"}, b) != "Customer disclaimer" {
 		t.Fatal("customer disclaimer wins")
+	}
+	for _, tt := range []struct {
+		notes string
+		own   bool
+	}{{"", false}, {"  \n\t", false}, {"Customer disclaimer", true}} {
+		if got := UsesOwnDisclaimer(Customer{DefaultNotes: tt.notes}); got != tt.own {
+			t.Errorf("UsesOwnDisclaimer(%q) = %v", tt.notes, got)
+		}
+		want := "Business disclaimer"
+		if tt.own {
+			want = tt.notes
+		}
+		if got := Disclaimer(Customer{DefaultNotes: tt.notes}, b); got != want {
+			t.Errorf("Disclaimer(%q) = %q, want %q", tt.notes, got, want)
+		}
 	}
 }

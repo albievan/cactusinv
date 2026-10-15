@@ -2,6 +2,10 @@ import type { Config } from 'tailwindcss'
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // The app has one light theme (index.css pins color-scheme: light). With the default
+  // 'media' strategy a phone in dark mode would apply any dark: class under light-theme
+  // text; 'class' means dark: styles apply only under a .dark class the app never sets.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

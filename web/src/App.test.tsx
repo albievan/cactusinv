@@ -1,17 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from './App'
-
-function mockFetch(routes: Record<string, (req: Request) => Response | Promise<Response>>) {
-  vi.stubGlobal('fetch', vi.fn(async (input: Request | string) => {
-    const req = input instanceof Request ? input : new Request(input)
-    const path = new URL(req.url, 'http://localhost').pathname
-    const handler = routes[`${req.method} ${path}`]
-    return handler ? handler(req) : new Response(JSON.stringify({ type: 'x', title: 'Not found', status: 404 }), { status: 404, headers: { 'Content-Type': 'application/problem+json' } })
-  }))
-}
-
-const json = (body: unknown, status = 200) => () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+import { json, mockFetch } from './test/fetch'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -87,5 +77,125 @@ test('the statements page lists balances and e-mails selected statements', async
   await userEvent.click(screen.getByRole('button', { name: 'E-mail 1' }))
   expect(await screen.findByText('1 statement queued for e-mail.')).toBeInTheDocument()
   expect(sent).toEqual({ customerIds: ['a'], includeZero: false })
+  window.history.pushState({}, '', '/')
+})
+
+const business = {
+  name: 'Example Software Consulting', addressLines: '', phone: '', email: '', taxNumber: '', numberFormat: '{code}/{dd}{mm}-{seq}/{yy}',
+  timeZone: 'Africa/Johannesburg', defaultNotes: 'Business disclaimer: no liability for third-party software.', emailSubject: 's', emailBody: 'b',
+  vatPercent: '0', nextSequence: 1195, version: 1,
+}
+
+function signedIn(extra: Record<string, (req: Request) => Response | Promise<Response>> = {}) {
+  mockFetch({
+    'GET /api/v1/auth/me': json({ id: '1', email: 'admin' }),
+    'GET /api/v1/version': json({ version: '1.4.0', build: '9' }),
+    'GET /api/v1/settings/business': json(business),
+    'GET /api/v1/settings/email': json({ enabled: false, host: 'smtp.gmail.com', port: 587, username: '', passwordSet: false, from: '', tls: 'starttls', version: 0 }),
+    'GET /api/v1/currencies': json({ items: [{ code: 'ZAR', name: 'South African Rand', symbol: 'R', minorUnits: 2, active: true }] }),
+    'GET /api/v1/bank-accounts': json({ items: [] }),
+    ...extra,
+  })
+}
+
+function sidebar() {
+  // The desktop sidebar is the Main navigation that holds the Settings group.
+  const navs = screen.getAllByRole('navigation', { name: 'Main' })
+  return navs.find((n) => within(n).queryByRole('link', { name: 'Settings' }))!
+}
+
+test('/settings opens Business, and the sidebar nests the settings pages under Settings', async () => {
+  signedIn()
+  window.history.pushState({}, '', '/settings')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'Business' })).toBeInTheDocument()
+  expect(window.location.pathname).toBe('/settings/business')
+  expect(screen.getByLabelText('Invoice number format')).toHaveValue('{code}/{dd}{mm}-{seq}/{yy}')
+  expect(screen.getByText(/\{dd\} day/)).toBeInTheDocument()
+
+  const group = within(sidebar()).getByRole('list', { name: 'Settings' })
+  const links = within(group).getAllByRole('link')
+  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts'])
+  expect(within(group).getByRole('link', { name: 'Business' })).toHaveAttribute('aria-current', 'page')
+  expect(within(sidebar()).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'true')
+
+  await userEvent.click(within(group).getByRole('link', { name: 'E-mail server' }))
+  expect(await screen.findByRole('heading', { name: 'E-mail server' })).toBeInTheDocument()
+  expect(window.location.pathname).toBe('/settings/email')
+  expect(within(group).getByRole('link', { name: 'E-mail server' })).toHaveAttribute('aria-current', 'page')
+  expect(within(group).getByRole('link', { name: 'Business' })).not.toHaveAttribute('aria-current')
+
+  // The phone section links reach the same pages.
+  const sections = screen.getByRole('navigation', { name: 'Settings sections' })
+  await userEvent.click(within(sections).getByRole('link', { name: 'Currencies & bank accounts' }))
+  expect(await screen.findByRole('heading', { name: 'Currencies & bank accounts' })).toBeInTheDocument()
+  expect(window.location.pathname).toBe('/settings/currencies')
+  const after = screen.getByRole('navigation', { name: 'Settings sections' })
+  expect(within(after).getByRole('link', { name: 'Currencies & bank accounts' })).toHaveAttribute('aria-current', 'page')
+  expect(within(after).getByRole('link', { name: 'Business' })).not.toHaveAttribute('aria-current')
+  window.history.pushState({}, '', '/')
+})
+
+test('the settings pages stay folded away off a settings route; More lists them for phones', async () => {
+  signedIn()
+  window.history.pushState({}, '', '/more')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'More' })).toBeInTheDocument()
+  expect(within(sidebar()).queryByRole('list', { name: 'Settings' })).not.toBeInTheDocument()
+  expect(within(sidebar()).getByRole('link', { name: 'Settings' })).not.toHaveAttribute('aria-current')
+
+  const more = screen.getByRole('list', { name: 'Settings' })
+  expect(within(more).getByRole('link', { name: /E-mail server/ })).toHaveAttribute('href', '/settings/email')
+  expect(within(more).getByRole('link', { name: /Business/ })).toHaveAttribute('href', '/settings/business')
+  expect(within(more).getByRole('link', { name: /Currencies & bank accounts/ })).toHaveAttribute('href', '/settings/currencies')
+  window.history.pushState({}, '', '/')
+})
+
+test('the customer form shows the business disclaimer it falls back to and which one its PDFs use', async () => {
+  const customer = (defaultNotes: string, disclaimerSource: 'customer' | 'business') => ({
+    id: 'c1', code: 'CD', name: 'Acme Commercial', email: 'ap@acme.example', cc: [], attention: '', billingAddress: '', shippingName: '',
+    shippingAddress: '', phone: '', taxNumber: '', currency: 'ZAR', paymentTerms: { kind: 'days_after', value: 30, text: 'Payment due within 30 days' },
+    bankAccountId: '', defaultNotes, disclaimerSource, active: true, version: 1,
+  })
+  let current = customer('', 'business')
+  signedIn({ 'GET /api/v1/customers/c1': () => json(current)() })
+  window.history.pushState({}, '', '/customers/c1')
+  const { unmount } = render(<App />)
+  const box = await screen.findByLabelText('Disclaimer for this customer')
+  expect(box).toHaveValue('')
+  expect(box).toHaveAttribute('placeholder', business.defaultNotes)
+  expect(screen.getByText(/^Empty: the business disclaimer below is used/)).toBeInTheDocument()
+  expect(screen.getByTestId('disclaimer-source')).toHaveTextContent('Its PDFs use the business disclaimer.')
+  expect(screen.getByText(business.defaultNotes)).toBeInTheDocument()
+  unmount()
+
+  current = customer('Acme disclaimer', 'customer')
+  render(<App />)
+  expect(await screen.findByDisplayValue('Acme disclaimer')).toBeInTheDocument()
+  expect(screen.getByTestId('disclaimer-source')).toHaveTextContent("Its PDFs use this customer's own disclaimer.")
+  window.history.pushState({}, '', '/')
+})
+
+test('a new customer has no saved disclaimer yet, only the fallback', async () => {
+  signedIn()
+  window.history.pushState({}, '', '/customers/new')
+  render(<App />)
+  expect(await screen.findByLabelText('Disclaimer for this customer')).toHaveAttribute('placeholder', business.defaultNotes)
+  expect(screen.queryByTestId('disclaimer-source')).not.toBeInTheDocument()
+  window.history.pushState({}, '', '/')
+})
+
+test('the customer form reports a failed business settings load and an empty business disclaimer plainly', async () => {
+  signedIn({ 'GET /api/v1/settings/business': json({ type: 'x', title: 'Settings unavailable', status: 500 }, 500) })
+  window.history.pushState({}, '', '/customers/new')
+  const { unmount } = render(<App />)
+  expect(await screen.findByText('Settings unavailable')).toBeInTheDocument()
+  expect(screen.queryByText('None set yet.')).not.toBeInTheDocument()
+  unmount()
+
+  signedIn({ 'GET /api/v1/settings/business': json({ ...business, defaultNotes: '' }) })
+  render(<App />)
+  expect(await screen.findByText('None set yet.')).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   window.history.pushState({}, '', '/')
 })

@@ -4,7 +4,7 @@ SHELL := /usr/bin/env bash
 GO_PKGS := ./...
 COVER_MIN := 80
 
-.PHONY: help gen fmt fmt-check lint vet test cover test-int vuln contracts web-install web-check build image check \
+.PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build image check \
         install uninstall status backup
 
 help: ## list targets
@@ -41,6 +41,33 @@ cover: ## unit tests with coverage gates on domain and app
 
 test-int: ## integration tests against MariaDB 11 (Docker); migrations up/down/up per test
 	go test -race -count=1 -tags integration ./internal/adapters/mariadb/
+
+# remote-test-int runs test-int on a Docker host over ssh, for machines without Docker.
+# It ships the working tree (tracked files plus untracked, not-ignored ones, uncommitted
+# changes included) as a tarball, unpacks it into a fresh $(REMOTE_DIR), and runs the tests
+# in the pinned Go image with the host's Docker socket. testcontainers reaches the MariaDB
+# container through the host's published ports (host.docker.internal → host gateway).
+# label=disable: on an SELinux host the socket is otherwise refused to the container.
+REMOTE      ?=
+REMOTE_DIR  ?= /data/cactusinv/src
+REMOTE_GOCACHE ?= /data/cactusinv/gocache
+GO_IMAGE    ?= golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
+
+remote-test-int: ## integration tests on REMOTE=user@host (required) via ssh + Docker (working tree incl. uncommitted changes)
+	@[ -n "$(REMOTE)" ] || { echo "set REMOTE=user@host (a Docker host for the integration tests)"; exit 1; }
+	@case "$(REMOTE_DIR)/" in /data/cactusinv/?*/) ;; *) echo "REMOTE_DIR must be below /data/cactusinv/"; exit 1;; esac
+	@case "$(REMOTE_GOCACHE)/" in /data/cactusinv/?*/) ;; *) echo "REMOTE_GOCACHE must be below /data/cactusinv/"; exit 1;; esac
+	git ls-files -z -co --exclude-standard \
+	  | while IFS= read -r -d '' f; do [[ -f "$$f" ]] && printf '%s\0' "$$f"; done \
+	  | COPYFILE_DISABLE=1 tar --null -T - -czf - \
+	  | ssh $(REMOTE) 'set -euo pipefail; rm -rf "$(REMOTE_DIR)"; mkdir -p "$(REMOTE_DIR)" "$(REMOTE_GOCACHE)/mod" "$(REMOTE_GOCACHE)/build"; \
+	      tar --warning=no-unknown-keyword -xzf - -C "$(REMOTE_DIR)"; \
+	      docker run --rm --security-opt label=disable \
+	        -v /var/run/docker.sock:/var/run/docker.sock \
+	        --add-host=host.docker.internal:host-gateway -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
+	        -e GOTOOLCHAIN=local \
+	        -v "$(REMOTE_DIR)":/src -v "$(REMOTE_GOCACHE)/mod":/go/pkg/mod -v "$(REMOTE_GOCACHE)/build":/root/.cache/go-build \
+	        -w /src $(GO_IMAGE) go test -race -count=1 -tags integration ./internal/adapters/mariadb/'
 
 vuln: ## known-vulnerability scan
 	govulncheck $(GO_PKGS)

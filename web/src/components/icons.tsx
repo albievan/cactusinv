@@ -35,3 +35,6 @@ export const IconBan = base(<><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l
 export const IconShield = base(<><path d="M12 3l8 3v6c0 4.5-3.4 8.4-8 9-4.6-.6-8-4.5-8-9V6z" /><path d="M9 12l2 2 4-4" /></>)
 export const IconInfo = base(<><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>)
 export const IconHistory = base(<><path d="M3 12a9 9 0 103-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>)
+export const IconBuilding = base(<><path d="M4 21V5l8-2v18M12 7l8 3v11M3 21h18" /><path d="M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2" /></>)
+export const IconBank = base(<><path d="M3 9l9-5 9 5M4 9h16" /><path d="M6 9v8M10 9v8M14 9v8M18 9v8M3 20h18" /></>)
+export const IconServer = base(<><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" /></>)

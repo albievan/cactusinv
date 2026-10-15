@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { settingsHref, settingsNav } from '../features/settings/settingsNav'
 import { useVersion } from '../lib/version'
 import { useAuth } from './auth'
 import { CactusMark } from './Logo'
@@ -26,6 +27,53 @@ const mobileTabs = [
   { to: '/schedules', label: 'Schedules', icon: IconCalendar },
   { to: '/more', label: 'More', icon: IconMenu },
 ]
+
+const itemClass = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-100'
+const activeClass = 'bg-brand-500 font-semibold text-white ring-2 ring-cream-100/90'
+const idleClass = 'text-cream-100/90 hover:bg-brand-700/70'
+
+/**
+ * SettingsNavItem is the Settings entry of the sidebar. On a settings route it expands to
+ * its sub-pages (settingsNav); the sub-page shown is aria-current="page" and Settings
+ * itself is marked as the current section.
+ */
+function SettingsNavItem({ folded }: { folded: boolean }) {
+  const { pathname } = useLocation()
+  const open = pathname === '/settings' || pathname.startsWith('/settings/')
+  return (
+    <div>
+      <NavLink
+        to="/settings"
+        title={folded ? 'Settings' : undefined}
+        aria-label={folded ? 'Settings' : undefined}
+        aria-current={open ? 'true' : undefined}
+        className={`${itemClass} ${folded ? 'justify-center' : ''} ${open ? 'bg-brand-700/80 font-semibold text-white' : idleClass}`}
+      >
+        <IconSettings />
+        {!folded && 'Settings'}
+      </NavLink>
+      {open && (
+        <ul aria-label="Settings" className={`mt-1 space-y-1 ${folded ? '' : 'ml-5 border-l border-cream-300/30 pl-2'}`}>
+          {settingsNav.map((s) => (
+            <li key={s.path}>
+              <NavLink
+                to={settingsHref(s)}
+                title={folded ? s.label : undefined}
+                aria-label={folded ? s.label : undefined}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-100 ${folded ? 'justify-center' : ''} ${isActive ? activeClass : idleClass}`
+                }
+              >
+                <s.icon width={folded ? 18 : 16} height={folded ? 18 : 16} />
+                {!folded && s.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function readFolded(): boolean {
   try {
@@ -77,23 +125,24 @@ export function Layout() {
             </button>
           </form>
         )}
-        <nav className="mt-4 flex flex-1 flex-col gap-1 px-2" aria-label="Main">
-          {nav.map((t) => (
-            <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.end}
-              title={folded ? t.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition ${folded ? 'justify-center' : ''} ${
-                  isActive ? 'bg-brand-500 font-semibold text-white ring-2 ring-cream-100/90' : 'text-cream-100/90 hover:bg-brand-700/70'
-                }`
-              }
-            >
-              <t.icon />
-              {!folded && t.label}
-            </NavLink>
-          ))}
+        <nav className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-2" aria-label="Main">
+          {nav.map((t) =>
+            t.to === '/settings' ? (
+              <SettingsNavItem key={t.to} folded={folded} />
+            ) : (
+              <NavLink
+                key={t.to}
+                to={t.to}
+                end={t.end}
+                title={folded ? t.label : undefined}
+                aria-label={folded ? t.label : undefined}
+                className={({ isActive }) => `${itemClass} ${folded ? 'justify-center' : ''} ${isActive ? activeClass : idleClass}`}
+              >
+                <t.icon />
+                {!folded && t.label}
+              </NavLink>
+            ),
+          )}
         </nav>
         <div className="space-y-2 border-t border-cream-300/20 p-2 text-sm">
           {!folded && (

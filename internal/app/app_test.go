@@ -62,6 +62,7 @@ func (h *harness) seed() *harness {
 	must(h.svc.UpdateBusiness(h.ctx, domain.BusinessProfile{
 		Name: "Example Software Consulting", AddressLines: "P. O. Box 1000\nNorthgate\n1616",
 		Phone: "011 555 0100", Email: "billing@example.com", TimeZone: "Africa/Johannesburg",
+		NumberFormat: "{code}/{seq}/{yy}", // the example invoice's format, saved before v1.4.0
 	}, 1195))
 	must(h.svc.CreateCurrency(h.ctx, "ZAR", "South African Rand", "R", 2, true))
 	must(h.svc.CreateCurrency(h.ctx, "USD", "US Dollar", "$", 2, true))
@@ -831,9 +832,13 @@ func TestEnsureDefaultAdmin(t *testing.T) {
 }
 
 // docRenderer records the documents it renders.
-type docRenderer struct{ docs []ports.InvoiceDocument }
+type docRenderer struct {
+	docs  []ports.InvoiceDocument
+	stmts []ports.StatementDocument
+}
 
-func (r *docRenderer) RenderStatement(context.Context, ports.StatementDocument) ([]byte, error) {
+func (r *docRenderer) RenderStatement(_ context.Context, d ports.StatementDocument) ([]byte, error) {
+	r.stmts = append(r.stmts, d)
 	return []byte("%PDF"), nil
 }
 
@@ -1206,5 +1211,113 @@ func TestStatementOverviewAndBulkSend(t *testing.T) {
 	}
 	if _, err := h.svc.SendStatements(h.ctx, nil, false); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("no customers")
+	}
+}
+
+// TestBusinessDisclaimerWhenTheCustomerHasNone renders a PDF on every path that produces
+// one, for a customer without a disclaimer of its own: each prints the business disclaimer.
+func TestBusinessDisclaimerWhenTheCustomerHasNone(t *testing.T) {
+	const business = "Business disclaimer: no liability for third-party software."
+	tests := []struct {
+		name string
+		// render produces one PDF and returns the disclaimer it printed.
+		render func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string
+	}{
+		{"invoice PDF", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			inv := must(svc.IssueInvoice(h.ctx, must(svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+			must2(svc.InvoicePDF(h.ctx, inv.ID))
+			return rr.docs[len(rr.docs)-1].Disclaimer
+		}},
+		{"invoice e-mail", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			inv := must(svc.IssueInvoice(h.ctx, must(svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+			must(svc.SendInvoice(h.ctx, inv.ID, app.SendInput{IdempotencyKey: "k1"}))
+			if res := must(svc.DispatchEmails(h.ctx, 10)); res.Sent != 1 {
+				t.Fatalf("dispatch = %+v", res)
+			}
+			return rr.docs[len(rr.docs)-1].Disclaimer
+		}},
+		{"archive export", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			must(svc.IssueInvoice(h.ctx, must(svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+			if res := must(svc.ExportInvoices(h.ctx, 10)); res.Exported != 1 {
+				t.Fatalf("export = %+v", res)
+			}
+			return rr.docs[len(rr.docs)-1].Disclaimer
+		}},
+		{"scheduled invoice", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			h.clock.Set(time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC))
+			must(svc.CreateSchedule(h.ctx, domain.Schedule{
+				CustomerID: h.customer.ID, Name: "Acme monthly",
+				Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 21, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
+				Lines:      []domain.ScheduleLine{{ProductID: h.usersP.ID, Quantity: 14000}},
+				AutoSend:   true,
+			}))
+			h.clock.Set(time.Date(2026, 8, 21, 7, 0, 0, 0, time.UTC))
+			if res := must(svc.RunDueSchedules(h.ctx, 10)); res.Issued != 1 {
+				t.Fatalf("run = %+v", res)
+			}
+			if res := must(svc.DispatchEmails(h.ctx, 10)); res.Sent != 1 {
+				t.Fatalf("dispatch = %+v", res)
+			}
+			return rr.docs[len(rr.docs)-1].Disclaimer
+		}},
+		{"statement PDF", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			must2(svc.StatementPDF(h.ctx, h.customer.ID))
+			return rr.stmts[len(rr.stmts)-1].Disclaimer
+		}},
+		{"statement e-mail", func(t *testing.T, h *harness, svc *app.Service, rr *docRenderer) string {
+			must(svc.SendStatement(h.ctx, h.customer.ID, app.SendInput{IdempotencyKey: "s1"}))
+			if res := must(svc.DispatchEmails(h.ctx, 10)); res.Sent != 1 {
+				t.Fatalf("dispatch = %+v", res)
+			}
+			return rr.stmts[len(rr.stmts)-1].Disclaimer
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t).seed()
+			rr := &docRenderer{}
+			svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: rr, Hasher: fakes.Hasher{}, Archive: &fakes.Archive{}})
+			c := must(svc.GetCustomer(h.ctx, h.customer.ID))
+			c.DefaultNotes = ""
+			must(svc.UpdateCustomer(h.ctx, c))
+			b := must(svc.GetBusiness(h.ctx)).Profile
+			b.DefaultNotes = business
+			must(svc.UpdateBusiness(h.ctx, b, 0))
+			if got := tt.render(t, h, svc, rr); got != business {
+				t.Fatalf("%s printed %q, want the business disclaimer", tt.name, got)
+			}
+		})
+	}
+}
+
+// TestNumberFormatOfNewAndExistingDeployments: a saved format keeps numbering as before;
+// a profile saved without one takes the default with the issue day and month.
+func TestNumberFormatOfNewAndExistingDeployments(t *testing.T) {
+	tests := []struct {
+		name, format, want string
+	}{
+		{"existing deployment keeps its stored format", "{code}/{seq}/{yy}", "CD/1195/26"},
+		{"new default with day and month", "", "CD/2108-1195/26"},
+		{"the requested format entered by hand", "{code}/{dd}{mm}-{seq}/{yy}", "CD/2108-1195/26"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t).seed()
+			b := must(h.svc.GetBusiness(h.ctx)).Profile
+			b.NumberFormat = tt.format
+			saved := must(h.svc.UpdateBusiness(h.ctx, b, 0)).Profile
+			if tt.format != "" && saved.NumberFormat != tt.format {
+				t.Fatalf("stored format rewritten to %q", saved.NumberFormat)
+			}
+			first := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+			if first.Number != tt.want {
+				t.Fatalf("number = %q, want %q", first.Number, tt.want)
+			}
+			// Gap-free: the next invoice takes the next sequence value.
+			second := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+			if !strings.Contains(second.Number, "1196") {
+				t.Fatalf("next number = %q", second.Number)
+			}
+		})
 	}
 }

@@ -24,7 +24,7 @@ export function Outbox() {
     <Page title="Outbox">
       <div className="mb-3 flex gap-2 overflow-x-auto" role="tablist">
         {statuses.map((s) => (
-          <button key={s} role="tab" aria-selected={status === s} onClick={() => setStatus(s)} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white ring-1 ring-slate-200 dark:bg-slate-900'}`}>{s}</button>
+          <button key={s} role="tab" aria-selected={status === s} onClick={() => setStatus(s)} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300 hover:bg-cream-50'}`}>{s}</button>
         ))}
       </div>
       <ErrorBanner error={actionError ?? error} />

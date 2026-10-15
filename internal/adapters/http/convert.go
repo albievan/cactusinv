@@ -149,8 +149,17 @@ func toAPICustomer(c domain.Customer) Customer {
 		Id: c.ID, Code: c.Code, Name: c.Name, Email: c.Email, Cc: cc, Attention: c.Attention,
 		BillingAddress: c.BillingAddress, ShippingName: c.ShippingName, ShippingAddress: c.ShippingAddress,
 		Phone: c.Phone, TaxNumber: c.TaxNumber, Currency: string(c.Currency), PaymentTerms: toAPITerms(c.Terms),
-		BankAccountId: c.BankAccountID, DefaultNotes: c.DefaultNotes, Active: c.Active, Version: c.Version,
+		BankAccountId: c.BankAccountID, DefaultNotes: c.DefaultNotes, DisclaimerSource: disclaimerSource(c),
+		Active: c.Active, Version: c.Version,
 	}
+}
+
+// disclaimerSource names the disclaimer the customer's PDFs print (domain.UsesOwnDisclaimer).
+func disclaimerSource(c domain.Customer) CustomerDisclaimerSource {
+	if domain.UsesOwnDisclaimer(c) {
+		return CustomerDisclaimerSourceCustomer
+	}
+	return CustomerDisclaimerSourceBusiness
 }
 
 func fromAPICustomer(id string, c Customer) domain.Customer {

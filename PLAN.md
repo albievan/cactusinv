@@ -206,6 +206,21 @@ inbound payment reconciliation, user management UI.
 |---|---|---|---|---|
 | 12.1 | "Setup guide" button beside the E-mail server heading opens a sheet with numbered steps for Gmail, Outlook / Microsoft 365 and a custom server (the provider shown is the one selected, switchable in the sheet), and what to do when the test e-mail fails | done | web test: opens from the button, shows the selected provider's steps, switches provider, Escape and Close close it; `pnpm -C web check` and `make check` green | `web/src/features/settings/EmailSetupGuide.tsx`, `web/src/features/settings/Settings.tsx`, `web/src/components/icons.tsx` |
 
+### M13 — Readable chips, visible disclaimer fallback, day in invoice numbers, Settings sub-menu (Albie, 2026-10-15) — v1.4.0
+
+> The Outbox filter buttons are unreadable on dark-mode phones. When a customer has no
+> disclaimer, use the business one. Invoice numbers like `{code}/{dd}{mm}-{seq}/{yy}`.
+> Settings gets sub-items: Business, E-mail server, Currencies & bank accounts (Users and
+> Backup & restore follow later).
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 13.1 | Light-only at the source: Tailwind `darkMode: 'class'` (the class is never set, so no `dark:` style can apply); every `dark:` class removed from `web/src`; unselected Outbox chip `bg-white text-brand-900 ring-1 ring-cream-300` | done | web tests: config has `darkMode: 'class'`; no `dark:` class anywhere in `web/src`; Outbox tabs carry readable classes | `web/tailwind.config.ts`, `web/src/features/emails/Outbox.tsx`, `web/src/features/settings/Settings.tsx`, `web/src/features/invoices/InvoiceDetail.tsx`, `web/src/lightOnly.test.ts`, `web/src/features/emails/Outbox.test.tsx` |
+| 13.2 | Disclaimer fallback made visible: the API says which disclaimer a customer's PDFs use (`disclaimerSource`, from `domain.UsesOwnDisclaimer`); the customer form shows the business disclaimer as the textarea placeholder, the hint "Empty: the business disclaimer below is used", and on an existing customer which disclaimer its PDFs use. Every PDF path audited (invoice PDF, invoice e-mail, archive export, statement PDF, statement e-mail, scheduled invoice): all resolve through `domain.Disclaimer` | done | domain test of `UsesOwnDisclaimer`; app table test: a customer without a disclaimer gets the business disclaimer on every path; HTTP test of `disclaimerSource`; web test of placeholder, hint and source line | `api/openapi/cactusinv.yaml`, `internal/domain/invoice.go`, `internal/adapters/http/convert.go`, `internal/app/app_test.go`, `web/src/features/customers/Customers.tsx` |
+| 13.3 | `{dd}` placeholder (issue day, 2 digits); `{code}/{dd}{mm}-{seq}/{yy}` is the default for new deployments; stored formats untouched; Settings hint, OpenAPI example, ARCHITECTURE, README | done | table tests incl. `CD/2108-1195/26` for 2026-08-21 seq 1195; unknown placeholder error lists `{dd}`; contracts in sync | `internal/domain/business.go`, `internal/domain/invoice_test.go`, `api/openapi/cactusinv.yaml`, `web/src/features/settings/Settings.tsx`, `docs/ARCHITECTURE.md`, `README.md` |
+| 13.4 | Settings sub-items Business (`/settings/business`), E-mail server (`/settings/email`), Currencies & bank accounts (`/settings/currencies`); `/settings` → first; nested under Settings in the sidebar (expanded on a settings route, `aria-current`), listed on the phone More page; one `settingsNav` list ready for Users and Backup & restore (not built) | done | web tests: `/settings` redirects to Business; each route renders its section; sub-items show only on a settings route with `aria-current="page"` on the active one; More lists the three | `web/src/App.tsx`, `web/src/components/Layout.tsx`, `web/src/features/settings/Settings.tsx`, `web/src/features/settings/settingsNav.ts`, `web/src/App.test.tsx` |
+| 13.5 | VERSION 1.4.0; `pnpm -C web check`; `make` fmt-check lint vet cover vuln contracts web-check | done | all green on macOS 2026-10-15 (domain 97.7 %, app 84.6 %); `make remote-test-int` green on the Docker test host (`ok internal/adapters/mariadb 50.978s`) | `VERSION`, `Makefile` (`remote-test-int`), `README.md` |
+
 ---
 
 ## Decisions
@@ -234,6 +249,11 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | Missed schedule periods are caught up one by one | an invoice is never silently skipped; each is dated its own period |
 | 2026-10-15 | Toolchain pinned to go1.26.9 | go1.26.0 standard library has known vulnerabilities |
 | 2026-10-15 | The e-mail setup guide is static help text in the web app, beside the form it explains | it decides nothing (the server still tests and stores the settings); one place to read it, where it is needed |
+| 2026-10-15 | Light-only enforced at the source: Tailwind `darkMode: 'class'`, no `dark:` classes in `web/src` (a test refuses them) (M13.1) | with the default `media` strategy a phone in dark mode applied stray `dark:` backgrounds under light-theme text; the app never sets the `dark` class, so no future `dark:` class can apply either |
+| 2026-10-15 | Which disclaimer a customer's PDFs use is decided by the domain (`domain.UsesOwnDisclaimer`) and sent as `Customer.disclaimerSource` (read-only, optional) (M13.2) | the web app shows it without re-implementing the rule; the existing fallback (`domain.Disclaimer`) already applied on every PDF path, so no behaviour changed |
+| 2026-10-15 | `{dd}` placeholder; default number format `{code}/{dd}{mm}-{seq}/{yy}` for new deployments (M13.3) | requested; stored formats are never rewritten, so existing deployments keep numbering as before. A deployment whose business profile was never saved has no stored format, so it switches to the new format at the upgrade to v1.4.0 (accepted: Albie asked for the new format) |
+| 2026-10-15 | `make remote-test-int`: integration tests on a Docker host over ssh, shipping the working tree (tracked + untracked, not ignored) as a tarball into a fresh `/data/cactusinv/src`, run in `golang:1.26.9-bookworm` pinned by digest with the host's Docker socket, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` (host-gateway) and `--security-opt label=disable` (SELinux host) | Docker is not run on the dev Mac; uncommitted changes must be testable before a commit; the paths are guarded to stay below `/data/cactusinv/` |
+| 2026-10-15 | Settings split into sub-pages from one `settingsNav` list used by the sidebar, the More page and the routes (M13.4) | requested; adding Users or Backup & restore later is one list entry plus a route |
 
 ## Later
 

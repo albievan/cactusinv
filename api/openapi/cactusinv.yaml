@@ -1043,7 +1043,15 @@ components:
         vatPercent:
           allOf: [{ $ref: '#/components/schemas/Decimal' }]
           description: Default VAT for new invoices and schedules. "0" means no VAT — nothing VAT-related is printed.
-        numberFormat: { type: string, maxLength: 64, example: '{code}/{seq}/{yy}' }
+        numberFormat:
+          type: string
+          maxLength: 64
+          example: '{code}/{dd}{mm}-{seq}/{yy}'
+          description: >-
+            Invoice number template. Must contain {seq}; may contain {code} (customer code),
+            {dd} and {mm} (issue day and month, two digits), {yy} or {yyyy} (issue year) and
+            literal text. '{code}/{dd}{mm}-{seq}/{yy}' gives CD/2108-1195/26 for 21 August 2026.
+            New deployments start with that format; a saved format is kept.
         timeZone: { type: string, maxLength: 64, example: Africa/Johannesburg }
         defaultNotes: { type: string, maxLength: 4000 }
         emailSubject: { type: string, maxLength: 300 }
@@ -1120,7 +1128,15 @@ components:
         currency: { type: string }
         paymentTerms: { $ref: '#/components/schemas/PaymentTerms' }
         bankAccountId: { type: string, description: Override of the currency's default account. }
-        defaultNotes: { type: string, maxLength: 4000 }
+        defaultNotes:
+          type: string
+          maxLength: 4000
+          description: The customer's own disclaimer. Empty means the business disclaimer is printed.
+        disclaimerSource:
+          type: string
+          enum: [customer, business]
+          readOnly: true
+          description: Which disclaimer this customer's invoice and statement PDFs print, resolved by the server.
         active: { type: boolean }
         version: { type: integer }
     CustomerList:

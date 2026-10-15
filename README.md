@@ -9,7 +9,8 @@ Released into the public domain — see [LICENSE](LICENSE).
 
 ## Features
 
-- **Invoices** — draft → issue (gap-free numbers like `CD/1195/26`) → send → paid / void.
+- **Invoices** — draft → issue (gap-free numbers like `CD/2108-1195/26`: customer code, issue
+  day and month, sequence, year — the format is yours to set) → send → paid / void.
   Classic business-invoice PDF layout (header band, bill-to/ship-to, line table, bank details,
   totals box), with DRAFT/VOID watermarks.
 - **Automated e-mail** — send now, schedule a send for later, or let a **recurring schedule**
@@ -31,7 +32,9 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
   Outlook / Microsoft 365 and other servers; the password is stored encrypted.
-- **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced.
+- **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced; a
+  customer without its own disclaimer gets the business disclaimer, and the customer form
+  says which one its PDFs use.
 - **Audit trail** — every change and sign-in with who did it; append-only (the database
   refuses edits and deletes) and hash-chained, with a one-click integrity check.
 - **Dashboard** — outstanding and overdue per currency, invoiced vs paid over 12 months, who
@@ -62,9 +65,14 @@ echo 'a-long-new-password' | docker compose exec -T app /cactusinv admin set-pas
 Test e-mails are captured by Mailpit at <http://localhost:8025>. Set real SMTP settings in
 `.env` (and the password in `secrets/smtp_password`) to deliver to customers.
 
-First steps in the app: **More → Settings** (business details, invoice number format and next
-number, currencies, bank accounts) → **Customers** → **More → Products** → **Invoices** or
-**Schedules**.
+First steps in the app: **Settings → Business** (business details, invoice number format and
+next number), **Settings → E-mail server**, **Settings → Currencies & bank accounts** (on a phone:
+**More → Settings**) → **Customers** → **More → Products** → **Invoices** or **Schedules**.
+
+Invoice number format placeholders: `{code}` customer code, `{seq}` the gap-free sequence
+(required), `{dd}` and `{mm}` the issue day and month, `{yy}` or `{yyyy}` the year. New
+installs start with `{code}/{dd}{mm}-{seq}/{yy}` (`CD/2108-1195/26` for 21 August 2026);
+an install that already saved a format keeps it.
 
 ## Deploying — `deploy.sh`
 
@@ -117,7 +125,13 @@ make gen         # regenerate sqlc, OpenAPI server and web API types
 make check       # the full quality gate: format, lint, vet, unit tests + coverage,
                  # MariaDB integration tests, govulncheck, contract drift, web checks
 pnpm -C web dev  # web app with hot reload, proxying /api to localhost:8080
+make remote-test-int                      # integration tests on a Docker host over ssh
+make remote-test-int REMOTE=user@host     # REMOTE is required; runs in /data/cactusinv/src there
 ```
+
+`make remote-test-int` is for machines without Docker: it copies the working tree, including
+uncommitted changes, to a fresh `REMOTE_DIR` (below `/data/cactusinv/`) and runs the MariaDB
+integration tests there in the pinned `golang:1.26.9` image with the host's Docker socket.
 
 Read [PLAN.md](PLAN.md), [docs/ENGINEERING_PRINCIPLES.md](docs/ENGINEERING_PRINCIPLES.md),
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/adr](docs/adr) before changing code.

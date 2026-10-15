@@ -75,7 +75,7 @@ export function InvoiceDetail() {
 
       <section className="card mb-4 p-0">
         <h2 className="p-4 pb-2 font-semibold">Lines</h2>
-        <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+        <ul className="divide-y divide-slate-100">
           {inv.lines.map((l, i) => (
             <li key={i} className="flex gap-3 px-4 py-3 text-sm">
               <div className="flex-1">
@@ -86,7 +86,7 @@ export function InvoiceDetail() {
             </li>
           ))}
         </ul>
-        <dl className="space-y-1 border-t border-slate-100 p-4 text-sm dark:border-slate-800">
+        <dl className="space-y-1 border-t border-slate-100 p-4 text-sm">
           <Row label="Subtotal" value={groupAmount(inv.totals.subtotal)} />
           {Number(inv.totals.discount) !== 0 && <Row label="Discount" value={`-${groupAmount(inv.totals.discount)}`} />}
           {inv.vatPercent !== '0' && <Row label={`VAT ${inv.vatPercent}%`} value={groupAmount(inv.totals.vat)} />}

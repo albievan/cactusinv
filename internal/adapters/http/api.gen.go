@@ -19,6 +19,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for CustomerDisclaimerSource.
+const (
+	CustomerDisclaimerSourceBusiness CustomerDisclaimerSource = "business"
+	CustomerDisclaimerSourceCustomer CustomerDisclaimerSource = "customer"
+)
+
+// Valid indicates whether the value is a known member of the CustomerDisclaimerSource enum.
+func (e CustomerDisclaimerSource) Valid() bool {
+	switch e {
+	case CustomerDisclaimerSourceBusiness:
+		return true
+	case CustomerDisclaimerSourceCustomer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EmailMessageKind.
 const (
 	EmailMessageKindInvoice   EmailMessageKind = "invoice"
@@ -353,7 +371,9 @@ type BusinessSettings struct {
 	// NextSequence Next invoice sequence value; may only increase.
 	NextSequence int64 `json:"nextSequence"`
 
-	// NumberFormat Example: {code}/{seq}/{yy}
+	// NumberFormat Invoice number template. Must contain {seq}; may contain {code} (customer code), {dd} and {mm} (issue day and month, two digits), {yy} or {yyyy} (issue year) and literal text. '{code}/{dd}{mm}-{seq}/{yy}' gives CD/2108-1195/26 for 21 August 2026. New deployments start with that format; a saved format is kept.
+	//
+	// Example: {code}/{dd}{mm}-{seq}/{yy}
 	NumberFormat string `json:"numberFormat"`
 	Phone        string `json:"phone"`
 
@@ -412,19 +432,27 @@ type Customer struct {
 	Cc             []string `json:"cc"`
 
 	// Code Invoice number code
-	Code            string       `json:"code"`
-	Currency        string       `json:"currency"`
-	DefaultNotes    string       `json:"defaultNotes"`
-	Email           string       `json:"email"`
-	Id              string       `json:"id,omitempty"`
-	Name            string       `json:"name"`
-	PaymentTerms    PaymentTerms `json:"paymentTerms"`
-	Phone           string       `json:"phone"`
-	ShippingAddress string       `json:"shippingAddress"`
-	ShippingName    string       `json:"shippingName"`
-	TaxNumber       string       `json:"taxNumber"`
-	Version         int          `json:"version"`
+	Code     string `json:"code"`
+	Currency string `json:"currency"`
+
+	// DefaultNotes The customer's own disclaimer. Empty means the business disclaimer is printed.
+	DefaultNotes string `json:"defaultNotes"`
+
+	// DisclaimerSource Which disclaimer this customer's invoice and statement PDFs print, resolved by the server.
+	DisclaimerSource CustomerDisclaimerSource `json:"disclaimerSource,omitempty"`
+	Email            string                   `json:"email"`
+	Id               string                   `json:"id,omitempty"`
+	Name             string                   `json:"name"`
+	PaymentTerms     PaymentTerms             `json:"paymentTerms"`
+	Phone            string                   `json:"phone"`
+	ShippingAddress  string                   `json:"shippingAddress"`
+	ShippingName     string                   `json:"shippingName"`
+	TaxNumber        string                   `json:"taxNumber"`
+	Version          int                      `json:"version"`
 }
+
+// CustomerDisclaimerSource Which disclaimer this customer's invoice and statement PDFs print, resolved by the server.
+type CustomerDisclaimerSource string
 
 // CustomerList defines model for CustomerList.
 type CustomerList struct {

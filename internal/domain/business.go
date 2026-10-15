@@ -7,8 +7,13 @@ import (
 	"time"
 )
 
-// DefaultNumberFormat reproduces the example invoice number "CD/1195/26".
-const DefaultNumberFormat = "{code}/{seq}/{yy}"
+// DefaultNumberFormat is the invoice number template of a new deployment, e.g.
+// "CD/2108-1195/26" for customer code CD, issue date 21 August 2026 and sequence 1195.
+// A saved business profile keeps its own format; this only applies until one is saved.
+const DefaultNumberFormat = "{code}/{dd}{mm}-{seq}/{yy}"
+
+// numberPlaceholders lists the placeholders an invoice number template may use.
+const numberPlaceholders = "{code} {seq} {dd} {mm} {yy} {yyyy}"
 
 // DefaultEmailSubject and DefaultEmailBody are used when nothing else is configured.
 const (
@@ -82,7 +87,7 @@ func (b BusinessProfile) Location() *time.Location {
 }
 
 // ValidateNumberFormat checks an invoice number template. It must contain {seq} and may
-// contain {code}, {yy}, {yyyy}, {mm} and literal text.
+// contain {code}, {dd}, {mm}, {yy}, {yyyy} and literal text.
 func ValidateNumberFormat(f string) error {
 	if !strings.Contains(f, "{seq}") {
 		return invalid("numberFormat", "must contain {seq}")
@@ -92,13 +97,14 @@ func ValidateNumberFormat(f string) error {
 	}
 	rest := numberReplacer("X", 1, Date{Year: 2000, Month: 1, Day: 1}).Replace(f)
 	if strings.ContainsAny(rest, "{}") {
-		return invalid("numberFormat", "unknown placeholder; use {code} {seq} {yy} {yyyy} {mm}")
+		return invalid("numberFormat", "unknown placeholder; use "+numberPlaceholders)
 	}
 	return nil
 }
 
 // FormatInvoiceNumber renders an invoice number, e.g. ("{code}/{seq}/{yy}", "CD", 1195,
-// 2026-08-21) → "CD/1195/26".
+// 2026-08-21) → "CD/1195/26" and ("{code}/{dd}{mm}-{seq}/{yy}", …) → "CD/2108-1195/26".
+// {dd} and {mm} are the issue day and month, two digits each.
 func FormatInvoiceNumber(format, code string, seq int64, issue Date) (string, error) {
 	if err := ValidateNumberFormat(format); err != nil {
 		return "", err
@@ -116,5 +122,6 @@ func numberReplacer(code string, seq int64, d Date) *strings.Replacer {
 		"{yyyy}", strconv.Itoa(d.Year),
 		"{yy}", fmt.Sprintf("%02d", d.Year%100),
 		"{mm}", fmt.Sprintf("%02d", int(d.Month)),
+		"{dd}", fmt.Sprintf("%02d", d.Day),
 	)
 }

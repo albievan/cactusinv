@@ -1,14 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, NavLink } from 'react-router-dom'
 import { api, unwrap, type BankAccount, type BusinessSettings, type Currency, type Schemas } from '../../lib/api/client'
 import { useVersion } from '../../lib/version'
-
-type EmailSettings = Schemas['EmailSettings']
 import { useAsync } from '../../lib/useAsync'
 import { ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
 import { useAuth } from '../../components/auth'
 import { IconInfo } from '../../components/icons'
 import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
+import { settingsHref, settingsNav } from './settingsNav'
+
+type EmailSettings = Schemas['EmailSettings']
 
 export function More() {
   const { user, logout } = useAuth()
@@ -17,7 +18,6 @@ export function More() {
     { to: '/statements', label: 'Statements', hint: "Every customer's balance and aging; e-mail statements in bulk" },
     { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency' },
     { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails' },
-    { to: '/settings', label: 'Settings', hint: 'Business, e-mail server, currencies and bank accounts' },
     { to: '/audit', label: 'Audit log', hint: 'Who did what, when — permanent and tamper-evident' },
   ]
   return (
@@ -28,6 +28,20 @@ export function More() {
             <Link to={l.to} className="card block">
               <div className="font-semibold">{l.label}</div>
               <div className="text-sm text-slate-500">{l.hint}</div>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <h2 id="more-settings" className="mb-2 mt-6 px-1 text-sm font-semibold uppercase tracking-wide text-brand-800">Settings</h2>
+      <ul className="space-y-2" aria-labelledby="more-settings">
+        {settingsNav.map((s) => (
+          <li key={s.path}>
+            <Link to={settingsHref(s)} className="card flex items-center gap-3">
+              <s.icon className="shrink-0 text-brand-600" />
+              <span>
+                <span className="block font-semibold">{s.label}</span>
+                <span className="block text-sm text-slate-500">{s.hint}</span>
+              </span>
             </Link>
           </li>
         ))}
@@ -73,16 +87,51 @@ function ChangePassword() {
   )
 }
 
-export function Settings() {
+/**
+ * SettingsSections links the Settings sub-pages. On a phone it is the way between them
+ * (the sidebar, which nests them under Settings, is hidden below md).
+ */
+function SettingsSections() {
+  return (
+    <nav aria-label="Settings sections" className="-mx-3 mb-4 overflow-x-auto px-3 md:hidden">
+      <ul className="flex gap-2">
+        {settingsNav.map((s) => (
+          <li key={s.path} className="shrink-0">
+            <NavLink
+              to={settingsHref(s)}
+              className={({ isActive }) => `inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold ${isActive ? 'bg-brand-600 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300'}`}
+            >
+              {s.label}
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+function SettingsPage({ children }: { children: ReactNode }) {
   return (
     <Page title="Settings">
-      <div className="space-y-6">
-        <BusinessForm />
-        <EmailServer />
-        <CurrenciesAndBanks />
-      </div>
+      <SettingsSections />
+      {children}
     </Page>
   )
+}
+
+/** BusinessSettingsPage is /settings/business. */
+export function BusinessSettingsPage() {
+  return <SettingsPage><BusinessForm /></SettingsPage>
+}
+
+/** EmailSettingsPage is /settings/email. */
+export function EmailSettingsPage() {
+  return <SettingsPage><EmailServer /></SettingsPage>
+}
+
+/** CurrencySettingsPage is /settings/currencies. */
+export function CurrencySettingsPage() {
+  return <SettingsPage><CurrenciesAndBanks /></SettingsPage>
 }
 
 const presets: Record<string, { host: string; port: number; tls: 'starttls' | 'tls' | 'none'; hint: string }> = {
@@ -208,7 +257,7 @@ function BusinessForm() {
         <Field label="Address">{(f) => <textarea id={f} className="input min-h-[96px]" value={b.addressLines} onChange={(e) => set({ addressLines: e.target.value })} />}</Field>
         <div className="space-y-4">
           <Field label="Time zone" hint="IANA name, e.g. Africa/Johannesburg">{(f) => <input id={f} className="input" value={b.timeZone} onChange={(e) => set({ timeZone: e.target.value })} />}</Field>
-          <Field label="Invoice number format" hint="{code} {seq} {yy} {yyyy} {mm} — e.g. {code}/{seq}/{yy}">{(f) => <input id={f} className="input" value={b.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} />}</Field>
+          <Field label="Invoice number format" hint="{code} customer code, {seq} sequence, {dd} day, {mm} month, {yy} or {yyyy} year — e.g. {code}/{dd}{mm}-{seq}/{yy} → CD/2108-1195/26">{(f) => <input id={f} className="input" value={b.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} />}</Field>
           <Field label="Next invoice sequence" hint="May only increase.">{(f) => <input id={f} type="number" inputMode="numeric" className="input" value={b.nextSequence} onChange={(e) => set({ nextSequence: Number(e.target.value) })} />}</Field>
         </div>
         <Field label="Default e-mail subject">{(f) => <input id={f} className="input" value={b.emailSubject} onChange={(e) => set({ emailSubject: e.target.value })} />}</Field>
@@ -269,14 +318,14 @@ function CurrenciesAndBanks() {
       <p className="text-sm text-slate-500">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
       <ErrorBanner error={err ?? currencies.error ?? banks.error} />
       {currencies.data?.map((c) => (
-        <div key={c.code} className="rounded-xl ring-1 ring-slate-200 dark:ring-slate-700">
+        <div key={c.code} className="rounded-xl ring-1 ring-slate-200">
           <div className="flex items-center justify-between gap-2 p-3">
             <button className="text-left" onClick={() => setEditCur(c)}>
               <span className="font-semibold">{c.code}</span> <span className="text-slate-500">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span>
             </button>
             <button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button>
           </div>
-          <ul className="divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+          <ul className="divide-y divide-slate-100 border-t border-slate-100">
             {banks.data?.filter((b) => b.currency === c.code).map((b) => (
               <li key={b.id}>
                 <button className="flex w-full items-center justify-between p-3 text-left text-sm" onClick={() => setEditBank(b)}>

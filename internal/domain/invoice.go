@@ -350,8 +350,14 @@ func (inv *Invoice) Stage(today Date) Stage {
 // PDF is rendered — the customer's disclaimer, else the business's — so edits apply to
 // every PDF produced afterwards.
 func Disclaimer(c Customer, b BusinessProfile) string {
-	if strings.TrimSpace(c.DefaultNotes) != "" {
+	if UsesOwnDisclaimer(c) {
 		return strings.TrimSpace(c.DefaultNotes)
 	}
 	return strings.TrimSpace(b.DefaultNotes)
+}
+
+// UsesOwnDisclaimer reports whether the customer's PDFs print the customer's own
+// disclaimer; when it is false they print the business disclaimer (see Disclaimer).
+func UsesOwnDisclaimer(c Customer) bool {
+	return strings.TrimSpace(c.DefaultNotes) != ""
 }

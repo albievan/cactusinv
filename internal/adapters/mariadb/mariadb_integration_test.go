@@ -90,7 +90,7 @@ func setup(t *testing.T) *env {
 	t.Helper()
 	e := &env{ctx: context.Background(), store: reset(t), clock: &fakes.Clock{T: time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC)}, mailer: &fakes.Mailer{}}
 	e.svc = app.New(app.Deps{Tx: e.store, Clock: e.clock, IDs: idgen.UUIDv7{}, Mailer: e.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
-	must(e.svc.UpdateBusiness(e.ctx, domain.BusinessProfile{Name: "Example Software Consulting", TimeZone: "Africa/Johannesburg"}, 1195))
+	must(e.svc.UpdateBusiness(e.ctx, domain.BusinessProfile{Name: "Example Software Consulting", TimeZone: "Africa/Johannesburg", NumberFormat: "{code}/{seq}/{yy}"}, 1195))
 	must(e.svc.CreateCurrency(e.ctx, "ZAR", "South African Rand", "R", 2, true))
 	must(e.svc.CreateCurrency(e.ctx, "USD", "US Dollar", "$", 2, true))
 	must(e.svc.CreateBankAccount(e.ctx, domain.BankAccount{Currency: "ZAR", Label: "Capitec", BankName: "Capitecbank", Branch: "Northgate", AccountType: "Savings", AccountNumber: "1234567890", BranchCode: "470010", Active: true}))
