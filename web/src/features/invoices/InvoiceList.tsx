@@ -6,6 +6,7 @@ import { formatMoney } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Page, SearchBox, Spinner } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
+import { InvoiceActions } from '../../components/InvoiceActions'
 
 const filters = [
   { key: 'all', label: 'All' },
@@ -23,7 +24,9 @@ export function InvoiceList() {
   const [filter, setFilter] = useState<Filter>('all')
   const q = params.get('q') ?? ''
   const setQ = (v: string) => setParams(v ? { q: v } : {}, { replace: true })
-  const { data, error, loading } = useAsync(
+  const [notice, setNotice] = useState('')
+  const [actionError, setActionError] = useState<Error | null>(null)
+  const { data, error, loading, reload } = useAsync(
     () =>
       unwrap(
         api.GET('/invoices', {
@@ -49,13 +52,20 @@ export function InvoiceList() {
           </button>
         ))}
       </div>
-      <ErrorBanner error={error} />
-      {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No invoices match.</Empty> : <InvoiceTable items={data?.items ?? []} />}
+      <ErrorBanner error={actionError ?? error} />
+      {notice && <div role="status" className="mb-3 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
+      {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No invoices match.</Empty> : (
+        <InvoiceTable
+          items={data?.items ?? []}
+          onChanged={(m) => { setActionError(null); setNotice(m); reload() }}
+          onError={(e) => { setNotice(''); setActionError(e) }}
+        />
+      )}
     </Page>
   )
 }
 
-export function InvoiceTable({ items }: { items: Invoice[] }) {
+export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; onChanged?: (msg: string) => void; onError?: (e: Error) => void }) {
   return (
     <>
       <ul className="space-y-2 md:hidden">
@@ -74,6 +84,7 @@ export function InvoiceTable({ items }: { items: Invoice[] }) {
                 <div className="text-xs text-slate-500">{inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : formatDate(inv.issueDate)}</div>
               </div>
             </Link>
+            {onChanged && onError && <div className="mt-1 flex justify-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>}
           </li>
         ))}
       </ul>
@@ -87,19 +98,25 @@ export function InvoiceTable({ items }: { items: Invoice[] }) {
               <th className="px-4 py-3">Due</th>
               <th className="px-4 py-3">Stage</th>
               <th className="px-4 py-3 text-right">Total</th>
+              {onChanged && <th className="px-4 py-3 text-right">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-cream-200">
             {items.map((inv) => (
               <tr key={inv.id} className="hover:bg-cream-50">
-                <td className="px-4 py-3 font-semibold">
+                <td className="whitespace-nowrap px-4 py-3 font-semibold">
                   <Link to={`/invoices/${inv.id}`} className="text-brand-700 hover:underline">{inv.number || 'Draft'}</Link>
                 </td>
                 <td className="px-4 py-3">{inv.billTo.name}</td>
-                <td className="px-4 py-3">{formatDate(inv.issueDate)}</td>
-                <td className="px-4 py-3">{formatDate(inv.dueDate)}</td>
+                <td className="whitespace-nowrap px-4 py-3">{formatDate(inv.issueDate)}</td>
+                <td className="whitespace-nowrap px-4 py-3">{formatDate(inv.dueDate)}</td>
                 <td className="px-4 py-3"><Badge status={inv.stage} /></td>
-                <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</td>
+                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</td>
+                {onChanged && onError && (
+                  <td className="px-4 py-2">
+                    <div className="flex justify-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

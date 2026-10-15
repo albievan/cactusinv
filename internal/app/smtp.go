@@ -53,7 +53,14 @@ func (s *Service) UpdateSMTPSettings(ctx context.Context, st domain.SMTPSettings
 		if st.Enabled && st.Username != "" && len(enc) == 0 {
 			return &domain.ValidationError{Field: "password", Reason: "is required when a username is set (for Gmail: an app password)"}
 		}
-		return r.SMTP.Save(ctx, st, enc)
+		if err := r.SMTP.Save(ctx, st, enc); err != nil {
+			return err
+		}
+		summary := st.Host + " as " + st.Username + ", " + activeText(st.Enabled)
+		if password != nil {
+			summary += ", password changed"
+		}
+		return s.audit(ctx, r, "settings.email_server_updated", "settings", "email", summary)
 	})
 	if err != nil {
 		return SMTPView{}, wrap("app.UpdateSMTPSettings", err)
@@ -95,6 +102,7 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) error {
 	if err != nil {
 		return wrap("app.SendTestEmail", err)
 	}
+	_ = s.auditNow(ctx, "settings.test_email_sent", "settings", "email", "to "+to)
 	return wrap("app.SendTestEmail", s.mailer.Send(ctx, ports.Mail{
 		MessageID: s.ids.NewID(), To: []string{to}, Subject: "cactusInv test e-mail",
 		Body: "This is a test e-mail from " + b.Name + ". Your mail server settings work.",

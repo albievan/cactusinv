@@ -21,13 +21,15 @@ test('shows the sign-in form when not authenticated, then the dashboard', async 
     'GET /api/v1/auth/me': () => (signedIn ? json({ id: '1', email: 'admin' })() : json({ type: 'u', title: 'Sign in required', status: 401 }, 401)()),
     'POST /api/v1/auth/login': () => { signedIn = true; return new Response(null, { status: 204 }) },
     'GET /api/v1/version': json({ version: '1.1.0', build: '7' }),
-    'GET /api/v1/dashboard': json({ today: '2026-08-21', totals: [{ currency: 'ZAR', openCount: 1, outstanding: '3251.16', overdueCount: 0, overdue: '0.00' }], upcomingEmails: [], upcomingRuns: [], recentInvoices: [], failedEmailCount: 0 }),
+    'GET /api/v1/dashboard': json({ today: '2026-08-21', totals: [{ currency: 'ZAR', openCount: 1, outstanding: '3251.16', overdueCount: 0, overdue: '0.00' }], upcomingEmails: [], upcomingRuns: [], recentInvoices: [], failedEmailCount: 0, months: ['2026-07', '2026-08'], invoiced: [{ currency: 'ZAR', month: '2026-08', total: '3251.16', count: 1 }], paid: [], topDebtors: [{ customerId: 'c', name: 'Acme', currency: 'ZAR', outstanding: '3251.16', openCount: 1 }], activity: [{ seq: 1, at: '2026-08-21T07:00:00Z', actorId: 'u', actor: 'admin', action: 'invoice.issued', entityType: 'invoice', entityId: 'i', summary: 'CD/1195/26', hash: 'h' }] }),
   })
   render(<App />)
   await userEvent.type(await screen.findByLabelText('User name'), 'admin')
   await userEvent.type(screen.getByLabelText('Password'), 'admin')
   await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-  expect(await screen.findByText('ZAR 3,251.16')).toBeInTheDocument()
+  expect(await screen.findByText('Invoiced and paid, last 12 months')).toBeInTheDocument()
+  expect(screen.getByText('Who owes the most')).toBeInTheDocument()
+  expect(screen.getByText('Issued')).toBeInTheDocument()
   expect(screen.getAllByRole('navigation', { name: 'Main' }).length).toBeGreaterThan(0)
   expect(await screen.findByTestId('version')).toHaveTextContent('v1.1.0 · build 7')
 })

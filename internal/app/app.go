@@ -75,10 +75,9 @@ func (s *Service) today(b domain.BusinessProfile) domain.Date {
 	return domain.DateOf(s.now().In(b.Location()))
 }
 
+// event records an invoice action in the audit trail.
 func (s *Service) event(ctx context.Context, r ports.Repos, invoiceID, typ, detail string) error {
-	return r.Invoices.AddEvent(ctx, domain.InvoiceEvent{
-		ID: s.ids.NewID(), InvoiceID: invoiceID, Type: typ, Detail: detail, At: s.now(),
-	})
+	return s.audit(ctx, r, "invoice."+typ, "invoice", invoiceID, detail)
 }
 
 // wrap adds the use-case name to an error, keeping errors.Is working.
@@ -97,4 +96,11 @@ func stopping(ctx context.Context) bool {
 	default:
 		return false
 	}
+}
+
+func activeText(active bool) string {
+	if active {
+		return "active"
+	}
+	return "inactive"
 }

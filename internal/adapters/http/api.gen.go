@@ -253,6 +253,33 @@ func (e ScheduleStatus) Valid() bool {
 	}
 }
 
+// AuditEntry defines model for AuditEntry.
+type AuditEntry struct {
+	Action     string    `json:"action"`
+	Actor      string    `json:"actor"`
+	ActorId    string    `json:"actorId"`
+	At         time.Time `json:"at"`
+	EntityId   string    `json:"entityId"`
+	EntityType string    `json:"entityType"`
+	Hash       string    `json:"hash"`
+	Seq        int64     `json:"seq"`
+	Summary    string    `json:"summary"`
+}
+
+// AuditList defines model for AuditList.
+type AuditList struct {
+	Items []AuditEntry `json:"items"`
+	Total int          `json:"total"`
+}
+
+// AuditVerification defines model for AuditVerification.
+type AuditVerification struct {
+	BrokenAt int64  `json:"brokenAt,omitempty"`
+	Entries  int    `json:"entries"`
+	Ok       bool   `json:"ok"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 // BankAccount defines model for BankAccount.
 type BankAccount struct {
 	AccountName   string `json:"accountName"`
@@ -389,12 +416,30 @@ type CustomerList struct {
 
 // Dashboard defines model for Dashboard.
 type Dashboard struct {
-	FailedEmailCount int                `json:"failedEmailCount"`
-	RecentInvoices   []Invoice          `json:"recentInvoices"`
-	Today            openapi_types.Date `json:"today"`
-	Totals           []CurrencyTotal    `json:"totals"`
-	UpcomingEmails   []EmailMessage     `json:"upcomingEmails"`
-	UpcomingRuns     []Schedule         `json:"upcomingRuns"`
+	Activity         []AuditEntry `json:"activity"`
+	FailedEmailCount int          `json:"failedEmailCount"`
+	Invoiced         []MonthTotal `json:"invoiced"`
+
+	// Months Last 12 months, oldest first ("2026-10").
+	Months         []string           `json:"months"`
+	Paid           []MonthTotal       `json:"paid"`
+	RecentInvoices []Invoice          `json:"recentInvoices"`
+	Today          openapi_types.Date `json:"today"`
+	TopDebtors     []Debtor           `json:"topDebtors"`
+	Totals         []CurrencyTotal    `json:"totals"`
+	UpcomingEmails []EmailMessage     `json:"upcomingEmails"`
+	UpcomingRuns   []Schedule         `json:"upcomingRuns"`
+}
+
+// Debtor defines model for Debtor.
+type Debtor struct {
+	Currency   string `json:"currency"`
+	CustomerId string `json:"customerId"`
+	Name       string `json:"name"`
+	OpenCount  int    `json:"openCount"`
+
+	// Outstanding Example: 2701.16
+	Outstanding Decimal `json:"outstanding"`
 }
 
 // Decimal Example: 2701.16
@@ -501,9 +546,13 @@ type InvoiceDetail struct {
 
 // InvoiceEvent defines model for InvoiceEvent.
 type InvoiceEvent struct {
+	// Action Example: invoice.voided
+	Action string `json:"action"`
+
+	// Actor Who did it — a user
+	Actor  string    `json:"actor"`
 	At     time.Time `json:"at"`
-	Detail string    `json:"detail,omitempty"`
-	Type   string    `json:"type"`
+	Detail string    `json:"detail"`
 }
 
 // InvoiceHeader defines model for InvoiceHeader.
@@ -592,6 +641,16 @@ type LoginRequest struct {
 type Me struct {
 	Email string `json:"email"`
 	Id    string `json:"id"`
+}
+
+// MonthTotal defines model for MonthTotal.
+type MonthTotal struct {
+	Count    int    `json:"count"`
+	Currency string `json:"currency"`
+	Month    string `json:"month"`
+
+	// Total Example: 2701.16
+	Total Decimal `json:"total"`
 }
 
 // Party defines model for Party.
@@ -683,6 +742,9 @@ type Schedule struct {
 	AutoSend   bool   `json:"autoSend"`
 	CustomerId string `json:"customerId"`
 	EmailBody  string `json:"emailBody"`
+
+	// EmailDelayDays Invoice schedules with autoSend — e-mail the raised invoice this many days later (0 = immediately).
+	EmailDelayDays int `json:"emailDelayDays"`
 
 	// EmailScope For email schedules — unsent (issued, never e-mailed), outstanding (every unpaid invoice) or statement (one statement of account).
 	EmailScope   ScheduleEmailScope `json:"emailScope,omitempty"`
@@ -850,6 +912,16 @@ type Offset = int
 // Query defines model for Query.
 type Query = string
 
+// ListAuditParams defines parameters for ListAudit.
+type ListAuditParams struct {
+	EntityType string `form:"entityType,omitempty" json:"entityType,omitempty"`
+	EntityId   string `form:"entityId,omitempty" json:"entityId,omitempty"`
+	Actor      string `form:"actor,omitempty" json:"actor,omitempty"`
+	Action     string `form:"action,omitempty" json:"action,omitempty"`
+	Limit      Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset     Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // ListBankAccountsParams defines parameters for ListBankAccounts.
 type ListBankAccountsParams struct {
 	Currency string `form:"currency,omitempty" json:"currency,omitempty"`
@@ -976,6 +1048,12 @@ type SendTestEmailJSONRequestBody = TestEmailRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /audit)
+	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
+
+	// (GET /audit/verify)
+	VerifyAudit(w http.ResponseWriter, r *http.Request)
 
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
@@ -1151,6 +1229,118 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAudit operation middleware
+func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditParams
+
+	// ------------- Optional query parameter "entityType" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "entityType", r.URL.Query(), &params.EntityType, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "entityType"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entityType", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "entityId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "entityId", r.URL.Query(), &params.EntityId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "entityId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "entityId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor", r.URL.Query(), &params.Actor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAudit(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyAudit operation middleware
+func (siw *ServerInterfaceWrapper) VerifyAudit(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyAudit(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
@@ -2852,12 +3042,91 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/emails/{id}/cancel", wrapper.CancelEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/emails/{id}/retry", wrapper.RetryEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit", wrapper.ListAudit)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit/verify", wrapper.VerifyAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/dashboard", wrapper.GetDashboard)
 
 	return m
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type ListAuditRequestObject struct {
+	Params ListAuditParams
+}
+
+type ListAuditResponseObject interface {
+	VisitListAuditResponse(w http.ResponseWriter) error
+}
+
+type ListAudit200JSONResponse AuditList
+
+func (response ListAudit200JSONResponse) VisitListAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAuditdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListAuditdefaultApplicationProblemPlusJSONResponse) VisitListAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyAuditRequestObject struct {
+}
+
+type VerifyAuditResponseObject interface {
+	VisitVerifyAuditResponse(w http.ResponseWriter) error
+}
+
+type VerifyAudit200JSONResponse AuditVerification
+
+func (response VerifyAudit200JSONResponse) VisitVerifyAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyAuditdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response VerifyAuditdefaultApplicationProblemPlusJSONResponse) VisitVerifyAuditResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type LoginRequestObject struct {
 	Body *LoginJSONRequestBody
@@ -4993,6 +5262,12 @@ func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.Respons
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (GET /audit)
+	ListAudit(ctx context.Context, request ListAuditRequestObject) (ListAuditResponseObject, error)
+
+	// (GET /audit/verify)
+	VerifyAudit(ctx context.Context, request VerifyAuditRequestObject) (VerifyAuditResponseObject, error)
+
 	// (POST /auth/login)
 	Login(ctx context.Context, request LoginRequestObject) (LoginResponseObject, error)
 
@@ -5196,6 +5471,56 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAudit operation middleware
+func (sh *strictHandler) ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams) {
+	var request ListAuditRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAudit(ctx, request.(ListAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAuditResponseObject); ok {
+		if err := validResponse.VisitListAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyAudit operation middleware
+func (sh *strictHandler) VerifyAudit(w http.ResponseWriter, r *http.Request) {
+	var request VerifyAuditRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyAudit(ctx, request.(VerifyAuditRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyAudit")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyAuditResponseObject); ok {
+		if err := validResponse.VisitVerifyAuditResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // Login operation middleware

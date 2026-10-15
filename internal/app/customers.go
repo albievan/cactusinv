@@ -27,7 +27,10 @@ func (s *Service) CreateCustomer(ctx context.Context, c domain.Customer) (domain
 		if err := checkCustomer(ctx, r, &c); err != nil {
 			return err
 		}
-		return r.Customers.Create(ctx, c)
+		if err := r.Customers.Create(ctx, c); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "customer.created", "customer", c.ID, c.Code+" "+c.Name)
 	})
 	if err != nil {
 		return domain.Customer{}, wrap("app.CreateCustomer", err)
@@ -44,7 +47,10 @@ func (s *Service) UpdateCustomer(ctx context.Context, c domain.Customer) (domain
 		if err := checkCustomer(ctx, r, &c); err != nil {
 			return err
 		}
-		return r.Customers.Update(ctx, c)
+		if err := r.Customers.Update(ctx, c); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "customer.updated", "customer", c.ID, c.Code+" "+c.Name)
 	})
 	if err != nil {
 		return domain.Customer{}, wrap("app.UpdateCustomer", err)
@@ -54,7 +60,16 @@ func (s *Service) UpdateCustomer(ctx context.Context, c domain.Customer) (domain
 
 // DeleteCustomer removes a customer with no invoices or schedules; otherwise deactivate.
 func (s *Service) DeleteCustomer(ctx context.Context, id string) error {
-	return wrap("app.DeleteCustomer", s.tx.Repos().Customers.Delete(ctx, id))
+	return wrap("app.DeleteCustomer", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		c, err := r.Customers.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := r.Customers.Delete(ctx, id); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "customer.deleted", "customer", id, c.Code+" "+c.Name)
+	}))
 }
 
 func checkCustomer(ctx context.Context, r ports.Repos, c *domain.Customer) error {

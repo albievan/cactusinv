@@ -172,6 +172,21 @@ inbound payment reconciliation, user management UI.
 | 9.9 | Modern PDF design; readable (wrapping payment card/info strip; overlap regression test) | done | `TestPaymentCardNeverOverlapsTotals` | `adapters/pdf` |
 | 9.10 | Login and app shell restyle; version · build on login and sidebar; full-width tables | done | web tests; screenshots reviewed | `web/src/components` |
 
+### M10 — Audit trail, compact actions, dashboard, raise-then-e-mail workflow (Albie, 2026-10-15)
+
+> Compact buttons for send e-mail, view PDF, mark paid, mark overdue, void. Show who
+> created/voided/paid/e-mailed each invoice; a full audit trail that cannot be deleted.
+> A dashboard for the platform. Schedule a workflow that raises a predefined recurring
+> invoice and then e-mails it.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 10.1 | Append-only, hash-chained `audit_log`; DB triggers reject UPDATE/DELETE; verify endpoint (ADR-009) | done | integration test proves UPDATE/DELETE fail; chain verifies under concurrency; tampering detected | `migrations/00008–00011`, `domain/audit.go`, `app/audit.go` |
+| 10.2 | Actor on every action (user, Scheduler, E-mail dispatcher); invoice "who did what" and audit trail; Audit log page | done | app test of the full trail with actors | `app/*`, `adapters/http/middleware.go`, `web/src/features/audit` |
+| 10.3 | Compact action buttons on invoice rows and page (send, PDF, paid, overdue, void) | done | web build; screenshots | `web/src/components/InvoiceActions.tsx` |
+| 10.4 | Dashboard: stat tiles, 12-month invoiced vs paid chart (validated palette), top debtors, upcoming, activity | done | web test; screenshot | `app/dashboard.go`, `web/src/features/dashboard` |
+| 10.5 | Recurring invoice workflow: raise, then e-mail immediately or N days later; timeline preview | done | app test: not sent before the delay, sent after | `migrations/00012`, `domain/schedule.go`, `Schedules.tsx` |
+
 ---
 
 ## Decisions
@@ -193,6 +208,7 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | No automatic e-mails for outstanding/overdue invoices by default | requested (M8); sending is an explicit action or an opted-in per-customer e-mail schedule (M9) |
 | 2026-10-15 | Disclaimer is not stored on the invoice; it is resolved at PDF render time | requested (M9): edits apply to every PDF produced afterwards, including re-renders of issued invoices |
 | 2026-10-15 | SMTP password stored in the DB, AES-256-GCM encrypted with a generated app_key secret | in-app setup requested (M9); the key never leaves the secrets volume |
+| 2026-10-15 | Audit trail append-only by DB triggers + SHA-256 hash chain (ADR-009) | "full audit trail that cannot be deleted"; triggers stop changes, the chain detects anything that bypasses them |
 | 2026-10-15 | Version from VERSION file, build = git commit count, stamped at build time | requested (M9): visible on login and in the sidebar |
 | 2026-10-15 | One deploy script, Compose for Docker, plain manifests for k3s/k8s (ADR-007) | requested; no Helm dependency |
 | 2026-10-15 | Every invoice archived as PDF, re-exported on change (ADR-008) | requested "all invoices exported to a volume" |

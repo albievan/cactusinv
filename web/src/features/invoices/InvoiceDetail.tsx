@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, idempotencyKey, unwrap } from '../../lib/api/client'
+import { api, idempotencyKey, unwrap, type InvoiceDetail } from '../../lib/api/client'
+import { InvoiceActions } from '../../components/InvoiceActions'
 import { formatDate, formatDateTime } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
@@ -13,7 +14,7 @@ export function InvoiceDetail() {
   const [actionError, setActionError] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
-  const [voidOpen, setVoidOpen] = useState(false)
+  const [notice, setNotice] = useState('')
 
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Invoice" back="/invoices"><ErrorBanner error={error} /></Page>
@@ -56,28 +57,21 @@ export function InvoiceDetail() {
         </dl>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-2 md:flex md:flex-wrap">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <InvoiceActions inv={inv} showLabels onChanged={(m) => { setActionError(null); setNotice(m); reload() }} onError={setActionError} />
         {inv.status === 'draft' && (
           <>
-            <Link to={`/invoices/${id}/edit`} className="btn-secondary">Edit</Link>
-            <button className="btn-primary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} })))}>Issue</button>
+            <Link to={`/invoices/${id}/edit`} className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50">Edit</Link>
+            <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} })))}>Issue</button>
+            <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50" disabled={busy} onClick={() => act(async () => { await unwrap(api.DELETE('/invoices/{id}', path)); nav('/invoices') })}>Delete draft</button>
           </>
         )}
-        {inv.status !== 'void' && <button className="btn-primary" disabled={busy} onClick={() => setSendOpen(true)}>{inv.status === 'draft' ? 'Issue & send' : 'Send'}</button>}
-        <a className="btn-secondary" href={`/api/v1/invoices/${id}/pdf`} target="_blank" rel="noreferrer">PDF</a>
-        {['issued', 'sent', 'overdue'].includes(inv.status) && (
-          <button className="btn-secondary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)))}>Mark paid</button>
-        )}
-        {(inv.status === 'issued' || inv.status === 'sent') && (
-          <button className="btn-secondary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)))}>Mark overdue</button>
-        )}
-        {['issued', 'sent', 'overdue'].includes(inv.status) && (
-          <button className="btn-danger" disabled={busy} onClick={() => setVoidOpen(true)}>Void</button>
-        )}
-        {inv.status === 'draft' && (
-          <button className="btn-danger" disabled={busy} onClick={() => act(async () => { await unwrap(api.DELETE('/invoices/{id}', path)); nav('/invoices') })}>Delete</button>
+        {inv.status !== 'void' && (
+          <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => setSendOpen(true)}>Send later / other address…</button>
         )}
       </div>
+      {notice && <div role="status" className="mb-4 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
+      <WhoDidWhat events={data.events} />
 
       <section className="card mb-4 p-0">
         <h2 className="p-4 pb-2 font-semibold">Lines</h2>
@@ -129,18 +123,25 @@ export function InvoiceDetail() {
       </section>
 
       <section className="card text-sm">
-        <h2 className="mb-2 font-semibold">History</h2>
-        <ol className="space-y-1">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Audit trail</h2>
+          <Link to={`/audit?entityType=invoice&entityId=${id}`} className="text-xs font-semibold text-brand-700 hover:underline">Open in audit log</Link>
+        </div>
+        <ol className="relative space-y-3 border-l border-cream-300 pl-4">
           {data.events.map((e, i) => (
-            <li key={i} className="flex justify-between gap-2"><span>{e.type.replace(/_/g, ' ')} {e.detail && <span className="text-slate-500">· {e.detail}</span>}</span><span className="text-slate-500">{formatDateTime(e.at)}</span></li>
+            <li key={i}>
+              <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-brand-500" />
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <span><span className="font-semibold text-brand-900">{actionLabel(e.action)}</span> by <span className="font-medium">{e.actor}</span></span>
+                <span className="text-xs text-slate-500">{formatDateTime(e.at)}</span>
+              </div>
+              {e.detail && <div className="text-xs text-slate-500">{e.detail}</div>}
+            </li>
           ))}
         </ol>
       </section>
 
       <SendSheet open={sendOpen} onClose={() => setSendOpen(false)} onSend={(body) => act(async () => { await unwrap(api.POST('/invoices/{id}/send', { ...path, body, params: { path: { id }, header: { 'Idempotency-Key': idempotencyKey() } } })); setSendOpen(false) })} busy={busy} />
-      <Sheet title="Void invoice" open={voidOpen} onClose={() => setVoidOpen(false)}>
-        <VoidForm onVoid={(reason) => act(async () => { await unwrap(api.POST('/invoices/{id}/void', { ...path, body: { reason } })); setVoidOpen(false) })} />
-      </Sheet>
     </Page>
   )
 }
@@ -181,13 +182,35 @@ function SendSheet({ open, onClose, onSend, busy }: { open: boolean; onClose: ()
   )
 }
 
-function VoidForm({ onVoid }: { onVoid: (reason: string) => void }) {
-  const [reason, setReason] = useState('')
+const actionLabels: Record<string, string> = {
+  'invoice.created': 'Created', 'invoice.updated': 'Edited', 'invoice.issued': 'Issued', 'invoice.email_queued': 'E-mail queued',
+  'invoice.email_sent': 'E-mailed', 'invoice.email_failed': 'E-mail failed', 'invoice.email_cancelled': 'E-mail cancelled',
+  'invoice.email_retried': 'E-mail retried', 'invoice.overdue': 'Marked overdue', 'invoice.paid': 'Marked paid',
+  'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed',
+}
+
+export function actionLabel(a: string): string {
+  return actionLabels[a] ?? a.replace(/^[a-z_]+\./, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+}
+
+/** WhoDidWhat summarises the key actions on an invoice and who performed them. */
+function WhoDidWhat({ events }: { events: InvoiceDetail['events'] }) {
+  const last = (action: string) => [...events].reverse().find((e) => e.action === action)
+  const rows: [string, ReturnType<typeof last>][] = [
+    ['Created', last('invoice.created')], ['Issued', last('invoice.issued')], ['E-mailed', last('invoice.email_queued')],
+    ['Marked overdue', last('invoice.overdue')], ['Paid', last('invoice.paid')], ['Voided', last('invoice.voided')],
+  ]
+  const shown = rows.filter(([, e]) => e)
+  if (shown.length === 0) return null
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-slate-500">The number stays used and scheduled e-mails are cancelled. This cannot be undone.</p>
-      <Field label="Reason">{(id) => <input id={id} className="input" value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
-      <button className="btn-danger w-full" disabled={!reason.trim()} onClick={() => onVoid(reason)}>Void invoice</button>
-    </div>
+    <dl className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {shown.map(([label, e]) => (
+        <div key={label} className="rounded-xl bg-white p-3 ring-1 ring-cream-300">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label} by</dt>
+          <dd className="truncate font-semibold text-brand-900" title={e!.actor}>{e!.actor}</dd>
+          <dd className="text-xs text-slate-500">{formatDateTime(e!.at)}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }

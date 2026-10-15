@@ -22,7 +22,10 @@ export function describe(r: Schemas['Recurrence']): string {
 }
 
 export function purposeLabel(s: Schedule): string {
-  if (s.kind !== 'email') return s.autoSend ? 'Recurring invoice, e-mailed' : 'Recurring invoice'
+  if (s.kind !== 'email') {
+    if (!s.autoSend) return 'Raises a recurring invoice'
+    return s.emailDelayDays > 0 ? `Raises a recurring invoice, e-mails it ${s.emailDelayDays} day${s.emailDelayDays === 1 ? '' : 's'} later` : 'Raises and e-mails a recurring invoice'
+  }
   return s.emailScope === 'statement' ? 'E-mails a statement' : s.emailScope === 'outstanding' ? 'E-mails outstanding invoices' : 'E-mails unsent invoices'
 }
 
@@ -102,7 +105,7 @@ const blankRecurrence: Schemas['Recurrence'] = { frequency: 'monthly', interval:
 type Purpose = 'invoice' | 'unsent' | 'outstanding' | 'statement'
 
 const purposes: { key: Purpose; title: string; hint: string }[] = [
-  { key: 'invoice', title: 'Issue a recurring invoice', hint: 'Creates a new invoice from the products below on every run.' },
+  { key: 'invoice', title: 'Recurring invoice: raise, then e-mail', hint: 'Raises a predefined invoice from the products below on every run, then e-mails it straight away or a few days later.' },
   { key: 'unsent', title: 'E-mail invoices not yet e-mailed', hint: "Sends each of the customer's issued invoices that has never been e-mailed." },
   { key: 'outstanding', title: 'E-mail all outstanding invoices', hint: 'Sends every unpaid invoice (issued, e-mailed or overdue) again.' },
   { key: 'statement', title: 'E-mail a statement', hint: 'Sends one statement of account listing everything unpaid, with aging.' },
@@ -117,7 +120,7 @@ export function ScheduleEditor() {
   const existing = useAsync(() => (id ? unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
   const [s, setS] = useState<Schedule>({
     customerId: params.get('customer') ?? '', name: '', kind: 'invoice', recurrence: blankRecurrence, lines: [], header: {}, notes: '',
-    autoSend: false, emailSubject: '', emailBody: '', version: 0,
+    autoSend: false, emailDelayDays: 0, emailSubject: '', emailBody: '', version: 0,
   })
   const [purpose, setPurpose] = useState<Purpose>(params.get('kind') === 'email' ? 'unsent' : 'invoice')
   const [lines, setLines] = useState<EditLine[]>([newLine()])
@@ -220,11 +223,63 @@ export function ScheduleEditor() {
             {preview.length ? preview.slice(0, 4).map(formatDateTime).join(' · ') : '—'}
           </div>
         </div>
+        {isInvoice && (
+          <h2 className="pt-1 text-lg font-semibold">Step 1 · Raise the invoice</h2>
+        )}
         {isInvoice && customer && <LineEditor lines={lines} onChange={setLines} currency={customer.currency} minorUnits={minor(customer.currency)} />}
+        {isInvoice && (
+          <section className="card space-y-4">
+            <h2 className="text-lg font-semibold">Step 2 · E-mail it</h2>
+            <div className="grid gap-2 md:grid-cols-3" role="radiogroup" aria-label="E-mail the raised invoice">
+              {[
+                { key: 'none', label: "Don't e-mail", hint: 'Raise only; send it yourself later.' },
+                { key: 'now', label: 'Immediately', hint: 'E-mail as soon as it is raised.' },
+                { key: 'later', label: 'Some days later', hint: 'E-mail a set number of days after raising.' },
+              ].map((o) => {
+                const mode = !s.autoSend ? 'none' : s.emailDelayDays > 0 ? 'later' : 'now'
+                return (
+                  <label key={o.key} className={`flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ${mode === o.key ? 'bg-brand-50 ring-brand-400' : 'ring-cream-300 hover:bg-cream-50'}`}>
+                    <input
+                      type="radio"
+                      name="emailmode"
+                      className="mt-1"
+                      checked={mode === o.key}
+                      onChange={() => set(o.key === 'none' ? { autoSend: false, emailDelayDays: 0 } : o.key === 'now' ? { autoSend: true, emailDelayDays: 0 } : { autoSend: true, emailDelayDays: Math.max(s.emailDelayDays, 2) })}
+                    />
+                    <span>
+                      <span className="block font-semibold text-brand-900">{o.label}</span>
+                      <span className="text-sm text-slate-600">{o.hint}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+            {s.autoSend && s.emailDelayDays > 0 && (
+              <Field label="Days after raising">
+                {(f) => <input id={f} type="number" min={1} max={90} inputMode="numeric" className="input md:w-40" value={s.emailDelayDays} onChange={(e) => set({ emailDelayDays: Math.min(90, Math.max(1, Number(e.target.value) || 1)) })} />}
+              </Field>
+            )}
+            {preview.length > 0 && (
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-brand-900">Timeline</h3>
+                <ol className="space-y-1 text-sm">
+                  {preview.slice(0, 3).map((t) => {
+                    const mail = new Date(new Date(t).getTime() + s.emailDelayDays * 86400000).toISOString()
+                    return (
+                      <li key={t} className="flex flex-wrap items-center gap-2">
+                        <span className="chip bg-brand-50 text-brand-800 ring-1 ring-brand-200">Raise</span> {formatDateTime(t)}
+                        {s.autoSend && <><span aria-hidden="true">→</span><span className="chip bg-cream-200 text-brand-900">E-mail</span> {formatDateTime(mail)}</>}
+                      </li>
+                    )
+                  })}
+                </ol>
+              </div>
+            )}
+          </section>
+        )}
         <div className="card space-y-4">
           {isInvoice && (
             <>
-              <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={s.autoSend} onChange={(e) => set({ autoSend: e.target.checked })} /> Also e-mail each new invoice to the customer</label>
               <Field label="VAT %" hint="Empty uses the business default VAT. 0 = no VAT.">{(f) => <input id={f} className="input" inputMode="decimal" placeholder="Business default" value={s.vatPercent ?? ''} onChange={(e) => set({ vatPercent: e.target.value === '' ? undefined : e.target.value })} />}</Field>
               <Field label="Invoice notes" hint="Optional. The disclaimer is added automatically.">{(f) => <textarea id={f} className="input" value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}</Field>
             </>

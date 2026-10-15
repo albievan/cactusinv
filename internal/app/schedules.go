@@ -61,7 +61,10 @@ func (s *Service) CreateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 			return err
 		}
 		sc.Activate(s.now())
-		return r.Schedules.Create(ctx, &sc)
+		if err := r.Schedules.Create(ctx, &sc); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "schedule.created", "schedule", sc.ID, sc.Name)
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.CreateSchedule", err)
@@ -87,7 +90,10 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 		if cur.Status != domain.SchedulePaused {
 			sc.Activate(s.now())
 		}
-		return r.Schedules.Update(ctx, &sc)
+		if err := r.Schedules.Update(ctx, &sc); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "schedule.updated", "schedule", sc.ID, sc.Name)
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.UpdateSchedule", err)
@@ -137,23 +143,32 @@ func (s *Service) checkSchedule(ctx context.Context, r ports.Repos, sc *domain.S
 
 // DeleteSchedule removes a schedule. Invoices it created are kept.
 func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
-	return wrap("app.DeleteSchedule", s.tx.Repos().Schedules.Delete(ctx, id))
+	return wrap("app.DeleteSchedule", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		sc, err := r.Schedules.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := r.Schedules.Delete(ctx, id); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "schedule.deleted", "schedule", id, sc.Name)
+	}))
 }
 
 // PauseSchedule stops a schedule.
 func (s *Service) PauseSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.PauseSchedule", id, func(sc *domain.Schedule) error { return sc.Pause(s.now()) })
+	return s.scheduleTransition(ctx, "app.PauseSchedule", "schedule.paused", id, func(sc *domain.Schedule) error { return sc.Pause(s.now()) })
 }
 
 // ResumeSchedule restarts a paused schedule from the next occurrence after now.
 func (s *Service) ResumeSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.ResumeSchedule", id, func(sc *domain.Schedule) error { return sc.Resume(s.now()) })
+	return s.scheduleTransition(ctx, "app.ResumeSchedule", "schedule.resumed", id, func(sc *domain.Schedule) error { return sc.Resume(s.now()) })
 }
 
 // RunScheduleNow makes the schedule's pending occurrence due immediately: the next
 // invoice is issued (and sent if auto-send) on the runner's next pass.
 func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.RunScheduleNow", id, func(sc *domain.Schedule) error {
+	return s.scheduleTransition(ctx, "app.RunScheduleNow", "schedule.run_now", id, func(sc *domain.Schedule) error {
 		if sc.Status != domain.ScheduleActive {
 			return domain.ErrInvalidTransition
 		}
@@ -162,7 +177,7 @@ func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleDetail
 	})
 }
 
-func (s *Service) scheduleTransition(ctx context.Context, op, id string, apply func(*domain.Schedule) error) (ScheduleDetail, error) {
+func (s *Service) scheduleTransition(ctx context.Context, op, action, id string, apply func(*domain.Schedule) error) (ScheduleDetail, error) {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		sc, err := r.Schedules.Get(ctx, id)
 		if err != nil {
@@ -171,7 +186,10 @@ func (s *Service) scheduleTransition(ctx context.Context, op, id string, apply f
 		if err := apply(sc); err != nil {
 			return err
 		}
-		return r.Schedules.Update(ctx, sc)
+		if err := r.Schedules.Update(ctx, sc); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, action, "schedule", sc.ID, sc.Name)
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap(op, err)
@@ -277,7 +295,7 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	}
 	if sc.AutoSend {
 		key := "schedule:" + sc.ID + ":" + period.String()
-		if _, err := s.enqueue(ctx, r, inv, SendInput{Subject: sc.EmailSubject, Body: sc.EmailBody, IdempotencyKey: key}); err != nil {
+		if _, err := s.enqueue(ctx, r, inv, SendInput{Subject: sc.EmailSubject, Body: sc.EmailBody, IdempotencyKey: key, SendAt: sc.EmailAt(s.now())}); err != nil {
 			return err
 		}
 	}
@@ -335,6 +353,9 @@ func (s *Service) recordScheduleFailure(ctx context.Context, id string, cause er
 			return err
 		}
 		sc.RecordFailure(cause.Error(), s.now())
-		return r.Schedules.Update(ctx, sc)
+		if err := r.Schedules.Update(ctx, sc); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "schedule.run_failed", "schedule", sc.ID, sc.LastError)
 	})
 }

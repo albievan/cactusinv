@@ -66,7 +66,7 @@ func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 
 // Migrate applies (or with down=true, rolls back all) embedded goose migrations.
 func Migrate(ctx context.Context, db *sql.DB, down bool) error {
-	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS)
+	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
 	}
@@ -77,6 +77,18 @@ func Migrate(ctx context.Context, db *sql.DB, down bool) error {
 	}
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
+	}
+	return nil
+}
+
+// MigrateTo applies migrations up to and including version (tests and recovery).
+func MigrateTo(ctx context.Context, db *sql.DB, version int64) error {
+	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
+	if err != nil {
+		return fmt.Errorf("mariadb.MigrateTo: %w", err)
+	}
+	if _, err := provider.UpTo(ctx, version); err != nil {
+		return fmt.Errorf("mariadb.MigrateTo: %w", err)
 	}
 	return nil
 }
@@ -133,7 +145,7 @@ func repos(db sqlcgen.DBTX) ports.Repos {
 		Business: businessRepo{q}, Currencies: currencyRepo{q}, Banks: bankRepo{q},
 		Customers: customerRepo{q}, Products: productRepo{q}, Invoices: invoiceRepo{q},
 		Sequences: sequenceRepo{q}, Schedules: scheduleRepo{q}, Emails: emailRepo{q},
-		Users: userRepo{q}, Sessions: sessionRepo{q}, Idempotency: idempotencyRepo{q}, SMTP: smtpRepo{q},
+		Users: userRepo{q}, Sessions: sessionRepo{q}, Idempotency: idempotencyRepo{q}, SMTP: smtpRepo{q}, Audit: auditRepo{q},
 	}
 }
 

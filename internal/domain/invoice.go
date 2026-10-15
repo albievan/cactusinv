@@ -355,12 +355,3 @@ func Disclaimer(c Customer, b BusinessProfile) string {
 	}
 	return strings.TrimSpace(b.DefaultNotes)
 }
-
-// InvoiceEvent is an audit-trail entry for an invoice.
-type InvoiceEvent struct {
-	ID        string
-	InvoiceID string
-	Type      string
-	Detail    string
-	At        time.Time
-}

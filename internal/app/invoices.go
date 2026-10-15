@@ -37,7 +37,7 @@ type InvoiceInput struct {
 // InvoiceDetail is an invoice with its audit trail and e-mails.
 type InvoiceDetail struct {
 	Invoice *domain.Invoice
-	Events  []domain.InvoiceEvent
+	Events  []domain.AuditEntry // oldest first, with who did what
 	Emails  []domain.EmailMessage
 }
 
@@ -61,7 +61,7 @@ func (s *Service) GetInvoice(ctx context.Context, id string) (InvoiceDetail, err
 	if err != nil {
 		return InvoiceDetail{}, wrap("app.GetInvoice", err)
 	}
-	events, err := r.Invoices.ListEvents(ctx, id)
+	events, err := r.Audit.ForEntity(ctx, "invoice", id)
 	if err != nil {
 		return InvoiceDetail{}, wrap("app.GetInvoice", err)
 	}
@@ -339,7 +339,11 @@ func (s *Service) DeleteInvoice(ctx context.Context, id string) error {
 		if !inv.CanDelete() {
 			return domain.ErrInvalidTransition
 		}
-		return r.Invoices.Delete(ctx, id)
+		if err := r.Invoices.Delete(ctx, id); err != nil {
+			return err
+		}
+		// The draft goes; its history stays in the audit trail.
+		return s.event(ctx, r, id, "deleted", "draft for "+inv.BillTo.Name)
 	}))
 }
 
@@ -353,6 +357,9 @@ func (s *Service) InvoicePDF(ctx context.Context, id string) ([]byte, string, er
 	}
 	pdf, err := s.renderer.RenderPDF(ctx, doc)
 	if err != nil {
+		return nil, "", wrap("app.InvoicePDF", err)
+	}
+	if err := s.auditNow(ctx, "invoice.pdf_viewed", "invoice", id, doc.Invoice.Number); err != nil {
 		return nil, "", wrap("app.InvoicePDF", err)
 	}
 	return pdf, PDFFilename(doc.Invoice), nil
@@ -482,5 +489,5 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	if m.SendAt.After(s.now()) {
 		detail = "scheduled for " + m.SendAt.Format("2006-01-02 15:04 MST")
 	}
-	return m, s.event(ctx, r, inv.ID, "email_queued", detail)
+	return m, s.event(ctx, r, inv.ID, "email_queued", detail+" to "+strings.Join(to, ", "))
 }

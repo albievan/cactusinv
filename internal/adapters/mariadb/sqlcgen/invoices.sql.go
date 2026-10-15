@@ -242,29 +242,6 @@ func (q *Queries) InsertInvoice(ctx context.Context, arg InsertInvoiceParams) er
 	return err
 }
 
-const insertInvoiceEvent = `-- name: InsertInvoiceEvent :exec
-INSERT INTO invoice_events (id, invoice_id, type, detail, at) VALUES (?, ?, ?, ?, ?)
-`
-
-type InsertInvoiceEventParams struct {
-	ID        string
-	InvoiceID string
-	Type      string
-	Detail    string
-	At        time.Time
-}
-
-func (q *Queries) InsertInvoiceEvent(ctx context.Context, arg InsertInvoiceEventParams) error {
-	_, err := q.db.ExecContext(ctx, insertInvoiceEvent,
-		arg.ID,
-		arg.InvoiceID,
-		arg.Type,
-		arg.Detail,
-		arg.At,
-	)
-	return err
-}
-
 const insertInvoiceLine = `-- name: InsertInvoiceLine :exec
 INSERT INTO invoice_lines (invoice_id, position, product_id, description, quantity_milli, unit_price_minor,
     discount_bp, amount_minor)
@@ -335,39 +312,6 @@ func (q *Queries) InvoiceTotals(ctx context.Context, arg InvoiceTotalsParams) ([
 			&i.Outstanding,
 			&i.OverdueCount,
 			&i.Overdue,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listInvoiceEvents = `-- name: ListInvoiceEvents :many
-SELECT id, invoice_id, type, detail, at FROM invoice_events WHERE invoice_id = ? ORDER BY at, id
-`
-
-func (q *Queries) ListInvoiceEvents(ctx context.Context, invoiceID string) ([]InvoiceEvent, error) {
-	rows, err := q.db.QueryContext(ctx, listInvoiceEvents, invoiceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []InvoiceEvent{}
-	for rows.Next() {
-		var i InvoiceEvent
-		if err := rows.Scan(
-			&i.ID,
-			&i.InvoiceID,
-			&i.Type,
-			&i.Detail,
-			&i.At,
 		); err != nil {
 			return nil, err
 		}
@@ -567,6 +511,141 @@ type MarkInvoiceExportedParams struct {
 func (q *Queries) MarkInvoiceExported(ctx context.Context, arg MarkInvoiceExportedParams) error {
 	_, err := q.db.ExecContext(ctx, markInvoiceExported, arg.ExportedVersion, arg.ID)
 	return err
+}
+
+const monthlyInvoiced = `-- name: MonthlyInvoiced :many
+SELECT currency_code, CAST(DATE_FORMAT(issue_date, '%Y-%m') AS CHAR(7)) AS month,
+       CAST(SUM(total_minor) AS SIGNED) AS total, CAST(COUNT(*) AS SIGNED) AS count
+FROM invoices
+WHERE status IN ('issued', 'sent', 'overdue', 'paid') AND issue_date >= ?
+GROUP BY currency_code, month
+ORDER BY month, currency_code
+`
+
+type MonthlyInvoicedRow struct {
+	CurrencyCode string
+	Month        interface{}
+	Total        int64
+	Count        int64
+}
+
+func (q *Queries) MonthlyInvoiced(ctx context.Context, since sql.NullTime) ([]MonthlyInvoicedRow, error) {
+	rows, err := q.db.QueryContext(ctx, monthlyInvoiced, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MonthlyInvoicedRow{}
+	for rows.Next() {
+		var i MonthlyInvoicedRow
+		if err := rows.Scan(
+			&i.CurrencyCode,
+			&i.Month,
+			&i.Total,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const monthlyPaid = `-- name: MonthlyPaid :many
+SELECT currency_code, CAST(DATE_FORMAT(paid_at, '%Y-%m') AS CHAR(7)) AS month,
+       CAST(SUM(total_minor) AS SIGNED) AS total, CAST(COUNT(*) AS SIGNED) AS count
+FROM invoices
+WHERE status = 'paid' AND paid_at >= ?
+GROUP BY currency_code, month
+ORDER BY month, currency_code
+`
+
+type MonthlyPaidRow struct {
+	CurrencyCode string
+	Month        interface{}
+	Total        int64
+	Count        int64
+}
+
+func (q *Queries) MonthlyPaid(ctx context.Context, since sql.NullTime) ([]MonthlyPaidRow, error) {
+	rows, err := q.db.QueryContext(ctx, monthlyPaid, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MonthlyPaidRow{}
+	for rows.Next() {
+		var i MonthlyPaidRow
+		if err := rows.Scan(
+			&i.CurrencyCode,
+			&i.Month,
+			&i.Total,
+			&i.Count,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topDebtors = `-- name: TopDebtors :many
+SELECT i.customer_id, c.name, i.currency_code,
+       CAST(SUM(i.total_minor) AS SIGNED) AS outstanding, CAST(COUNT(*) AS SIGNED) AS open_count
+FROM invoices i JOIN customers c ON c.id = i.customer_id
+WHERE i.status IN ('issued', 'sent', 'overdue')
+GROUP BY i.customer_id, c.name, i.currency_code
+ORDER BY outstanding DESC
+LIMIT ?
+`
+
+type TopDebtorsRow struct {
+	CustomerID   string
+	Name         string
+	CurrencyCode string
+	Outstanding  int64
+	OpenCount    int64
+}
+
+func (q *Queries) TopDebtors(ctx context.Context, limit int32) ([]TopDebtorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topDebtors, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TopDebtorsRow{}
+	for rows.Next() {
+		var i TopDebtorsRow
+		if err := rows.Scan(
+			&i.CustomerID,
+			&i.Name,
+			&i.CurrencyCode,
+			&i.Outstanding,
+			&i.OpenCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateInvoice = `-- name: UpdateInvoice :execrows

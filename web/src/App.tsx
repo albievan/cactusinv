@@ -4,6 +4,7 @@ import { Layout } from './components/Layout'
 import { CustomerEditor, CustomerList } from './features/customers/Customers'
 import { Dashboard } from './features/dashboard/Dashboard'
 import { Outbox } from './features/emails/Outbox'
+import { AuditLog } from './features/audit/AuditLog'
 import { InvoiceDetail } from './features/invoices/InvoiceDetail'
 import { InvoiceEditor } from './features/invoices/InvoiceEditor'
 import { InvoiceList } from './features/invoices/InvoiceList'
@@ -31,6 +32,7 @@ export function AppRoutes() {
         <Route path="schedules/:id" element={<ScheduleDetailPage />} />
         <Route path="schedules/:id/edit" element={<ScheduleEditor />} />
         <Route path="emails" element={<Outbox />} />
+        <Route path="audit" element={<AuditLog />} />
         <Route path="more" element={<More />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />

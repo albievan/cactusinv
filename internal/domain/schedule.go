@@ -81,6 +81,7 @@ type Schedule struct {
 	Notes          string       // empty → customer default notes
 	TaxRate        *BasisPoints // nil → the business default VAT at run time
 	AutoSend       bool
+	EmailDelayDays int    // invoice schedules: e-mail this many days after raising (0 = immediately)
 	EmailSubject   string // empty → business default
 	EmailBody      string // empty → business default
 	NextOccurrence time.Time
@@ -140,6 +141,12 @@ func (s *Schedule) Validate() error {
 			return err
 		}
 	}
+	if s.EmailDelayDays < 0 || s.EmailDelayDays > 90 {
+		return invalid("emailDelayDays", "must be between 0 and 90 days")
+	}
+	if s.Kind == ScheduleEmail {
+		s.EmailDelayDays = 0
+	}
 	if s.TaxRate != nil && (*s.TaxRate < 0 || *s.TaxRate > 10000) {
 		return invalid("vatPercent", "must be between 0 and 100 percent")
 	}
@@ -184,6 +191,11 @@ func (s *Schedule) Resume(now time.Time) error {
 	}
 	s.Activate(now)
 	return nil
+}
+
+// EmailAt is when an invoice raised at raisedAt is e-mailed: EmailDelayDays later.
+func (s *Schedule) EmailAt(raisedAt time.Time) time.Time {
+	return raisedAt.AddDate(0, 0, s.EmailDelayDays)
 }
 
 // IsDue reports whether the runner should process the schedule at now.

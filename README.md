@@ -30,6 +30,12 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button; the password is stored encrypted.
 - **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced.
+- **Audit trail** — every change and sign-in with who did it; append-only (the database
+  refuses edits and deletes) and hash-chained, with a one-click integrity check.
+- **Dashboard** — outstanding and overdue per currency, invoiced vs paid over 12 months, who
+  owes the most, what is scheduled next and recent activity.
+- **Recurring invoice workflows** — raise a predefined invoice on a schedule, then e-mail it
+  straight away or a set number of days later.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Scheduled database backups** — daily (configurable), compressed, pruned; one-command restore.

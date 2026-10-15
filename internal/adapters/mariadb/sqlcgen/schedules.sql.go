@@ -13,7 +13,7 @@ import (
 )
 
 const claimDueSchedules = `-- name: ClaimDueSchedules :many
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope FROM schedules
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules
 WHERE status = 'active' AND next_run_at <= ?
 ORDER BY next_run_at
 LIMIT ?
@@ -67,6 +67,7 @@ func (q *Queries) ClaimDueSchedules(ctx context.Context, arg ClaimDueSchedulesPa
 			&i.TaxRateBp,
 			&i.Kind,
 			&i.EmailScope,
+			&i.EmailDelayDays,
 		); err != nil {
 			return nil, err
 		}
@@ -126,7 +127,7 @@ func (q *Queries) DeleteScheduleLines(ctx context.Context, scheduleID string) er
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope FROM schedules WHERE id = ?
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules WHERE id = ?
 `
 
 func (q *Queries) GetSchedule(ctx context.Context, id string) (Schedule, error) {
@@ -165,16 +166,17 @@ func (q *Queries) GetSchedule(ctx context.Context, id string) (Schedule, error) 
 		&i.TaxRateBp,
 		&i.Kind,
 		&i.EmailScope,
+		&i.EmailDelayDays,
 	)
 	return i, err
 }
 
 const insertSchedule = `-- name: InsertSchedule :exec
-INSERT INTO schedules (id, customer_id, name, kind, email_scope, status, frequency, interval_count, day_of_month, weekday, send_hour,
+INSERT INTO schedules (id, customer_id, name, kind, email_scope, email_delay_days, status, frequency, interval_count, day_of_month, weekday, send_hour,
     send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes,
     tax_rate_bp, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count,
     last_error, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 `
 
 type InsertScheduleParams struct {
@@ -183,6 +185,7 @@ type InsertScheduleParams struct {
 	Name           string
 	Kind           string
 	EmailScope     string
+	EmailDelayDays int32
 	Status         string
 	Frequency      string
 	IntervalCount  int32
@@ -218,6 +221,7 @@ func (q *Queries) InsertSchedule(ctx context.Context, arg InsertScheduleParams) 
 		arg.Name,
 		arg.Kind,
 		arg.EmailScope,
+		arg.EmailDelayDays,
 		arg.Status,
 		arg.Frequency,
 		arg.IntervalCount,
@@ -381,7 +385,7 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 }
 
 const listSchedules = `-- name: ListSchedules :many
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope FROM schedules
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules
 WHERE (? = '' OR customer_id = ?)
   AND (? = '' OR status = ?)
 ORDER BY name, id
@@ -444,6 +448,7 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 			&i.TaxRateBp,
 			&i.Kind,
 			&i.EmailScope,
+			&i.EmailDelayDays,
 		); err != nil {
 			return nil, err
 		}
@@ -459,7 +464,7 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 }
 
 const updateSchedule = `-- name: UpdateSchedule :execrows
-UPDATE schedules SET customer_id = ?, name = ?, kind = ?, email_scope = ?, status = ?, frequency = ?, interval_count = ?, day_of_month = ?,
+UPDATE schedules SET customer_id = ?, name = ?, kind = ?, email_scope = ?, email_delay_days = ?, status = ?, frequency = ?, interval_count = ?, day_of_month = ?,
     weekday = ?, send_hour = ?, send_minute = ?, time_zone = ?, start_date = ?, end_date = ?, sales_person = ?,
     job = ?, shipping_method = ?, shipping_terms = ?, notes = ?, tax_rate_bp = ?, auto_send = ?, email_subject = ?,
     email_body = ?, next_occurrence = ?, next_run_at = ?, last_run_at = ?, failure_count = ?, last_error = ?,
@@ -472,6 +477,7 @@ type UpdateScheduleParams struct {
 	Name           string
 	Kind           string
 	EmailScope     string
+	EmailDelayDays int32
 	Status         string
 	Frequency      string
 	IntervalCount  int32
@@ -507,6 +513,7 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		arg.Name,
 		arg.Kind,
 		arg.EmailScope,
+		arg.EmailDelayDays,
 		arg.Status,
 		arg.Frequency,
 		arg.IntervalCount,

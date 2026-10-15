@@ -3,6 +3,8 @@ package mariadb
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
 	"github.com/albievan/cactusinv/internal/domain"
@@ -153,24 +155,6 @@ func (r invoiceRepo) Delete(ctx context.Context, id string) error {
 	return affected(n, err, domain.ErrNotFound)
 }
 
-func (r invoiceRepo) AddEvent(ctx context.Context, ev domain.InvoiceEvent) error {
-	return mapErr(r.q.InsertInvoiceEvent(ctx, sqlcgen.InsertInvoiceEventParams{
-		ID: ev.ID, InvoiceID: ev.InvoiceID, Type: ev.Type, Detail: truncate(ev.Detail, 1000), At: ev.At.UTC(),
-	}))
-}
-
-func (r invoiceRepo) ListEvents(ctx context.Context, invoiceID string) ([]domain.InvoiceEvent, error) {
-	rows, err := r.q.ListInvoiceEvents(ctx, invoiceID)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	out := make([]domain.InvoiceEvent, len(rows))
-	for i, e := range rows {
-		out[i] = domain.InvoiceEvent{ID: e.ID, InvoiceID: e.InvoiceID, Type: e.Type, Detail: e.Detail, At: e.At.UTC()}
-	}
-	return out, nil
-}
-
 func (r invoiceRepo) Totals(ctx context.Context, today domain.Date) ([]ports.CurrencyTotals, error) {
 	rows, err := r.q.InvoiceTotals(ctx, sqlcgen.InvoiceTotalsParams{Today: nullDate(today)})
 	if err != nil {
@@ -209,9 +193,44 @@ func (r invoiceRepo) MarkExported(ctx context.Context, id string, version int) e
 	}))
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+	inv, err := r.q.MonthlyInvoiced(ctx, nullDate(since))
+	if err != nil {
+		return nil, nil, mapErr(err)
 	}
-	return s[:n]
+	paid, err := r.q.MonthlyPaid(ctx, nullTime(since.Time(time.UTC)))
+	if err != nil {
+		return nil, nil, mapErr(err)
+	}
+	var a, b []ports.MonthTotal
+	for _, x := range inv {
+		a = append(a, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
+	}
+	for _, x := range paid {
+		b = append(b, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
+	}
+	return a, b, nil
+}
+
+func monthString(v any) string {
+	switch m := v.(type) {
+	case []byte:
+		return string(m)
+	case string:
+		return m
+	default:
+		return fmt.Sprint(m)
+	}
+}
+
+func (r invoiceRepo) TopDebtors(ctx context.Context, limit int) ([]ports.Debtor, error) {
+	rows, err := r.q.TopDebtors(ctx, i32(limit))
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]ports.Debtor, len(rows))
+	for i, x := range rows {
+		out[i] = ports.Debtor{CustomerID: x.CustomerID, Name: x.Name, Currency: domain.CurrencyCode(x.CurrencyCode), Outstanding: x.Outstanding, OpenCount: int(x.OpenCount)}
+	}
+	return out, nil
 }

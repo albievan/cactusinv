@@ -92,7 +92,7 @@ func (r *Runner) Run(ctx context.Context) {
 
 // Schedules runs one schedule pass.
 func (r *Runner) Schedules(ctx context.Context) {
-	res, err := r.svc.RunDueSchedules(ctx, 50)
+	res, err := r.svc.RunDueSchedules(app.WithActor(ctx, app.ActorScheduler), 50)
 	r.runs.WithLabelValues("issued").Add(float64(res.Issued))
 	r.runs.WithLabelValues("failed").Add(float64(res.Failed))
 	if err != nil {
@@ -102,7 +102,7 @@ func (r *Runner) Schedules(ctx context.Context) {
 
 // Emails runs one dispatcher pass and refreshes the outbox gauges.
 func (r *Runner) Emails(ctx context.Context) {
-	res, err := r.svc.DispatchEmails(ctx, 50)
+	res, err := r.svc.DispatchEmails(app.WithActor(ctx, app.ActorDispatcher), 50)
 	r.sent.WithLabelValues("sent").Add(float64(res.Sent))
 	r.sent.WithLabelValues("failed").Add(float64(res.Failed))
 	if err != nil {
@@ -120,7 +120,7 @@ func (r *Runner) Emails(ctx context.Context) {
 
 // Export runs one invoice-archive pass.
 func (r *Runner) Export(ctx context.Context) {
-	res, err := r.svc.ExportInvoices(ctx, 100)
+	res, err := r.svc.ExportInvoices(app.WithActor(ctx, app.ActorExporter), 100)
 	r.exported.WithLabelValues("ok").Add(float64(res.Exported))
 	r.exported.WithLabelValues("failed").Add(float64(res.Failed))
 	if err != nil {

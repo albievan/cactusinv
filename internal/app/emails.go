@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
@@ -40,7 +41,7 @@ func (s *Service) emailTransition(ctx context.Context, op, id, event string, app
 		}
 		out = m
 		if m.InvoiceID == "" {
-			return nil
+			return s.audit(ctx, r, "customer.statement_"+strings.TrimPrefix(event, "email_"), "customer", m.CustomerID, m.Subject)
 		}
 		return s.event(ctx, r, m.InvoiceID, event, "")
 	})
@@ -140,7 +141,7 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
 				return err
 			}
 		}
-		return s.event(ctx, r, m.InvoiceID, "email_sent", m.ID)
+		return s.event(ctx, r, m.InvoiceID, "email_sent", "to "+strings.Join(m.To, ", "))
 	})
 }
 

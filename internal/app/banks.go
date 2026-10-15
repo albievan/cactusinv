@@ -42,7 +42,10 @@ func (s *Service) CreateBankAccount(ctx context.Context, b domain.BankAccount) (
 				return err
 			}
 		}
-		return r.Banks.Create(ctx, b)
+		if err := r.Banks.Create(ctx, b); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "bank_account.created", "bank_account", b.ID, b.Label+" ("+string(b.Currency)+")")
 	})
 	if err != nil {
 		return domain.BankAccount{}, wrap("app.CreateBankAccount", err)
@@ -69,7 +72,10 @@ func (s *Service) UpdateBankAccount(ctx context.Context, b domain.BankAccount) (
 				return err
 			}
 		}
-		return r.Banks.Update(ctx, b)
+		if err := r.Banks.Update(ctx, b); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "bank_account.updated", "bank_account", b.ID, b.Label+" ("+string(b.Currency)+")")
 	})
 	if err != nil {
 		return domain.BankAccount{}, wrap("app.UpdateBankAccount", err)
@@ -80,7 +86,16 @@ func (s *Service) UpdateBankAccount(ctx context.Context, b domain.BankAccount) (
 // DeleteBankAccount removes an account no customer overrides to. Issued invoices keep
 // their snapshot of the details.
 func (s *Service) DeleteBankAccount(ctx context.Context, id string) error {
-	return wrap("app.DeleteBankAccount", s.tx.Repos().Banks.Delete(ctx, id))
+	return wrap("app.DeleteBankAccount", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		b, err := r.Banks.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := r.Banks.Delete(ctx, id); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "bank_account.deleted", "bank_account", id, b.Label+" ("+string(b.Currency)+")")
+	}))
 }
 
 func hasDefault(accounts []domain.BankAccount) bool {

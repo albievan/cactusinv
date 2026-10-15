@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+type AuditHead struct {
+	ID       int8
+	LastHash string
+}
+
+type AuditLog struct {
+	Seq        int64
+	At         time.Time
+	ActorID    string
+	ActorName  string
+	Action     string
+	EntityType string
+	EntityID   string
+	Summary    string
+	PrevHash   string
+	Hash       string
+}
+
 type BankAccount struct {
 	ID            string
 	CurrencyCode  string
@@ -151,14 +169,6 @@ type Invoice struct {
 	BankCountry       string
 }
 
-type InvoiceEvent struct {
-	ID        string
-	InvoiceID string
-	Type      string
-	Detail    string
-	At        time.Time
-}
-
 type InvoiceLine struct {
 	InvoiceID      string
 	Position       int32
@@ -224,6 +234,7 @@ type Schedule struct {
 	TaxRateBp      sql.NullInt32
 	Kind           string
 	EmailScope     string
+	EmailDelayDays int32
 }
 
 type ScheduleLine struct {

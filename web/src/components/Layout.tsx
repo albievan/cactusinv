@@ -4,21 +4,22 @@ import { useVersion } from '../lib/version'
 import { useAuth } from './auth'
 import { CactusMark } from './Logo'
 import {
-  IconBox, IconCalendar, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
+  IconBox, IconCalendar, IconShield, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
 } from './icons'
 
 export const nav = [
-  { to: '/', label: 'Home', icon: IconHome, end: true },
+  { to: '/', label: 'Dashboard', icon: IconHome, end: true },
   { to: '/invoices', label: 'Invoices', icon: IconInvoice },
   { to: '/customers', label: 'Customers', icon: IconUsers },
   { to: '/schedules', label: 'Schedules', icon: IconCalendar },
   { to: '/products', label: 'Products', icon: IconBox },
   { to: '/emails', label: 'Outbox', icon: IconMail },
+  { to: '/audit', label: 'Audit log', icon: IconShield },
   { to: '/settings', label: 'Settings', icon: IconSettings },
 ]
 
 const mobileTabs = [
-  { to: '/', label: 'Home', icon: IconHome, end: true },
+  { to: '/', label: 'Dashboard', icon: IconHome, end: true },
   { to: '/invoices', label: 'Invoices', icon: IconInvoice },
   { to: '/customers', label: 'Customers', icon: IconUsers },
   { to: '/schedules', label: 'Schedules', icon: IconCalendar },

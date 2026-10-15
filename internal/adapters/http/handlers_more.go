@@ -7,6 +7,7 @@ import (
 
 	"github.com/albievan/cactusinv/internal/app"
 	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // ---- version ----
@@ -120,4 +121,32 @@ func (h *handlers) SendStatement(ctx context.Context, req SendStatementRequestOb
 		return nil, err
 	}
 	return SendStatement202JSONResponse(toAPIEmail(*m)), nil
+}
+
+// ---- audit ----
+
+func (h *handlers) ListAudit(ctx context.Context, req ListAuditRequestObject) (ListAuditResponseObject, error) {
+	p := req.Params
+	entries, total, err := h.svc.ListAudit(ctx, ports.AuditFilter{
+		EntityType: p.EntityType, EntityID: p.EntityId, Actor: p.Actor, Action: p.Action, Page: page(p.Limit, p.Offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := ListAudit200JSONResponse{Items: make([]AuditEntry, len(entries)), Total: total}
+	for i, e := range entries {
+		out.Items[i] = AuditEntry{
+			Seq: e.Seq, At: e.At.UTC(), ActorId: e.ActorID, Actor: e.ActorName, Action: e.Action,
+			EntityType: e.EntityType, EntityId: e.EntityID, Summary: e.Summary, Hash: e.Hash,
+		}
+	}
+	return out, nil
+}
+
+func (h *handlers) VerifyAudit(ctx context.Context, _ VerifyAuditRequestObject) (VerifyAuditResponseObject, error) {
+	v, err := h.svc.VerifyAudit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return VerifyAudit200JSONResponse{Ok: v.OK, Entries: v.Entries, BrokenAt: v.BrokenAt, Reason: v.Reason}, nil
 }

@@ -275,6 +275,19 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 
 	var detail httpapi.InvoiceDetail
 	c.ok(c.do("GET", "/api/v1/invoices/"+inv.Id, nil, &detail), 200, "detail")
+	if detail.Events[0].Actor != "albie@example.com" || detail.Events[0].Action != "invoice.created" {
+		t.Fatalf("events carry the actor: %+v", detail.Events[0])
+	}
+	var audit httpapi.AuditList
+	c.ok(c.do("GET", "/api/v1/audit?entityType=invoice&limit=5", nil, &audit), 200, "audit list")
+	if audit.Total == 0 || audit.Items[0].Hash == "" {
+		t.Fatalf("audit = %+v", audit)
+	}
+	var verify httpapi.AuditVerification
+	c.ok(c.do("GET", "/api/v1/audit/verify", nil, &verify), 200, "audit verify")
+	if !verify.Ok {
+		t.Fatalf("verify = %+v", verify)
+	}
 	if detail.Invoice.Status != "sent" || detail.Invoice.Stage != "emailed" || len(detail.Events) == 0 || len(detail.Emails) != 2 {
 		t.Fatalf("detail = %+v", detail.Invoice.Status)
 	}

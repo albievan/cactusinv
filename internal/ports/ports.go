@@ -43,6 +43,30 @@ type Repos struct {
 	Sessions    SessionRepository
 	Idempotency IdempotencyRepository
 	SMTP        SMTPRepository
+	Audit       AuditRepository
+}
+
+// AuditFilter narrows the audit trail.
+type AuditFilter struct {
+	EntityType string
+	EntityID   string
+	Actor      string // substring of the actor name
+	Action     string // prefix, e.g. "invoice."
+	Page       Page
+}
+
+// AuditRepository is the append-only audit trail. There is deliberately no update or
+// delete: the database rejects both.
+type AuditRepository interface {
+	// Append seals e onto the end of the hash chain (setting Seq, PrevHash, Hash). Call
+	// inside the transaction of the change being audited.
+	Append(ctx context.Context, e *domain.AuditEntry) error
+	// List returns entries newest first, plus the total count.
+	List(ctx context.Context, f AuditFilter) ([]domain.AuditEntry, int, error)
+	// ForEntity returns one entity's entries, oldest first.
+	ForEntity(ctx context.Context, entityType, entityID string) ([]domain.AuditEntry, error)
+	// Chain returns up to limit entries with Seq > after, oldest first (for verification).
+	Chain(ctx context.Context, after int64, limit int) ([]domain.AuditEntry, error)
 }
 
 // SMTPRepository stores the single SMTP settings row; the password is ciphertext.
@@ -168,15 +192,35 @@ type InvoiceRepository interface {
 	// Update saves inv if inv.Version matches, then increments inv.Version.
 	Update(ctx context.Context, inv *domain.Invoice) error
 	Delete(ctx context.Context, id string) error
-	AddEvent(ctx context.Context, ev domain.InvoiceEvent) error
-	ListEvents(ctx context.Context, invoiceID string) ([]domain.InvoiceEvent, error)
 	Totals(ctx context.Context, today domain.Date) ([]CurrencyTotals, error)
 	// CountForCustomer counts invoices of any status for a customer.
 	CountForCustomer(ctx context.Context, customerID string) (int, error)
+	// Monthly sums invoiced (by issue month) and paid (by payment month) amounts per
+	// currency since the given date.
+	Monthly(ctx context.Context, since domain.Date) (invoiced, paid []MonthTotal, err error)
+	// TopDebtors returns the customers owing the most (per currency), largest first.
+	TopDebtors(ctx context.Context, limit int) ([]Debtor, error)
 	// ListUnexported returns issued invoices whose current version is not yet archived.
 	ListUnexported(ctx context.Context, limit int) ([]ExportRef, error)
 	// MarkExported records that version of the invoice was archived (no version bump).
 	MarkExported(ctx context.Context, id string, version int) error
+}
+
+// MonthTotal is one currency's total for one month ("2026-10").
+type MonthTotal struct {
+	Currency domain.CurrencyCode
+	Month    string
+	Total    int64
+	Count    int
+}
+
+// Debtor is a customer's outstanding balance in one currency.
+type Debtor struct {
+	CustomerID  string
+	Name        string
+	Currency    domain.CurrencyCode
+	Outstanding int64
+	OpenCount   int
 }
 
 // ExportRef identifies one invoice version to archive.

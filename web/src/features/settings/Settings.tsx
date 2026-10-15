@@ -15,6 +15,7 @@ export function More() {
     { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency' },
     { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails' },
     { to: '/settings', label: 'Settings', hint: 'Business, e-mail server, currencies and bank accounts' },
+    { to: '/audit', label: 'Audit log', hint: 'Who did what, when — permanent and tamper-evident' },
   ]
   return (
     <Page title="More">

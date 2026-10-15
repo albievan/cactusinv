@@ -630,6 +630,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The append-only audit trail, newest first. There are no write endpoints. */
+        get: operations["listAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Recomputes the hash chain over every entry and reports whether anything was changed or removed. */
+        get: operations["verifyAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard": {
         parameters: {
             query?: never;
@@ -939,10 +973,37 @@ export interface components {
             version: number;
         };
         InvoiceEvent: {
-            type: string;
-            detail?: string;
+            /** @example invoice.voided */
+            action: string;
+            /** @description Who did it — a user */
+            actor: string;
+            detail: string;
             /** Format: date-time */
             at: string;
+        };
+        AuditEntry: {
+            /** Format: int64 */
+            seq: number;
+            /** Format: date-time */
+            at: string;
+            actorId: string;
+            actor: string;
+            action: string;
+            entityType: string;
+            entityId: string;
+            summary: string;
+            hash: string;
+        };
+        AuditList: {
+            items: components["schemas"]["AuditEntry"][];
+            total: number;
+        };
+        AuditVerification: {
+            ok: boolean;
+            entries: number;
+            /** Format: int64 */
+            brokenAt?: number;
+            reason?: string;
         };
         InvoiceDetail: {
             invoice: components["schemas"]["Invoice"];
@@ -1050,6 +1111,8 @@ export interface components {
             vatPercent?: string;
             /** @description E-mail each invoice automatically. Off unless chosen. */
             autoSend: boolean;
+            /** @description Invoice schedules with autoSend — e-mail the raised invoice this many days later (0 = immediately). */
+            emailDelayDays: number;
             emailSubject: string;
             emailBody: string;
             /** Format: date-time */
@@ -1086,7 +1149,26 @@ export interface components {
             overdueCount: number;
             overdue: components["schemas"]["Decimal"];
         };
+        Debtor: {
+            customerId: string;
+            name: string;
+            currency: string;
+            outstanding: components["schemas"]["Decimal"];
+            openCount: number;
+        };
+        MonthTotal: {
+            currency: string;
+            month: string;
+            total: components["schemas"]["Decimal"];
+            count: number;
+        };
         Dashboard: {
+            /** @description Last 12 months, oldest first ("2026-10"). */
+            months: string[];
+            invoiced: components["schemas"]["MonthTotal"][];
+            paid: components["schemas"]["MonthTotal"][];
+            topDebtors: components["schemas"]["Debtor"][];
+            activity: components["schemas"]["AuditEntry"][];
             /** Format: date */
             today: string;
             totals: components["schemas"]["CurrencyTotal"][];
@@ -2417,6 +2499,55 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmailMessage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listAudit: {
+        parameters: {
+            query?: {
+                entityType?: string;
+                entityId?: string;
+                actor?: string;
+                action?: string;
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit entries. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifyAudit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verification result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditVerification"];
                 };
             };
             default: components["responses"]["Problem"];

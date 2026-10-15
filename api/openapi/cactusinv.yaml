@@ -27,6 +27,7 @@ tags:
   - name: schedules
   - name: emails
   - name: dashboard
+  - name: audit
 
 paths:
   /auth/login:
@@ -786,6 +787,37 @@ paths:
               schema: { $ref: '#/components/schemas/EmailMessage' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /audit:
+    get:
+      tags: [audit]
+      operationId: listAudit
+      description: The append-only audit trail, newest first. There are no write endpoints.
+      parameters:
+        - { name: entityType, in: query, schema: { type: string } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { name: actor, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: Audit entries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditList' }
+        default: { $ref: '#/components/responses/Problem' }
+  /audit/verify:
+    get:
+      tags: [audit]
+      operationId: verifyAudit
+      description: Recomputes the hash chain over every entry and reports whether anything was changed or removed.
+      responses:
+        '200':
+          description: Verification result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditVerification' }
+        default: { $ref: '#/components/responses/Problem' }
   /dashboard:
     get:
       tags: [dashboard]
@@ -1172,11 +1204,39 @@ components:
         version: { type: integer }
     InvoiceEvent:
       type: object
-      required: [type, at]
+      required: [action, actor, detail, at]
       properties:
-        type: { type: string }
+        action: { type: string, example: invoice.voided }
+        actor: { type: string, description: Who did it — a user, or Scheduler / E-mail dispatcher. }
         detail: { type: string }
         at: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      required: [seq, at, actorId, actor, action, entityType, entityId, summary, hash]
+      properties:
+        seq: { type: integer, format: int64 }
+        at: { type: string, format: date-time }
+        actorId: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        summary: { type: string }
+        hash: { type: string }
+    AuditList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
+        total: { type: integer }
+    AuditVerification:
+      type: object
+      required: [ok, entries]
+      properties:
+        ok: { type: boolean }
+        entries: { type: integer }
+        brokenAt: { type: integer, format: int64 }
+        reason: { type: string }
     InvoiceDetail:
       type: object
       required: [invoice, events, emails]
@@ -1268,7 +1328,7 @@ components:
         discountPercent: { $ref: '#/components/schemas/Decimal' }
     Schedule:
       type: object
-      required: [customerId, name, kind, recurrence, lines, header, notes, autoSend, emailSubject, emailBody, version]
+      required: [customerId, name, kind, recurrence, lines, header, notes, autoSend, emailDelayDays, emailSubject, emailBody, version]
       properties:
         id: { type: string, readOnly: true }
         customerId: { type: string }
@@ -1292,6 +1352,11 @@ components:
           description: Omit to use the business default VAT when each invoice is created.
           x-go-type-skip-optional-pointer: false
         autoSend: { type: boolean, description: E-mail each invoice automatically. Off unless chosen. }
+        emailDelayDays:
+          type: integer
+          minimum: 0
+          maximum: 90
+          description: Invoice schedules with autoSend — e-mail the raised invoice this many days later (0 = immediately).
         emailSubject: { type: string, maxLength: 300 }
         emailBody: { type: string, maxLength: 10000 }
         nextRunAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }
@@ -1334,10 +1399,32 @@ components:
         outstanding: { $ref: '#/components/schemas/Decimal' }
         overdueCount: { type: integer }
         overdue: { $ref: '#/components/schemas/Decimal' }
+    Debtor:
+      type: object
+      required: [customerId, name, currency, outstanding, openCount]
+      properties:
+        customerId: { type: string }
+        name: { type: string }
+        currency: { type: string }
+        outstanding: { $ref: '#/components/schemas/Decimal' }
+        openCount: { type: integer }
+    MonthTotal:
+      type: object
+      required: [currency, month, total, count]
+      properties:
+        currency: { type: string }
+        month: { type: string }
+        total: { $ref: '#/components/schemas/Decimal' }
+        count: { type: integer }
     Dashboard:
       type: object
-      required: [today, totals, upcomingEmails, upcomingRuns, recentInvoices, failedEmailCount]
+      required: [today, totals, upcomingEmails, upcomingRuns, recentInvoices, failedEmailCount, months, invoiced, paid, topDebtors, activity]
       properties:
+        months: { type: array, items: { type: string }, description: 'Last 12 months, oldest first ("2026-10").' }
+        invoiced: { type: array, items: { $ref: '#/components/schemas/MonthTotal' } }
+        paid: { type: array, items: { $ref: '#/components/schemas/MonthTotal' } }
+        topDebtors: { type: array, items: { $ref: '#/components/schemas/Debtor' } }
+        activity: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
         today: { type: string, format: date }
         totals: { type: array, items: { $ref: '#/components/schemas/CurrencyTotal' } }
         upcomingEmails: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }

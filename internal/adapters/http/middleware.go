@@ -148,6 +148,7 @@ func withAPIGuards(svc *app.Service, next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), keyUser, u)
+		ctx = app.WithActor(ctx, app.Actor{ID: u.ID, Name: u.Email})
 		ctx = context.WithValue(ctx, keyToken, c.Value)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

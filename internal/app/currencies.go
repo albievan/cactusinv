@@ -19,7 +19,12 @@ func (s *Service) CreateCurrency(ctx context.Context, code, name, symbol string,
 	if err != nil {
 		return domain.Currency{}, wrap("app.CreateCurrency", err)
 	}
-	return c, wrap("app.CreateCurrency", s.tx.Repos().Currencies.Create(ctx, c))
+	return c, wrap("app.CreateCurrency", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		if err := r.Currencies.Create(ctx, c); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "currency.created", "currency", string(c.Code), c.Name)
+	}))
 }
 
 // UpdateCurrency changes a currency's name, symbol and active flag. Minor units are
@@ -36,7 +41,10 @@ func (s *Service) UpdateCurrency(ctx context.Context, code domain.CurrencyCode, 
 			return err
 		}
 		out = c
-		return r.Currencies.Update(ctx, c)
+		if err := r.Currencies.Update(ctx, c); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "currency.updated", "currency", string(c.Code), activeText(c.Active))
 	})
 	return out, wrap("app.UpdateCurrency", err)
 }

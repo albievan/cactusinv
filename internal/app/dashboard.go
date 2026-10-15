@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
@@ -17,6 +19,13 @@ type Dashboard struct {
 	UpcomingRuns     []domain.Schedule
 	RecentInvoices   []domain.Invoice
 	FailedEmailCount int
+	// Months are the last 12 months ("2026-10"), oldest first; Invoiced and Paid are
+	// per-currency monthly totals within them.
+	Months     []string
+	Invoiced   []ports.MonthTotal
+	Paid       []ports.MonthTotal
+	TopDebtors []ports.Debtor
+	Activity   []domain.AuditEntry
 }
 
 // GetDashboard assembles the dashboard.
@@ -47,6 +56,20 @@ func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 	sort.Slice(active, func(i, j int) bool { return active[i].NextRunAt.Before(active[j].NextRunAt) })
 	d.UpcomingRuns = active[:min(5, len(active))]
 	if d.RecentInvoices, _, err = r.Invoices.List(ctx, ports.InvoiceFilter{Today: d.Today, Page: ports.Page{Limit: 5}}); err != nil {
+		return Dashboard{}, wrap("app.GetDashboard", err)
+	}
+	first := domain.NewDate(d.Today.Year, d.Today.Month-11, 1)
+	for i := range 12 {
+		m := domain.NewDate(first.Year, first.Month+time.Month(i), 1)
+		d.Months = append(d.Months, fmt.Sprintf("%04d-%02d", m.Year, int(m.Month)))
+	}
+	if d.Invoiced, d.Paid, err = r.Invoices.Monthly(ctx, first); err != nil {
+		return Dashboard{}, wrap("app.GetDashboard", err)
+	}
+	if d.TopDebtors, err = r.Invoices.TopDebtors(ctx, 6); err != nil {
+		return Dashboard{}, wrap("app.GetDashboard", err)
+	}
+	if d.Activity, _, err = r.Audit.List(ctx, ports.AuditFilter{Page: ports.Page{Limit: 12}}); err != nil {
 		return Dashboard{}, wrap("app.GetDashboard", err)
 	}
 	return d, nil

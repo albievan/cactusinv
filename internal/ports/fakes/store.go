@@ -60,7 +60,7 @@ type state struct {
 	customers   map[string]domain.Customer
 	products    map[string]domain.Product
 	invoices    map[string]domain.Invoice
-	events      []domain.InvoiceEvent
+	audit       []domain.AuditEntry
 	seq         int64
 	schedules   map[string]domain.Schedule
 	runs        []domain.ScheduleRun
@@ -95,7 +95,7 @@ func (s *state) clone() *state {
 	c.customers = maps.Clone(s.customers)
 	c.products = maps.Clone(s.products)
 	c.invoices = maps.Clone(s.invoices)
-	c.events = slices.Clone(s.events)
+	c.audit = slices.Clone(s.audit)
 	c.schedules = maps.Clone(s.schedules)
 	c.runs = slices.Clone(s.runs)
 	c.emails = maps.Clone(s.emails)
@@ -137,7 +137,7 @@ func (s *Store) Repos() ports.Repos {
 	return ports.Repos{
 		Business: business{s}, Currencies: currencies{s}, Banks: banks{s}, Customers: customers{s},
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
-		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s},
+		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
 	}
 }
 
@@ -162,11 +162,11 @@ func (s *Store) Emails() []domain.EmailMessage {
 	return out
 }
 
-// Events returns every invoice audit event (test inspection).
-func (s *Store) Events() []domain.InvoiceEvent {
+// Audit returns the whole audit trail, oldest first (test inspection).
+func (s *Store) Audit() []domain.AuditEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return slices.Clone(s.st.events)
+	return slices.Clone(s.st.audit)
 }
 
 func page[T any](items []T, p ports.Page) ([]T, int) {
@@ -647,26 +647,6 @@ func (r invoices) Delete(_ context.Context, id string) error {
 	})
 }
 
-func (r invoices) AddEvent(_ context.Context, ev domain.InvoiceEvent) error {
-	return r.s.do(func(st *state) error {
-		st.events = append(st.events, ev)
-		return nil
-	})
-}
-
-func (r invoices) ListEvents(_ context.Context, invoiceID string) ([]domain.InvoiceEvent, error) {
-	var out []domain.InvoiceEvent
-	err := r.s.do(func(st *state) error {
-		for _, e := range st.events {
-			if e.InvoiceID == invoiceID {
-				out = append(out, e)
-			}
-		}
-		return nil
-	})
-	return out, err
-}
-
 func (r invoices) Totals(_ context.Context, today domain.Date) ([]ports.CurrencyTotals, error) {
 	var out []ports.CurrencyTotals
 	err := r.s.do(func(st *state) error {
@@ -715,6 +695,66 @@ func (r invoices) MarkExported(_ context.Context, id string, version int) error 
 		st.exported[id] = version
 		return nil
 	})
+}
+
+func (r invoices) Monthly(_ context.Context, since domain.Date) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+	var inv, paid []ports.MonthTotal
+	err := r.s.do(func(st *state) error {
+		add := func(list *[]ports.MonthTotal, c domain.CurrencyCode, month string, amt int64) {
+			for i := range *list {
+				if (*list)[i].Currency == c && (*list)[i].Month == month {
+					(*list)[i].Total += amt
+					(*list)[i].Count++
+					return
+				}
+			}
+			*list = append(*list, ports.MonthTotal{Currency: c, Month: month, Total: amt, Count: 1})
+		}
+		for _, x := range st.invoices {
+			if x.Status != domain.InvoiceDraft && x.Status != domain.InvoiceVoid && !x.IssueDate.Before(since) {
+				add(&inv, x.Currency, x.IssueDate.Time(time.UTC).Format("2006-01"), x.Totals.Total)
+			}
+			if x.Status == domain.InvoicePaid && !x.PaidAt.Before(since.Time(time.UTC)) {
+				add(&paid, x.Currency, x.PaidAt.UTC().Format("2006-01"), x.Totals.Total)
+			}
+		}
+		less := func(l []ports.MonthTotal) {
+			sort.Slice(l, func(i, j int) bool { return l[i].Month+string(l[i].Currency) < l[j].Month+string(l[j].Currency) })
+		}
+		less(inv)
+		less(paid)
+		return nil
+	})
+	return inv, paid, err
+}
+
+func (r invoices) TopDebtors(_ context.Context, limit int) ([]ports.Debtor, error) {
+	var out []ports.Debtor
+	err := r.s.do(func(st *state) error {
+		by := map[string]*ports.Debtor{}
+		for _, x := range st.invoices {
+			if !x.IsOpen() {
+				continue
+			}
+			k := x.CustomerID + string(x.Currency)
+			d := by[k]
+			if d == nil {
+				d = &ports.Debtor{CustomerID: x.CustomerID, Name: st.customers[x.CustomerID].Name, Currency: x.Currency}
+				by[k] = d
+			}
+			d.Outstanding += x.Totals.Total
+			d.OpenCount++
+		}
+		for _, d := range by {
+			out = append(out, *d)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Outstanding > out[j].Outstanding })
+		if len(out) > limit {
+			out = out[:limit]
+		}
+		return nil
+	})
+	return out, err
 }
 
 func (r invoices) CountForCustomer(_ context.Context, customerID string) (int, error) {
@@ -1183,4 +1223,72 @@ func (r smtpStore) Save(_ context.Context, s domain.SMTPSettings, passwordEnc []
 		st.smtp, st.smtpPass = &s, slices.Clone(passwordEnc)
 		return nil
 	})
+}
+
+// ---- audit ----
+
+type auditStore struct{ s *Store }
+
+func (r auditStore) Append(_ context.Context, e *domain.AuditEntry) error {
+	return r.s.do(func(st *state) error {
+		prev := ""
+		if n := len(st.audit); n > 0 {
+			prev = st.audit[n-1].Hash
+		}
+		e.Seq = int64(len(st.audit) + 1)
+		e.Seal(prev)
+		st.audit = append(st.audit, *e)
+		return nil
+	})
+}
+
+func (r auditStore) List(_ context.Context, f ports.AuditFilter) ([]domain.AuditEntry, int, error) {
+	var out []domain.AuditEntry
+	var total int
+	err := r.s.do(func(st *state) error {
+		var all []domain.AuditEntry
+		for i := len(st.audit) - 1; i >= 0; i-- {
+			e := st.audit[i]
+			if (f.EntityType == "" || e.EntityType == f.EntityType) && (f.EntityID == "" || e.EntityID == f.EntityID) &&
+				contains(e.ActorName, f.Actor) && strings.HasPrefix(e.Action, f.Action) {
+				all = append(all, e)
+			}
+		}
+		out, total = page(all, f.Page)
+		return nil
+	})
+	return out, total, err
+}
+
+func (r auditStore) ForEntity(_ context.Context, entityType, entityID string) ([]domain.AuditEntry, error) {
+	var out []domain.AuditEntry
+	err := r.s.do(func(st *state) error {
+		for _, e := range st.audit {
+			if e.EntityType == entityType && e.EntityID == entityID {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+func (r auditStore) Chain(_ context.Context, after int64, limit int) ([]domain.AuditEntry, error) {
+	var out []domain.AuditEntry
+	err := r.s.do(func(st *state) error {
+		for _, e := range st.audit {
+			if e.Seq > after && len(out) < limit {
+				out = append(out, e)
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
+// TamperAudit rewrites an entry's summary in place (tests only: proves verification).
+func (s *Store) TamperAudit(seq int64, summary string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.audit[seq-1].Summary = summary
 }

@@ -24,6 +24,9 @@ func (s *Service) StatementPDF(ctx context.Context, customerID string) ([]byte, 
 	if err != nil {
 		return nil, "", wrap("app.StatementPDF", err)
 	}
+	if err := s.auditNow(ctx, "customer.statement_viewed", "customer", customerID, ""); err != nil {
+		return nil, "", wrap("app.StatementPDF", err)
+	}
 	return pdf, StatementFilename(doc.Statement), nil
 }
 
@@ -118,7 +121,10 @@ func (s *Service) enqueueStatement(ctx context.Context, r ports.Repos, customerI
 		return nil, err
 	}
 	m.Kind, m.CustomerID = domain.EmailKindStatement, c.ID
-	return m, r.Emails.Create(ctx, m)
+	if err := r.Emails.Create(ctx, m); err != nil {
+		return nil, err
+	}
+	return m, s.audit(ctx, r, "customer.statement_queued", "customer", c.ID, "to "+strings.Join(to, ", ")+", balance "+data.Total)
 }
 
 func (s *Service) deliverStatement(ctx context.Context, m *domain.EmailMessage) error {
@@ -142,6 +148,9 @@ func (s *Service) deliverStatement(ctx context.Context, m *domain.EmailMessage) 
 			return err
 		}
 		cur.Succeeded(s.now())
-		return r.Emails.Update(ctx, cur)
+		if err := r.Emails.Update(ctx, cur); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "customer.statement_emailed", "customer", m.CustomerID, "to "+strings.Join(m.To, ", "))
 	})
 }

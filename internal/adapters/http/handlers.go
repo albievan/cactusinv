@@ -405,7 +405,7 @@ func (h *handlers) GetInvoice(ctx context.Context, req GetInvoiceRequestObject) 
 	}
 	events := make([]InvoiceEvent, len(d.Events))
 	for i, e := range d.Events {
-		events[i] = InvoiceEvent{Type: e.Type, Detail: e.Detail, At: e.At.UTC()}
+		events[i] = InvoiceEvent{Action: e.Action, Actor: e.ActorName, Detail: e.Summary, At: e.At.UTC()}
 	}
 	emails := make([]EmailMessage, len(d.Emails))
 	for i, m := range d.Emails {
@@ -728,6 +728,19 @@ func (h *handlers) GetDashboard(ctx context.Context, _ GetDashboardRequestObject
 	out := GetDashboard200JSONResponse{
 		Today: toAPIDate(d.Today), FailedEmailCount: d.FailedEmailCount,
 		Totals: []CurrencyTotal{}, UpcomingEmails: []EmailMessage{}, UpcomingRuns: []Schedule{}, RecentInvoices: []Invoice{},
+		Months: d.Months, Invoiced: []MonthTotal{}, Paid: []MonthTotal{}, Activity: []AuditEntry{}, TopDebtors: []Debtor{},
+	}
+	for _, m := range d.Invoiced {
+		out.Invoiced = append(out.Invoiced, MonthTotal{Currency: string(m.Currency), Month: m.Month, Total: mu.format(m.Total, m.Currency), Count: m.Count})
+	}
+	for _, m := range d.Paid {
+		out.Paid = append(out.Paid, MonthTotal{Currency: string(m.Currency), Month: m.Month, Total: mu.format(m.Total, m.Currency), Count: m.Count})
+	}
+	for _, t := range d.TopDebtors {
+		out.TopDebtors = append(out.TopDebtors, Debtor{Currency: string(t.Currency), CustomerId: t.CustomerID, Name: t.Name, OpenCount: t.OpenCount, Outstanding: mu.format(t.Outstanding, t.Currency)})
+	}
+	for _, e := range d.Activity {
+		out.Activity = append(out.Activity, AuditEntry{Seq: e.Seq, At: e.At.UTC(), ActorId: e.ActorID, Actor: e.ActorName, Action: e.Action, EntityType: e.EntityType, EntityId: e.EntityID, Summary: e.Summary, Hash: e.Hash})
 	}
 	for _, t := range d.Totals {
 		out.Totals = append(out.Totals, CurrencyTotal{

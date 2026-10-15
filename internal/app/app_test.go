@@ -1071,3 +1071,98 @@ func TestSMTPServerErrorsAndCancelStatement(t *testing.T) {
 		t.Fatal("cancel statement e-mail (no invoice event)")
 	}
 }
+
+func TestAuditTrail(t *testing.T) {
+	h := newHarness(t).seed()
+	ctx := app.WithActor(h.ctx, app.Actor{ID: "u1", Name: "albie"})
+	inv := must(h.svc.CreateInvoice(ctx, h.referenceInput()))
+	inv = must(h.svc.IssueInvoice(ctx, inv.ID, domain.Date{}))
+	must(h.svc.SendInvoice(ctx, inv.ID, app.SendInput{}))
+	must(h.svc.DispatchEmails(app.WithActor(h.ctx, app.ActorDispatcher), 10))
+	must(h.svc.MarkInvoiceOverdue(ctx, inv.ID))
+	must2(h.svc.InvoicePDF(ctx, inv.ID))
+	must(h.svc.VoidInvoice(app.WithActor(h.ctx, app.Actor{ID: "u2", Name: "jane"}), inv.ID, "wrong amount"))
+
+	d := must(h.svc.GetInvoice(h.ctx, inv.ID))
+	var trail []string
+	for _, e := range d.Events {
+		trail = append(trail, e.Action+" by "+e.ActorName)
+	}
+	want := []string{
+		"invoice.created by albie", "invoice.issued by albie", "invoice.email_queued by albie",
+		"invoice.email_sent by E-mail dispatcher", "invoice.overdue by albie", "invoice.pdf_viewed by albie",
+		"invoice.voided by jane",
+	}
+	if strings.Join(trail, "|") != strings.Join(want, "|") {
+		t.Fatalf("trail =\n%s\nwant\n%s", strings.Join(trail, "\n"), strings.Join(want, "\n"))
+	}
+
+	// A deleted draft keeps its history.
+	draft := must(h.svc.CreateInvoice(ctx, h.referenceInput()))
+	if err := h.svc.DeleteInvoice(ctx, draft.ID); err != nil {
+		t.Fatal(err)
+	}
+	gone, _ := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{EntityType: "invoice", EntityID: draft.ID}))
+	if len(gone) != 2 || gone[0].Action != "invoice.deleted" {
+		t.Fatalf("deleted draft history = %+v", gone)
+	}
+
+	// Everything else is audited too, and the whole chain verifies.
+	_, _, _ = h.svc.Login(h.ctx, "nobody@example.com", "wrong")
+	if fails, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{Action: "auth.login_failed"})); n != 1 || fails[0].ActorName != "nobody@example.com" {
+		t.Fatalf("failed login = %+v", fails)
+	}
+	if seeded, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{EntityType: "customer"})); n == 0 || seeded[0].ActorName != "System" {
+		t.Fatalf("customer creation audited: %+v", seeded)
+	}
+	if byJane, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{Actor: "jan"})); n != 1 || byJane[0].Action != "invoice.voided" {
+		t.Fatal("actor filter")
+	}
+	v := must(h.svc.VerifyAudit(h.ctx))
+	if !v.OK || v.Entries != len(h.store.Audit()) {
+		t.Fatalf("verify = %+v", v)
+	}
+	h.store.TamperAudit(3, "edited")
+	if v := must(h.svc.VerifyAudit(h.ctx)); v.OK || v.BrokenAt != 3 {
+		t.Fatalf("tamper detected: %+v", v)
+	}
+	if app.ActorFrom(h.ctx).Name != "System" {
+		t.Fatal("default actor")
+	}
+}
+
+func TestRecurringInvoiceWorkflowRaisesThenEmailsLater(t *testing.T) {
+	h := newHarness(t).seed()
+	h.clock.Set(time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC))
+	d := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "Monthly subscription", AutoSend: true, EmailDelayDays: 2,
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: h.usersP.ID, Quantity: 14000}, {ProductID: h.integP.ID, Quantity: 1000}},
+	}))
+	raiseAt := d.Schedule.NextOccurrence // 1 Sep 09:00 Johannesburg
+	h.clock.Set(raiseAt)
+	if res := must(h.svc.RunDueSchedules(app.WithActor(h.ctx, app.ActorScheduler), 10)); res.Issued != 1 {
+		t.Fatalf("raised = %+v", res)
+	}
+	emails := h.store.Emails()
+	if len(emails) != 1 || !emails[0].SendAt.Equal(raiseAt.AddDate(0, 0, 2)) {
+		t.Fatalf("e-mail scheduled for %v, want %v", emails[0].SendAt, raiseAt.AddDate(0, 0, 2))
+	}
+	if res := must(h.svc.DispatchEmails(h.ctx, 10)); res.Sent != 0 {
+		t.Fatal("not e-mailed before the delay")
+	}
+	h.clock.Set(raiseAt.AddDate(0, 0, 2))
+	if res := must(h.svc.DispatchEmails(h.ctx, 10)); res.Sent != 1 {
+		t.Fatal("e-mailed after the delay")
+	}
+	invs, _ := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{}))
+	ev := must(h.svc.GetInvoice(h.ctx, invs[0].ID)).Events
+	if ev[0].ActorName != "Scheduler" || ev[0].Action != "invoice.created" {
+		t.Fatalf("raised by the scheduler: %+v", ev[0])
+	}
+	bad := must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
+	bad.EmailDelayDays = 91
+	if _, err := h.svc.UpdateSchedule(h.ctx, *bad); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("delay bound")
+	}
+}

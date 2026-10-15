@@ -24,17 +24,23 @@ const dummyHash = "$argon2id$v=19$m=65536,t=3,p=2$c2FsdHNhbHRzYWx0c2FsdA$Zm9vYmF
 // cookie (only its hash is stored) and its expiry.
 func (s *Service) Login(ctx context.Context, email, password string) (string, time.Time, error) {
 	r := s.tx.Repos()
-	u, err := r.Users.GetByEmail(ctx, strings.TrimSpace(email))
+	login := strings.TrimSpace(email)
+	failed := func() error {
+		attempt := WithActor(ctx, Actor{ID: "", Name: truncateRunes(login, 100)})
+		_ = s.auditNow(attempt, "auth.login_failed", "user", "", "failed sign-in for "+truncateRunes(login, 100))
+		return wrap("app.Login", domain.ErrUnauthenticated)
+	}
+	u, err := r.Users.GetByEmail(ctx, login)
 	if errors.Is(err, domain.ErrNotFound) {
 		_, _ = s.hasher.Verify(dummyHash, password)
-		return "", time.Time{}, wrap("app.Login", domain.ErrUnauthenticated)
+		return "", time.Time{}, failed()
 	}
 	if err != nil {
 		return "", time.Time{}, wrap("app.Login", err)
 	}
 	ok, err := s.hasher.Verify(u.PasswordHash, password)
 	if err != nil || !ok {
-		return "", time.Time{}, wrap("app.Login", domain.ErrUnauthenticated)
+		return "", time.Time{}, failed()
 	}
 	token, err := newToken()
 	if err != nil {
@@ -44,12 +50,18 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, ti
 	if err := r.Sessions.Create(ctx, sess); err != nil {
 		return "", time.Time{}, wrap("app.Login", err)
 	}
+	if err := s.auditNow(WithActor(ctx, Actor{ID: u.ID, Name: u.Email}), "auth.login", "user", u.ID, "signed in"); err != nil {
+		return "", time.Time{}, wrap("app.Login", err)
+	}
 	return token, sess.ExpiresAt, nil
 }
 
 // Logout ends a session.
 func (s *Service) Logout(ctx context.Context, token string) error {
-	return wrap("app.Logout", s.tx.Repos().Sessions.Delete(ctx, HashToken(token)))
+	if err := s.tx.Repos().Sessions.Delete(ctx, HashToken(token)); err != nil {
+		return wrap("app.Logout", err)
+	}
+	return wrap("app.Logout", s.auditNow(ctx, "auth.logout", "user", ActorFrom(ctx).ID, "signed out"))
 }
 
 // Authenticate resolves a session token to its user.
@@ -86,7 +98,12 @@ func (s *Service) CreateUser(ctx context.Context, email, password string) (domai
 		return domain.User{}, wrap("app.CreateUser", err)
 	}
 	u := domain.User{ID: s.ids.NewID(), Email: email, PasswordHash: hash, CreatedAt: s.now()}
-	return u, wrap("app.CreateUser", s.tx.Repos().Users.Create(ctx, u))
+	return u, wrap("app.CreateUser", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		if err := r.Users.Create(ctx, u); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "user.created", "user", u.ID, u.Email)
+	}))
 }
 
 // EnsureDefaultAdmin creates the default administrator when no user exists yet, so a
@@ -106,7 +123,13 @@ func (s *Service) EnsureDefaultAdmin(ctx context.Context, login, password string
 	if err != nil {
 		return false, wrap("app.EnsureDefaultAdmin", err)
 	}
-	err = r.Users.Create(ctx, domain.User{ID: s.ids.NewID(), Email: login, PasswordHash: hash, CreatedAt: s.now()})
+	u := domain.User{ID: s.ids.NewID(), Email: login, PasswordHash: hash, CreatedAt: s.now()}
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		if err := r.Users.Create(ctx, u); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "user.created", "user", u.ID, "default administrator "+u.Email)
+	})
 	if errors.Is(err, domain.ErrConflict) { // another replica won the race
 		return false, nil
 	}
@@ -130,7 +153,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID, current, next stri
 	if err != nil {
 		return wrap("app.ChangePassword", err)
 	}
-	return wrap("app.ChangePassword", r.Users.UpdatePassword(ctx, u.ID, hash))
+	if err := r.Users.UpdatePassword(ctx, u.ID, hash); err != nil {
+		return wrap("app.ChangePassword", err)
+	}
+	return wrap("app.ChangePassword", s.auditNow(ctx, "user.password_changed", "user", u.ID, u.Email))
 }
 
 // SetPassword replaces a user's password (CLI reset).
@@ -147,7 +173,10 @@ func (s *Service) SetPassword(ctx context.Context, email, password string) error
 	if err != nil {
 		return wrap("app.SetPassword", err)
 	}
-	return wrap("app.SetPassword", r.Users.UpdatePassword(ctx, u.ID, hash))
+	if err := r.Users.UpdatePassword(ctx, u.ID, hash); err != nil {
+		return wrap("app.SetPassword", err)
+	}
+	return wrap("app.SetPassword", s.auditNow(ctx, "user.password_reset", "user", u.ID, "password reset for "+u.Email))
 }
 
 // Housekeeping deletes expired sessions and idempotency records older than a day.
@@ -175,3 +204,11 @@ func newToken() (string, error) {
 
 // Idempotency exposes the idempotency store to the HTTP adapter's middleware.
 func (s *Service) Idempotency() ports.IdempotencyRepository { return s.tx.Repos().Idempotency }
+
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}

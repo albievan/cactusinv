@@ -6,8 +6,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -303,6 +305,10 @@ func TestConcurrentRunnersIssueOneInvoicePerPeriod(t *testing.T) {
 	if e.mailer.Count() != 20 {
 		t.Fatalf("sent %d e-mails, want 20", e.mailer.Count())
 	}
+	// Concurrent writers still produce one unbroken hash chain.
+	if v := must(e.svc.VerifyAudit(e.ctx)); !v.OK || v.Entries < 20 {
+		t.Fatalf("audit chain after concurrent runs: %+v", v)
+	}
 }
 
 func TestScheduleAndOutboxPersistence(t *testing.T) {
@@ -399,5 +405,71 @@ func TestAuthAndIdempotencyPersistence(t *testing.T) {
 	}
 	if err := e.store.Ping(e.ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestAuditLogIsAppendOnly proves the database itself refuses to change or delete audit
+// entries, and that the chain survives a real MariaDB round trip.
+func TestAuditLogIsAppendOnly(t *testing.T) {
+	e := setup(t)
+	ctx := app.WithActor(e.ctx, app.Actor{ID: "u1", Name: "albie"})
+	inv := must(e.svc.CreateInvoice(ctx, e.reference()))
+	must(e.svc.IssueInvoice(ctx, inv.ID, domain.Date{}))
+	d := must(e.svc.GetInvoice(e.ctx, inv.ID))
+	if len(d.Events) != 2 || d.Events[0].ActorName != "albie" || d.Events[1].Action != "invoice.issued" {
+		t.Fatalf("events = %+v", d.Events)
+	}
+	if v := must(e.svc.VerifyAudit(e.ctx)); !v.OK {
+		t.Fatalf("verify = %+v", v)
+	}
+	if _, err := testDB.ExecContext(e.ctx, "UPDATE audit_log SET actor_name = 'mallory'"); err == nil || !strings.Contains(err.Error(), "append-only") {
+		t.Fatalf("update must be rejected: %v", err)
+	}
+	if _, err := testDB.ExecContext(e.ctx, "DELETE FROM audit_log"); err == nil || !strings.Contains(err.Error(), "append-only") {
+		t.Fatalf("delete must be rejected: %v", err)
+	}
+	if err := e.svc.DeleteInvoice(ctx, must(e.svc.CreateInvoice(ctx, e.reference())).ID); err != nil {
+		t.Fatal(err)
+	}
+	if v := must(e.svc.VerifyAudit(e.ctx)); !v.OK {
+		t.Fatalf("verify after draft delete = %+v", v)
+	}
+}
+
+// TestLegacyInvoiceEventsAreBackfilled migrates a database that still has invoice_events
+// rows to the latest version and checks they land in a valid chain.
+func TestLegacyInvoiceEventsAreBackfilled(t *testing.T) {
+	ctx := context.Background()
+	if err := mariadb.Migrate(ctx, testDB, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := mariadb.MigrateTo(ctx, testDB, 7); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := testDB.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0"); err != nil {
+		t.Fatal(err)
+	}
+	for i, typ := range []string{"created", "issued", "paid"} {
+		if _, err := conn.ExecContext(ctx, "INSERT INTO invoice_events (id, invoice_id, type, detail, at) VALUES (?, 'inv-legacy', ?, '', ?)",
+			fmt.Sprintf("ev-%d", i), typ, time.Date(2026, 8, 21, 9, i, 0, 123456000, time.UTC)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _ = conn.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
+	if err := mariadb.Migrate(ctx, testDB, false); err != nil {
+		t.Fatal(err)
+	}
+	svc := app.New(app.Deps{Tx: mariadb.NewStore(testDB), Clock: &fakes.Clock{T: time.Now()}, IDs: idgen.UUIDv7{}, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
+	entries, n := must3(svc.ListAudit(ctx, ports.AuditFilter{EntityID: "inv-legacy"}))
+	if n != 3 || entries[2].Action != "invoice.created" || entries[0].ActorName != "unknown (before the audit log)" {
+		t.Fatalf("backfill = %+v", entries)
+	}
+	if v := must(svc.VerifyAudit(ctx)); !v.OK || v.Entries != 3 {
+		t.Fatalf("verify = %+v", v)
 	}
 }

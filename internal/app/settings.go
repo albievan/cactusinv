@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
@@ -37,6 +38,9 @@ func (s *Service) UpdateBusiness(ctx context.Context, p domain.BusinessProfile, 
 		if err := r.Business.Save(ctx, p); err != nil {
 			return err
 		}
+		if err := s.audit(ctx, r, "settings.business_updated", "settings", "business", p.Name); err != nil {
+			return err
+		}
 		if nextSequence == 0 {
 			return nil
 		}
@@ -47,7 +51,10 @@ func (s *Service) UpdateBusiness(ctx context.Context, p domain.BusinessProfile, 
 		if nextSequence < cur {
 			return &domain.ValidationError{Field: "nextSequence", Reason: "may only increase (numbers already used)"}
 		}
-		return r.Sequences.Set(ctx, nextSequence)
+		if err := r.Sequences.Set(ctx, nextSequence); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "settings.next_number_set", "settings", "business", fmt.Sprintf("next invoice sequence %d", nextSequence))
 	})
 	if err != nil {
 		return BusinessSettings{}, wrap("app.UpdateBusiness", err)

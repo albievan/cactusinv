@@ -333,7 +333,7 @@ func toAPISchedule(s *domain.Schedule, currency domain.CurrencyCode, mu minorUni
 		Id: s.ID, CustomerId: s.CustomerID, Name: s.Name, Kind: ScheduleKind(scheduleKindOf(s.Kind)),
 		EmailScope: ScheduleEmailScope(s.EmailScope), Status: ScheduleStatus(s.Status),
 		Recurrence: toAPIRecurrence(s.Recurrence), Lines: lines, Header: toAPIHeader(s.Header), Notes: s.Notes,
-		VatPercent: ratePtr(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
+		VatPercent: ratePtr(s.TaxRate), AutoSend: s.AutoSend, EmailDelayDays: s.EmailDelayDays, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
 		NextRunAt: timePtr(s.NextRunAt), LastRunAt: timePtr(s.LastRunAt), FailureCount: s.FailureCount,
 		LastError: s.LastError, Version: s.Version,
 	}
@@ -351,7 +351,7 @@ func fromAPISchedule(id string, s Schedule, currency domain.CurrencyCode, mu min
 	out := domain.Schedule{
 		ID: id, CustomerID: s.CustomerId, Name: s.Name, Kind: domain.ScheduleKind(s.Kind),
 		EmailScope: domain.EmailScope(s.EmailScope), Recurrence: rec, Header: fromAPIHeader(s.Header),
-		Notes: s.Notes, TaxRate: tax, AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
+		Notes: s.Notes, TaxRate: tax, AutoSend: s.AutoSend, EmailDelayDays: s.EmailDelayDays, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
 		Version: s.Version,
 	}
 	for _, l := range s.Lines {

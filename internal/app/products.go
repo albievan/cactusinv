@@ -28,7 +28,10 @@ func (s *Service) CreateProduct(ctx context.Context, p domain.Product) (domain.P
 		if err := checkProduct(ctx, r, &p); err != nil {
 			return err
 		}
-		return r.Products.Create(ctx, p)
+		if err := r.Products.Create(ctx, p); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "product.created", "product", p.ID, p.SKU+" "+p.Name)
 	})
 	if err != nil {
 		return domain.Product{}, wrap("app.CreateProduct", err)
@@ -46,7 +49,10 @@ func (s *Service) UpdateProduct(ctx context.Context, p domain.Product) (domain.P
 		if err := checkProduct(ctx, r, &p); err != nil {
 			return err
 		}
-		return r.Products.Update(ctx, p)
+		if err := r.Products.Update(ctx, p); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "product.updated", "product", p.ID, p.SKU+" "+p.Name)
 	})
 	if err != nil {
 		return domain.Product{}, wrap("app.UpdateProduct", err)
@@ -56,7 +62,16 @@ func (s *Service) UpdateProduct(ctx context.Context, p domain.Product) (domain.P
 
 // DeleteProduct removes a product. Invoice lines keep their snapshot.
 func (s *Service) DeleteProduct(ctx context.Context, id string) error {
-	return wrap("app.DeleteProduct", s.tx.Repos().Products.Delete(ctx, id))
+	return wrap("app.DeleteProduct", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		p, err := r.Products.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := r.Products.Delete(ctx, id); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "product.deleted", "product", id, p.SKU+" "+p.Name)
+	}))
 }
 
 func checkProduct(ctx context.Context, r ports.Repos, p *domain.Product) error {
