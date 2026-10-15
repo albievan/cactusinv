@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,13 +26,18 @@ import (
 	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
-var testDB *sql.DB
+var (
+	testDB  *sql.DB
+	testCfg mariadb.Config
+)
 
 // TestMain starts one MariaDB 11 container for the package and applies migrations.
 func TestMain(m *testing.M) {
 	ctx := context.Background()
 	ctr, err := tcmariadb.Run(ctx, "mariadb:11",
-		tcmariadb.WithDatabase("cactusinv"), tcmariadb.WithUsername("cactusinv"), tcmariadb.WithPassword("test-only"))
+		tcmariadb.WithDatabase("cactusinv"), tcmariadb.WithUsername("cactusinv"), tcmariadb.WithPassword("test-only"),
+		// The staging database for restores, granted to the app user (ADR-010).
+		tcmariadb.WithScripts(filepath.Join("testdata", "10-restore-db.sql")))
 	if err != nil {
 		panic(err)
 	}
@@ -44,7 +50,8 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	p, _ := strconv.Atoi(port.Port())
-	testDB, err = mariadb.Open(ctx, mariadb.Config{Host: host, Port: p, Name: "cactusinv", User: "cactusinv", Password: "test-only"})
+	testCfg = mariadb.Config{Host: host, Port: p, Name: "cactusinv", User: "cactusinv", Password: "test-only"}
+	testDB, err = mariadb.Open(ctx, testCfg)
 	if err != nil {
 		panic(err)
 	}

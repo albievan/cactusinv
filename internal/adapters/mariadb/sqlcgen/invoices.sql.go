@@ -44,6 +44,17 @@ func (q *Queries) CountInvoices(ctx context.Context, arg CountInvoicesParams) (i
 	return count, err
 }
 
+const countInvoicesCreatedSince = `-- name: CountInvoicesCreatedSince :one
+SELECT COUNT(*) FROM invoices WHERE created_at > ?
+`
+
+func (q *Queries) CountInvoicesCreatedSince(ctx context.Context, createdAt time.Time) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countInvoicesCreatedSince, createdAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countInvoicesForCustomer = `-- name: CountInvoicesForCustomer :one
 SELECT COUNT(*) FROM invoices WHERE customer_id = ?
 `
@@ -599,6 +610,15 @@ func (q *Queries) MonthlyPaid(ctx context.Context, since sql.NullTime) ([]Monthl
 		return nil, err
 	}
 	return items, nil
+}
+
+const resetInvoicesExported = `-- name: ResetInvoicesExported :exec
+UPDATE invoices SET exported_version = NULL
+`
+
+func (q *Queries) ResetInvoicesExported(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetInvoicesExported)
+	return err
 }
 
 const topDebtors = `-- name: TopDebtors :many

@@ -99,3 +99,9 @@ WHERE i.status IN ('issued', 'sent', 'overdue')
 GROUP BY i.customer_id, c.name, i.currency_code
 ORDER BY outstanding DESC
 LIMIT ?;
+
+-- name: ResetInvoicesExported :exec
+UPDATE invoices SET exported_version = NULL;
+
+-- name: CountInvoicesCreatedSince :one
+SELECT COUNT(*) FROM invoices WHERE created_at > ?;

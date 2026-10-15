@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ScheduleStatus is a schedule's state.
@@ -297,9 +298,21 @@ type ScheduleRun struct {
 	At         time.Time
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
+func truncate(s string, n int) string { return TruncateUTF8(s, n) }
+
+// TruncateUTF8 shortens s to at most maxBytes bytes without splitting a UTF-8 character:
+// it cuts at the last character boundary within the limit. (A byte-limited cut always fits
+// a column limited in characters too.)
+func TruncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
 		return s
 	}
-	return s[:n]
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }

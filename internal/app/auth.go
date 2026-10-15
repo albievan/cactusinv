@@ -179,13 +179,17 @@ func (s *Service) SetPassword(ctx context.Context, email, password string) error
 	return wrap("app.SetPassword", s.auditNow(ctx, "user.password_reset", "user", u.ID, "password reset for "+u.Email))
 }
 
-// Housekeeping deletes expired sessions and idempotency records older than a day.
+// Housekeeping deletes expired sessions, idempotency records older than a day and an
+// expired staged restore.
 func (s *Service) Housekeeping(ctx context.Context) error {
 	r := s.tx.Repos()
 	if err := r.Sessions.DeleteExpired(ctx, s.now()); err != nil {
 		return wrap("app.Housekeeping", err)
 	}
-	return wrap("app.Housekeeping", r.Idempotency.DeleteBefore(ctx, s.now().Add(-24*time.Hour)))
+	if err := r.Idempotency.DeleteBefore(ctx, s.now().Add(-24*time.Hour)); err != nil {
+		return wrap("app.Housekeeping", err)
+	}
+	return wrap("app.Housekeeping", s.discardExpiredRestore(ctx))
 }
 
 // HashToken is the stored form of a session token.

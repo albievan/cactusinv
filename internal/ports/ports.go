@@ -44,6 +44,28 @@ type Repos struct {
 	Idempotency IdempotencyRepository
 	SMTP        SMTPRepository
 	Audit       AuditRepository
+	System      SystemRepository
+	BackupRuns  BackupRunRepository
+}
+
+// SystemRepository stores the installation's single state row (never backed up or
+// restored): automation held after a restore, and the staged restore.
+type SystemRepository interface {
+	Get(ctx context.Context) (domain.SystemState, error)
+	// Lock reads the row FOR UPDATE; call inside a transaction before Save.
+	Lock(ctx context.Context) (domain.SystemState, error)
+	Save(ctx context.Context, s domain.SystemState) error
+}
+
+// BackupRunRepository records scheduled backup slots.
+type BackupRunRepository interface {
+	// Start records a slot as running; ErrConflict when the slot was already started (by
+	// this or another replica).
+	Start(ctx context.Context, run domain.BackupRun) error
+	// Finish records a slot's outcome.
+	Finish(ctx context.Context, run domain.BackupRun) error
+	// Latest returns the most recent slot, or ErrNotFound.
+	Latest(ctx context.Context) (domain.BackupRun, error)
 }
 
 // AuditFilter narrows the audit trail.
@@ -61,6 +83,10 @@ type AuditRepository interface {
 	// Append seals e onto the end of the hash chain (setting Seq, PrevHash, Hash). Call
 	// inside the transaction of the change being audited.
 	Append(ctx context.Context, e *domain.AuditEntry) error
+	// AppendVerbatim inserts an already sealed entry unchanged (a restore bringing back
+	// entries of a backup). It refuses, with ErrConflict, an entry that does not chain from
+	// the head: wrong Seq, wrong PrevHash or a Hash that does not match its content.
+	AppendVerbatim(ctx context.Context, e domain.AuditEntry) error
 	// List returns entries newest first, plus the total count.
 	List(ctx context.Context, f AuditFilter) ([]domain.AuditEntry, int, error)
 	// ForEntity returns one entity's entries, oldest first.
@@ -204,6 +230,11 @@ type InvoiceRepository interface {
 	ListUnexported(ctx context.Context, limit int) ([]ExportRef, error)
 	// MarkExported records that version of the invoice was archived (no version bump).
 	MarkExported(ctx context.Context, id string, version int) error
+	// ResetExported marks every invoice as not archived, so the archive re-renders all of
+	// them (after a restore).
+	ResetExported(ctx context.Context) error
+	// CountCreatedSince counts invoices created after t.
+	CountCreatedSince(ctx context.Context, t time.Time) (int, error)
 }
 
 // MonthTotal is one currency's total for one month ("2026-10").
@@ -253,7 +284,9 @@ type ScheduleRepository interface {
 	Create(ctx context.Context, s *domain.Schedule) error
 	Update(ctx context.Context, s *domain.Schedule) error
 	Delete(ctx context.Context, id string) error
-	// ClaimDue locks up to limit due, active schedules (FOR UPDATE SKIP LOCKED).
+	// ClaimDue locks up to limit due, active schedules (FOR UPDATE SKIP LOCKED). It claims
+	// nothing while automation is held after a restore (it reads the system state in share
+	// mode first, so it also waits for a restore in progress).
 	ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.Schedule, error)
 	// InsertRun records a processed period; ErrConflict if it was already processed.
 	InsertRun(ctx context.Context, run domain.ScheduleRun) error
@@ -282,9 +315,13 @@ type EmailRepository interface {
 	GetByIdempotencyKey(ctx context.Context, key string) (*domain.EmailMessage, error)
 	Update(ctx context.Context, m *domain.EmailMessage) error
 	List(ctx context.Context, f EmailFilter) ([]domain.EmailMessage, int, error)
-	// ClaimDue locks up to limit claimable messages (FOR UPDATE SKIP LOCKED).
+	// ClaimDue locks up to limit claimable messages (FOR UPDATE SKIP LOCKED). Like
+	// ScheduleRepository.ClaimDue it claims nothing while automation is held.
 	ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.EmailMessage, error)
 	Stats(ctx context.Context) (OutboxStats, error)
+	// CountSending counts messages being delivered right now: status sending and not yet
+	// stale at now (a stale one belongs to a crashed dispatcher and would be reclaimed).
+	CountSending(ctx context.Context, now time.Time) (int, error)
 }
 
 // UserRepository stores administrators.
@@ -302,6 +339,8 @@ type SessionRepository interface {
 	Get(ctx context.Context, tokenHash string) (domain.Session, error)
 	Delete(ctx context.Context, tokenHash string) error
 	DeleteExpired(ctx context.Context, now time.Time) error
+	// DeleteAll signs everybody out (after a restore).
+	DeleteAll(ctx context.Context) error
 }
 
 // IdempotencyRecord is a stored response for an Idempotency-Key.
@@ -321,6 +360,8 @@ type IdempotencyRepository interface {
 	Complete(ctx context.Context, key string, status int, body []byte) error
 	Release(ctx context.Context, key string) error
 	DeleteBefore(ctx context.Context, t time.Time) error
+	// DeleteAll forgets every stored response (after a restore).
+	DeleteAll(ctx context.Context) error
 }
 
 // Attachment is a file attached to an e-mail.

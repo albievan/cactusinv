@@ -20,3 +20,13 @@ Session tokens are random and stored only as SHA-256 hashes, so no signing key i
 ## Consequences
 No secret lives in the image, the repository, `.env` or test fixtures. Tests use temporary
 files, an `httptest` Vault and in-memory fakes.
+
+## Amendment — `backup_key` (2026-10-15, ADR-010)
+A third secret, `backup_key`, holds the age identity that stored and scheduled backups are
+encrypted to. `deploy.sh --install` generates it once (`cactusinv backup keygen`, also on
+installations that predate it); on Kubernetes it is added to `cactusinv-secrets`. It is
+optional: without it stored and scheduled backups are off and only passphrase-encrypted
+downloads work. **Copy it off the host** and keep it apart from the backups — a backup
+encrypted to a lost key cannot be restored, and a key stored next to its backups protects
+nothing. It is distinct from `app_key` so the one can be handed to whoever keeps the
+backups without the other.

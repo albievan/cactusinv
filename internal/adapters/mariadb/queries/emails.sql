@@ -39,3 +39,6 @@ FOR UPDATE SKIP LOCKED;
 -- name: OutboxStats :one
 SELECT CAST(COUNT(*) AS SIGNED) AS pending, MIN(next_attempt_at) AS oldest
 FROM email_outbox WHERE status = 'pending';
+
+-- name: CountSendingEmails :one
+SELECT COUNT(*) FROM email_outbox WHERE status = 'sending' AND updated_at > ?;

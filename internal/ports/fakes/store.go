@@ -71,6 +71,8 @@ type state struct {
 	exported    map[string]int
 	smtp        *domain.SMTPSettings
 	smtpPass    []byte
+	system      domain.SystemState
+	backupRuns  []domain.BackupRun
 }
 
 func newState() *state {
@@ -103,6 +105,8 @@ func (s *state) clone() *state {
 	c.sessions = maps.Clone(s.sessions)
 	c.idempotency = maps.Clone(s.idempotency)
 	c.exported = maps.Clone(s.exported)
+	c.smtpPass = slices.Clone(s.smtpPass)
+	c.backupRuns = slices.Clone(s.backupRuns)
 	return &c
 }
 
@@ -138,6 +142,7 @@ func (s *Store) Repos() ports.Repos {
 		Business: business{s}, Currencies: currencies{s}, Banks: banks{s}, Customers: customers{s},
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
 		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
+		System: systemStore{s}, BackupRuns: backupRuns{s},
 	}
 }
 
@@ -690,6 +695,26 @@ func (r invoices) ListUnexported(_ context.Context, limit int) ([]ports.ExportRe
 	return out, err
 }
 
+func (r invoices) ResetExported(_ context.Context) error {
+	return r.s.do(func(st *state) error {
+		st.exported = map[string]int{}
+		return nil
+	})
+}
+
+func (r invoices) CountCreatedSince(_ context.Context, t time.Time) (int, error) {
+	n := 0
+	err := r.s.do(func(st *state) error {
+		for _, inv := range st.invoices {
+			if inv.CreatedAt.After(t) {
+				n++
+			}
+		}
+		return nil
+	})
+	return n, err
+}
+
 func (r invoices) MarkExported(_ context.Context, id string, version int) error {
 	return r.s.do(func(st *state) error {
 		st.exported[id] = version
@@ -878,6 +903,9 @@ func (r schedules) Delete(_ context.Context, id string) error {
 func (r schedules) ClaimDue(_ context.Context, now time.Time, limit int) ([]*domain.Schedule, error) {
 	var out []*domain.Schedule
 	err := r.s.do(func(st *state) error {
+		if st.system.AutomationHeld {
+			return nil
+		}
 		var all []domain.Schedule
 		for _, sc := range st.schedules {
 			if sc.IsDue(now) {
@@ -1000,6 +1028,9 @@ func (r emails) List(_ context.Context, f ports.EmailFilter) ([]domain.EmailMess
 func (r emails) ClaimDue(_ context.Context, now time.Time, limit int) ([]*domain.EmailMessage, error) {
 	var out []*domain.EmailMessage
 	err := r.s.do(func(st *state) error {
+		if st.system.AutomationHeld {
+			return nil
+		}
 		var all []domain.EmailMessage
 		for _, m := range st.emails {
 			if m.Claimable(now) {
@@ -1013,6 +1044,19 @@ func (r emails) ClaimDue(_ context.Context, now time.Time, limit int) ([]*domain
 		return nil
 	})
 	return out, err
+}
+
+func (r emails) CountSending(_ context.Context, now time.Time) (int, error) {
+	n := 0
+	err := r.s.do(func(st *state) error {
+		for _, m := range st.emails {
+			if m.Status == domain.EmailSending && m.UpdatedAt.After(now.Add(-domain.StaleSendingAfter)) {
+				n++
+			}
+		}
+		return nil
+	})
+	return n, err
 }
 
 func (r emails) Stats(_ context.Context) (ports.OutboxStats, error) {
@@ -1124,6 +1168,13 @@ func (r sessions) Delete(_ context.Context, tokenHash string) error {
 	})
 }
 
+func (r sessions) DeleteAll(_ context.Context) error {
+	return r.s.do(func(st *state) error {
+		st.sessions = map[string]domain.Session{}
+		return nil
+	})
+}
+
 func (r sessions) DeleteExpired(_ context.Context, now time.Time) error {
 	return r.s.do(func(st *state) error {
 		for k, s := range st.sessions {
@@ -1178,6 +1229,13 @@ func (r idempotency) Complete(_ context.Context, key string, status int, body []
 func (r idempotency) Release(_ context.Context, key string) error {
 	return r.s.do(func(st *state) error {
 		delete(st.idempotency, key)
+		return nil
+	})
+}
+
+func (r idempotency) DeleteAll(_ context.Context) error {
+	return r.s.do(func(st *state) error {
+		st.idempotency = map[string]ports.IdempotencyRecord{}
 		return nil
 	})
 }
@@ -1242,6 +1300,20 @@ func (r auditStore) Append(_ context.Context, e *domain.AuditEntry) error {
 	})
 }
 
+func (r auditStore) AppendVerbatim(_ context.Context, e domain.AuditEntry) error {
+	return r.s.do(func(st *state) error {
+		prev := ""
+		if n := len(st.audit); n > 0 {
+			prev = st.audit[n-1].Hash
+		}
+		if e.Seq != int64(len(st.audit)+1) || e.PrevHash != prev || e.ComputeHash(prev) != e.Hash {
+			return fmt.Errorf("%w: audit entry #%d does not chain from the head", domain.ErrConflict, e.Seq)
+		}
+		st.audit = append(st.audit, e)
+		return nil
+	})
+}
+
 func (r auditStore) List(_ context.Context, f ports.AuditFilter) ([]domain.AuditEntry, int, error) {
 	var out []domain.AuditEntry
 	var total int
@@ -1291,4 +1363,77 @@ func (s *Store) TamperAudit(seq int64, summary string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.st.audit[seq-1].Summary = summary
+}
+
+// ---- system state & backup runs ----
+
+type systemStore struct{ s *Store }
+
+func (r systemStore) Get(_ context.Context) (domain.SystemState, error) {
+	var out domain.SystemState
+	err := r.s.do(func(st *state) error {
+		out = st.system
+		return nil
+	})
+	return out, err
+}
+
+func (r systemStore) Lock(ctx context.Context) (domain.SystemState, error) { return r.Get(ctx) }
+
+func (r systemStore) Save(_ context.Context, sys domain.SystemState) error {
+	return r.s.do(func(st *state) error {
+		st.system = sys
+		return nil
+	})
+}
+
+type backupRuns struct{ s *Store }
+
+func (r backupRuns) Start(_ context.Context, run domain.BackupRun) error {
+	return r.s.do(func(st *state) error {
+		for _, x := range st.backupRuns {
+			if x.Slot.Equal(run.Slot) {
+				return domain.ErrConflict
+			}
+		}
+		st.backupRuns = append(st.backupRuns, run)
+		return nil
+	})
+}
+
+func (r backupRuns) Finish(_ context.Context, run domain.BackupRun) error {
+	return r.s.do(func(st *state) error {
+		for i, x := range st.backupRuns {
+			if x.Slot.Equal(run.Slot) {
+				st.backupRuns[i] = run
+				return nil
+			}
+		}
+		return domain.ErrNotFound
+	})
+}
+
+func (r backupRuns) Latest(_ context.Context) (domain.BackupRun, error) {
+	var out domain.BackupRun
+	err := r.s.do(func(st *state) error {
+		for _, x := range st.backupRuns {
+			if x.Slot.After(out.Slot) {
+				out = x
+			}
+		}
+		if out.Slot.IsZero() {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+	return out, err
+}
+
+// SetSending marks an outbox message as being delivered right now (tests).
+func (s *Store) SetSending(id string, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.st.emails[id]
+	m.Status, m.UpdatedAt = domain.EmailSending, at
+	s.st.emails[id] = m
 }

@@ -187,6 +187,15 @@ func (r invoiceRepo) ListUnexported(ctx context.Context, limit int) ([]ports.Exp
 	return out, nil
 }
 
+func (r invoiceRepo) ResetExported(ctx context.Context) error {
+	return mapErr(r.q.ResetInvoicesExported(ctx))
+}
+
+func (r invoiceRepo) CountCreatedSince(ctx context.Context, t time.Time) (int, error) {
+	n, err := r.q.CountInvoicesCreatedSince(ctx, t.UTC())
+	return int(n), mapErr(err)
+}
+
 func (r invoiceRepo) MarkExported(ctx context.Context, id string, version int) error {
 	return mapErr(r.q.MarkInvoiceExported(ctx, sqlcgen.MarkInvoiceExportedParams{
 		ExportedVersion: sql.NullInt32{Int32: i32(version), Valid: true}, ID: id,

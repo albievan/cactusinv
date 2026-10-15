@@ -94,6 +94,17 @@ func (q *Queries) CountEmails(ctx context.Context, arg CountEmailsParams) (int64
 	return count, err
 }
 
+const countSendingEmails = `-- name: CountSendingEmails :one
+SELECT COUNT(*) FROM email_outbox WHERE status = 'sending' AND updated_at > ?
+`
+
+func (q *Queries) CountSendingEmails(ctx context.Context, updatedAt time.Time) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSendingEmails, updatedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getEmail = `-- name: GetEmail :one
 SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox WHERE id = ?
 `

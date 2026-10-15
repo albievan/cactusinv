@@ -27,6 +27,15 @@ type AuditLog struct {
 	Hash       string
 }
 
+type BackupRun struct {
+	Slot       time.Time
+	Name       string
+	Result     string
+	Error      string
+	StartedAt  time.Time
+	FinishedAt sql.NullTime
+}
+
 type BankAccount struct {
 	ID            string
 	CurrencyCode  string
@@ -272,6 +281,21 @@ type SmtpSetting struct {
 	TlsMode     string
 	Version     int32
 	UpdatedAt   time.Time
+}
+
+type SystemState struct {
+	ID               int8
+	AutomationHeld   bool
+	HeldAt           sql.NullTime
+	HeldBy           string
+	HeldReason       string
+	RestoreID        sql.NullString
+	RestoreExpiresAt sql.NullTime
+	RestoreSource    string
+	RestoreSha256    string
+	RestoreStagedBy  string
+	RestoreHeader    sql.NullString
+	HeldRestoreID    sql.NullString
 }
 
 type User struct {

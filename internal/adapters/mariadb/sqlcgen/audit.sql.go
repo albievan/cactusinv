@@ -41,12 +41,13 @@ func (q *Queries) CountAudit(ctx context.Context, arg CountAuditParams) (int64, 
 	return count, err
 }
 
-const insertAudit = `-- name: InsertAudit :execlastid
-INSERT INTO audit_log (at, actor_id, actor_name, action, entity_type, entity_id, summary, prev_hash, hash)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+const insertAudit = `-- name: InsertAudit :exec
+INSERT INTO audit_log (seq, at, actor_id, actor_name, action, entity_type, entity_id, summary, prev_hash, hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertAuditParams struct {
+	Seq        int64
 	At         time.Time
 	ActorID    string
 	ActorName  string
@@ -58,8 +59,9 @@ type InsertAuditParams struct {
 	Hash       string
 }
 
-func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, insertAudit,
+func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) error {
+	_, err := q.db.ExecContext(ctx, insertAudit,
+		arg.Seq,
 		arg.At,
 		arg.ActorID,
 		arg.ActorName,
@@ -70,10 +72,7 @@ func (q *Queries) InsertAudit(ctx context.Context, arg InsertAuditParams) (int64
 		arg.PrevHash,
 		arg.Hash,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.LastInsertId()
+	return err
 }
 
 const listAudit = `-- name: ListAudit :many
@@ -235,6 +234,19 @@ func (q *Queries) LockAuditHead(ctx context.Context) (string, error) {
 	var last_hash string
 	err := row.Scan(&last_hash)
 	return last_hash, err
+}
+
+const nextAuditSeq = `-- name: NextAuditSeq :one
+SELECT CAST(COALESCE(MAX(seq), 0) + 1 AS SIGNED) AS next_seq FROM audit_log
+`
+
+// Call with the head locked. seq is assigned explicitly (last + 1), not by AUTO_INCREMENT,
+// which InnoDB does not roll back: a rolled-back append would leave a gap in the chain.
+func (q *Queries) NextAuditSeq(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextAuditSeq)
+	var next_seq int64
+	err := row.Scan(&next_seq)
+	return next_seq, err
 }
 
 const setAuditHead = `-- name: SetAuditHead :exec

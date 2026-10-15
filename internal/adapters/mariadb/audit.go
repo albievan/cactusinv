@@ -2,6 +2,7 @@ package mariadb
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
 	"github.com/albievan/cactusinv/internal/domain"
@@ -32,15 +33,39 @@ func (r auditRepo) Append(ctx context.Context, e *domain.AuditEntry) error {
 	if err != nil {
 		return mapErr(err)
 	}
-	e.Seal(prev)
-	seq, err := r.q.InsertAudit(ctx, sqlcgen.InsertAuditParams{
-		At: e.At, ActorID: e.ActorID, ActorName: e.ActorName, Action: e.Action, EntityType: e.EntityType,
-		EntityID: e.EntityID, Summary: e.Summary, PrevHash: e.PrevHash, Hash: e.Hash,
-	})
+	seq, err := r.q.NextAuditSeq(ctx)
 	if err != nil {
 		return mapErr(err)
 	}
+	e.Seal(prev)
 	e.Seq = seq
+	return r.insert(ctx, *e)
+}
+
+// AppendVerbatim inserts an already sealed entry, refusing one that does not chain from
+// the locked head.
+func (r auditRepo) AppendVerbatim(ctx context.Context, e domain.AuditEntry) error {
+	prev, err := r.q.LockAuditHead(ctx)
+	if err != nil {
+		return mapErr(err)
+	}
+	seq, err := r.q.NextAuditSeq(ctx)
+	if err != nil {
+		return mapErr(err)
+	}
+	if e.Seq != seq || e.PrevHash != prev || e.ComputeHash(prev) != e.Hash {
+		return fmt.Errorf("%w: audit entry #%d does not chain from the head (#%d)", domain.ErrConflict, e.Seq, seq-1)
+	}
+	return r.insert(ctx, e)
+}
+
+func (r auditRepo) insert(ctx context.Context, e domain.AuditEntry) error {
+	if err := r.q.InsertAudit(ctx, sqlcgen.InsertAuditParams{
+		Seq: e.Seq, At: e.At.UTC(), ActorID: e.ActorID, ActorName: e.ActorName, Action: e.Action, EntityType: e.EntityType,
+		EntityID: e.EntityID, Summary: e.Summary, PrevHash: e.PrevHash, Hash: e.Hash,
+	}); err != nil {
+		return mapErr(err)
+	}
 	return mapErr(r.q.SetAuditHead(ctx, e.Hash))
 }
 

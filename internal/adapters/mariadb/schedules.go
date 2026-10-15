@@ -165,6 +165,9 @@ func (r scheduleRepo) Delete(ctx context.Context, id string) error {
 }
 
 func (r scheduleRepo) ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.Schedule, error) {
+	if held, err := r.q.AutomationHeldShared(ctx); err != nil || held {
+		return nil, mapErr(err)
+	}
 	rows, err := r.q.ClaimDueSchedules(ctx, sqlcgen.ClaimDueSchedulesParams{NextRunAt: nullTime(now), Limit: i32(limit)})
 	if err != nil {
 		return nil, mapErr(err)

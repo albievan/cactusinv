@@ -39,3 +39,9 @@ DELETE FROM idempotency_keys WHERE created_at < ?;
 
 -- name: CountUsers :one
 SELECT COUNT(*) FROM users;
+
+-- name: DeleteAllSessions :exec
+DELETE FROM sessions;
+
+-- name: DeleteAllIdempotencyKeys :exec
+DELETE FROM idempotency_keys;

@@ -28,6 +28,23 @@ var (
 	ErrInactive = errors.New("inactive")
 	// ErrUnauthenticated means credentials or the session are missing or wrong.
 	ErrUnauthenticated = errors.New("unauthenticated")
+	// ErrBackupInvalid means a backup could not be opened or did not verify: it is corrupt,
+	// truncated, tampered with, or the passphrase or key is wrong. Deliberately one error,
+	// so it does not say which check failed (ADR-010).
+	ErrBackupInvalid = errors.New("backup is invalid, damaged or the passphrase is wrong")
+	// ErrBackupTooNew means a backup comes from a newer database schema than this version.
+	ErrBackupTooNew = errors.New("backup is from a newer version")
+	// ErrBackupUnsupported means a backup's format version or schema is not supported.
+	ErrBackupUnsupported = errors.New("backup format is not supported")
+	// ErrBusy means the operation cannot run now (another backup or restore is running, or
+	// an e-mail is being sent); try again shortly.
+	ErrBusy = errors.New("busy")
+	// ErrOutcomeUnknown means an operation's result cannot be determined (e.g. a restore's
+	// COMMIT failed in a way that leaves it open whether it took effect); check before
+	// retrying.
+	ErrOutcomeUnknown = errors.New("outcome unknown")
+	// ErrNotConfigured means a required setting or secret is missing (e.g. backup_key).
+	ErrNotConfigured = errors.New("not configured")
 )
 
 // ValidationError describes which field broke which rule. It matches ErrValidation

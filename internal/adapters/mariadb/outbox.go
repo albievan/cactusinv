@@ -76,6 +76,9 @@ func (r emailRepo) List(ctx context.Context, f ports.EmailFilter) ([]domain.Emai
 }
 
 func (r emailRepo) ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.EmailMessage, error) {
+	if held, err := r.q.AutomationHeldShared(ctx); err != nil || held {
+		return nil, mapErr(err)
+	}
 	rows, err := r.q.ClaimDueEmails(ctx, sqlcgen.ClaimDueEmailsParams{
 		Now: now.UTC(), StaleBefore: now.Add(-domain.StaleSendingAfter).UTC(), Limit: i32(limit),
 	})
@@ -87,6 +90,11 @@ func (r emailRepo) ClaimDue(ctx context.Context, now time.Time, limit int) ([]*d
 		out[i] = toEmail(row)
 	}
 	return out, nil
+}
+
+func (r emailRepo) CountSending(ctx context.Context, now time.Time) (int, error) {
+	n, err := r.q.CountSendingEmails(ctx, now.Add(-domain.StaleSendingAfter).UTC())
+	return int(n), mapErr(err)
 }
 
 func (r emailRepo) Stats(ctx context.Context) (ports.OutboxStats, error) {
@@ -168,6 +176,10 @@ func (r sessionRepo) Delete(ctx context.Context, tokenHash string) error {
 	return mapErr(r.q.DeleteSession(ctx, tokenHash))
 }
 
+func (r sessionRepo) DeleteAll(ctx context.Context) error {
+	return mapErr(r.q.DeleteAllSessions(ctx))
+}
+
 func (r sessionRepo) DeleteExpired(ctx context.Context, now time.Time) error {
 	return mapErr(r.q.DeleteExpiredSessions(ctx, now.UTC()))
 }
@@ -196,6 +208,10 @@ func (r idempotencyRepo) Complete(ctx context.Context, key string, status int, b
 
 func (r idempotencyRepo) Release(ctx context.Context, key string) error {
 	return mapErr(r.q.DeleteIdempotencyKey(ctx, key))
+}
+
+func (r idempotencyRepo) DeleteAll(ctx context.Context) error {
+	return mapErr(r.q.DeleteAllIdempotencyKeys(ctx))
 }
 
 func (r idempotencyRepo) DeleteBefore(ctx context.Context, t time.Time) error {

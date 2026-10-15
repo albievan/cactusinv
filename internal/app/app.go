@@ -26,6 +26,8 @@ type Deps struct {
 	Logger   *slog.Logger
 	// SessionTTL is how long a login lasts (default 7 days).
 	SessionTTL time.Duration
+	// Backups configures backups and restores (ADR-010); zero disables them.
+	Backups BackupDeps
 }
 
 // Service exposes every use case. It is safe for concurrent use.
@@ -40,6 +42,9 @@ type Service struct {
 	cipher   ports.Cipher
 	log      *slog.Logger
 	ttl      time.Duration
+	backups  BackupDeps
+	// backupSlot admits one backup or restore operation at a time.
+	backupSlot chan struct{}
 }
 
 // New builds a Service.
@@ -53,6 +58,7 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
+		backups: d.Backups, backupSlot: make(chan struct{}, 1),
 	}
 }
 
