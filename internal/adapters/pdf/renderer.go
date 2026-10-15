@@ -244,7 +244,8 @@ func (p *page) parties(top float64, blocks ...partyBlock) float64 {
 	return bottom + 3
 }
 
-// infoStrip prints the non-empty label/value pairs in a light card.
+// infoStrip prints the non-empty label/value pairs in a light card; values wrap so
+// nothing is cut off, and the card grows to the tallest value.
 func (p *page) infoStrip(top float64, pairs [][2]string) float64 {
 	var items [][2]string
 	for _, kv := range pairs {
@@ -255,10 +256,17 @@ func (p *page) infoStrip(top float64, pairs [][2]string) float64 {
 	if len(items) == 0 {
 		return top
 	}
-	h := 13.0
+	w := contentW / float64(len(items))
+	p.font("", 8.5)
+	values := make([][]string, len(items))
+	maxN := 1
+	for i, kv := range items {
+		values[i] = p.wrap(kv[1], w-7)
+		maxN = max(maxN, len(values[i]))
+	}
+	h := 9 + float64(maxN)*3.9
 	p.fill(cardFill)
 	p.pdf.RoundedRect(margin, top, contentW, h, 2, "1234", "F")
-	w := contentW / float64(len(items))
 	for i, kv := range items {
 		x := margin + 4 + float64(i)*w
 		p.font("B", 7)
@@ -266,8 +274,8 @@ func (p *page) infoStrip(top float64, pairs [][2]string) float64 {
 		p.text(x, top+5, strings.ToUpper(kv[0]))
 		p.font("", 8.5)
 		p.color(ink)
-		if lines := p.wrap(kv[1], w-6); len(lines) > 0 {
-			p.pdf.Text(x, top+10, lines[0])
+		for j, l := range values[i] {
+			p.pdf.Text(x, top+10+float64(j)*3.9, l)
 		}
 	}
 	return top + h + 5
@@ -339,7 +347,8 @@ func (p *page) totals(top float64, rows [][2]string, grandLabel, grandValue stri
 	return y + 12
 }
 
-// payment draws the bank-details card and returns its bottom.
+// payment draws the bank-details card and returns its bottom. Values wrap within the
+// card; a row without a label (a message) spans the full card width.
 func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string) float64 {
 	rows := [][2]string{
 		{"Bank", b.BankName},
@@ -361,21 +370,49 @@ func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string
 	if b.AccountNumber == "" {
 		shown = [][2]string{{"", "Payment details are added when the invoice is issued."}}
 	}
-	h := 9 + float64(len(shown))*4.4
+	const labelW, lineH = 32.0, 4.4
+	type wrapped struct {
+		label string
+		lines []string
+	}
+	var body []wrapped
+	n := 0
+	for _, r := range shown {
+		if r[0] == "" {
+			p.font("I", 8.5)
+			body = append(body, wrapped{"", p.wrap(r[1], w-8)})
+		} else {
+			p.font("B", 8.5)
+			body = append(body, wrapped{r[0], p.wrap(r[1], w-8-labelW)})
+		}
+		n += len(body[len(body)-1].lines)
+	}
+	h := 9 + float64(n)*lineH
 	p.fill(cardFill)
 	p.pdf.RoundedRect(x, top, w, h, 2, "1234", "F")
 	p.font("B", 7.5)
 	p.color(accent)
 	p.text(x+4, top+5.5, "PAYMENT DETAILS")
 	y := top + 10.5
-	for _, r := range shown {
+	for _, r := range body {
+		if r.label == "" {
+			p.font("I", 8.5)
+			p.color(muted)
+			for _, l := range r.lines {
+				p.pdf.Text(x+4, y, l)
+				y += lineH
+			}
+			continue
+		}
 		p.font("", 8.5)
 		p.color(muted)
-		p.text(x+4, y, r[0])
+		p.text(x+4, y, r.label)
 		p.font("B", 8.5)
 		p.color(ink)
-		p.text(x+36, y, r[1])
-		y += 4.4
+		for _, l := range r.lines {
+			p.pdf.Text(x+4+labelW, y, l)
+			y += lineH
+		}
 	}
 	return top + h
 }

@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -977,5 +978,96 @@ func TestSMTPSettings(t *testing.T) {
 	}
 	if _, err := svc.UpdateSMTPSettings(h.ctx, domain.SMTPSettings{Enabled: true, Port: 587}, nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("host required")
+	}
+}
+
+func TestStatements(t *testing.T) {
+	h := newHarness(t).seed()
+	inv1 := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	inv2 := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	must(h.svc.MarkInvoicePaid(h.ctx, inv2.ID))
+	must(h.svc.CreateInvoice(h.ctx, h.referenceInput())) // draft: not on the statement
+
+	st := must(h.svc.GetStatement(h.ctx, h.customer.ID))
+	if st.Total != inv1.Totals.Total || len(st.Lines) != 1 || st.Lines[0].Number != inv1.Number {
+		t.Fatalf("statement = %+v", st)
+	}
+	pdf, name := must2(h.svc.StatementPDF(h.ctx, h.customer.ID))
+	if string(pdf) != "%PDF-statement CD" || name != "Statement_CD_2026-08-21.pdf" {
+		t.Fatalf("pdf %q %q", pdf, name)
+	}
+	m := must(h.svc.SendStatement(h.ctx, h.customer.ID, app.SendInput{IdempotencyKey: "st-1"}))
+	if m.Kind != domain.EmailKindStatement || m.CustomerID != h.customer.ID || m.InvoiceID != "" ||
+		!strings.HasPrefix(m.Subject, "Statement of account from ") {
+		t.Fatalf("statement mail = %+v", m)
+	}
+	if again := must(h.svc.SendStatement(h.ctx, h.customer.ID, app.SendInput{IdempotencyKey: "st-1"})); again.ID != m.ID {
+		t.Fatal("idempotent")
+	}
+	if res := must(h.svc.DispatchEmails(h.ctx, 10)); res.Sent != 1 {
+		t.Fatalf("dispatch = %+v", res)
+	}
+	sent := h.mailer.Sent[len(h.mailer.Sent)-1]
+	if sent.Attachments[0].Filename != "Statement_CD_2026-08-21.pdf" || !strings.Contains(sent.Body, "R 3,251.16") {
+		t.Fatalf("statement e-mail = %+v", sent)
+	}
+	if list, n := must3(h.svc.ListEmails(h.ctx, ports.EmailFilter{CustomerID: h.customer.ID})); n != 1 || list[0].Status != domain.EmailSent {
+		t.Fatal("statement e-mail listed by customer")
+	}
+	// A statement schedule sends only while something is owed.
+	d := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "monthly statement", Kind: domain.ScheduleEmail, EmailScope: domain.EmailStatement,
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, StartDate: domain.NewDate(2026, 8, 1)},
+	}))
+	must(h.svc.RunScheduleNow(h.ctx, d.Schedule.ID))
+	if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Emailed != 1 {
+		t.Fatalf("statement schedule = %+v", res)
+	}
+	must(h.svc.MarkInvoicePaid(h.ctx, inv1.ID))
+	must(h.svc.RunScheduleNow(h.ctx, d.Schedule.ID))
+	if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Emailed != 0 {
+		t.Fatal("nothing owed: no statement")
+	}
+	if _, err := h.svc.GetStatement(h.ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatal("unknown customer")
+	}
+	if _, _, err := h.svc.StatementPDF(h.ctx, "nope"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatal("unknown customer pdf")
+	}
+	if _, err := h.svc.SendStatement(h.ctx, "nope", app.SendInput{}); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatal("unknown customer send")
+	}
+	// Renderer failure on a statement e-mail is retried like any other.
+	h2 := newHarness(t).seed()
+	svc := app.New(app.Deps{Tx: h2.store, Clock: h2.clock, IDs: &fakes.IDs{}, Mailer: h2.mailer, Renderer: fakes.Renderer{Err: errors.New("font")}, Hasher: fakes.Hasher{}})
+	must(svc.SendStatement(h2.ctx, h2.customer.ID, app.SendInput{}))
+	if res := must(svc.DispatchEmails(h2.ctx, 10)); res.Failed != 1 {
+		t.Fatal("statement render failure")
+	}
+	if _, _, err := svc.StatementPDF(h2.ctx, h2.customer.ID); err == nil {
+		t.Fatal("pdf error")
+	}
+}
+
+func TestSMTPServerErrorsAndCancelStatement(t *testing.T) {
+	h := newHarness(t).seed()
+	svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}, Cipher: fakes.Cipher{}})
+	pw := "secret"
+	must(svc.UpdateSMTPSettings(h.ctx, domain.SMTPSettings{Enabled: true, Host: "smtp.example.com", Port: 587, Username: "u@example.com", From: "u@example.com"}, &pw))
+	empty := ""
+	v := must(svc.UpdateSMTPSettings(h.ctx, domain.SMTPSettings{Host: "smtp.example.com", Port: 587, Version: 1}, &empty))
+	if v.PasswordSet {
+		t.Fatal("empty password clears it")
+	}
+	if _, pass, ok, err := svc.SMTPServer(h.ctx); ok || pass != "" || err != nil {
+		t.Fatal("disabled")
+	}
+	h.store.FailNext = errors.New("db down")
+	if _, err := svc.GetSMTPSettings(h.ctx); err == nil {
+		t.Fatal("db error")
+	}
+	m := must(h.svc.SendStatement(h.ctx, h.customer.ID, app.SendInput{SendAt: h.clock.Now().Add(time.Hour)}))
+	if c := must(h.svc.CancelEmail(h.ctx, m.ID)); c.Status != domain.EmailCancelled {
+		t.Fatal("cancel statement e-mail (no invoice event)")
 	}
 }

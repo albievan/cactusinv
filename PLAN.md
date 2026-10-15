@@ -148,6 +148,30 @@ inbound payment reconciliation, user management UI.
 | 8.2 | VAT hidden entirely at 0 % (PDF, UI); labelled "VAT" otherwise; "VAT No" only when set | done | PDF test asserts no "VAT" text on a 0 % invoice | `adapters/pdf` |
 | 8.3 | No automatic e-mailing of outstanding/overdue invoices; schedule auto-send is off unless chosen | done | no reminder feature; editor defaults auto-send off | `web/src/features/schedules` |
 
+### M9 — Product-only lines, statements, e-mail schedules, SMTP, new look (Albie, 2026-10-15)
+
+> Invoice lines are searched from all products, no free text. A product has a currency and
+> unit cost. Bank accounts per currency: sort/branch code, branch name, account number,
+> SWIFT, bank name, country. Mark invoices paid/overdue/void and see the stage (draft,
+> issued & emailed…). The disclaimer is pulled every time the PDF is created. Trigger an
+> invoice e-mail manually or build a per-customer schedule e-mailing outstanding or
+> not-yet-e-mailed invoices. Configure the SMTP server, Gmail by default. Customers in a
+> table. Send statements. A more modern invoice. A login screen and app shell in the
+> green/cream style with version and build visible. Everything readable; full-width grids.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 9.1 | Lines only from the product look-up (searchable grid over all products); server rejects free text | done | 422 on a line without productId; combobox test | `app/invoices.go`, `web/src/components/LineEditor.tsx` |
+| 9.2 | Product form leads with currency + unit cost; ≥ 1 price required | done | 422 without a price | `domain/product.go`, `features/products` |
+| 9.3 | Bank account country; relabelled fields; printed on PDF | done | migration 00004 | `domain/bank.go`, PDF |
+| 9.4 | Overdue status (mark overdue); stage draft/issued/emailed/overdue/paid/void; stage tracker | done | domain + HTTP tests | `domain/invoice.go`, `InvoiceDetail.tsx` |
+| 9.5 | Disclaimer resolved at every PDF render (customer's, else business's) | done | re-render after editing shows new text | `app/invoices.go`, `domain.Disclaimer` |
+| 9.6 | Per-customer e-mail schedules: unsent, outstanding, statement | done | migration 00005; app tests | `app/schedules.go` |
+| 9.7 | SMTP settings in the app (Gmail preset), password AES-256-GCM with app_key, test e-mail | done | migration 00006; app + adapter tests | `app/smtp.go`, `adapters/aesgcm`, `adapters/smtp/dynamic.go` |
+| 9.8 | Customer statements: aging, PDF, e-mail now or on schedule | done | migration 00007; statement tests | `domain/statement.go`, `app/statements.go` |
+| 9.9 | Modern PDF design; readable (wrapping payment card/info strip; overlap regression test) | done | `TestPaymentCardNeverOverlapsTotals` | `adapters/pdf` |
+| 9.10 | Login and app shell restyle; version · build on login and sidebar; full-width tables | done | web tests; screenshots reviewed | `web/src/components` |
+
 ---
 
 ## Decisions
@@ -166,7 +190,10 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | Default `admin`/`admin` user, created only when no user exists | requested; logged as a warning; README says to change it |
 | 2026-10-15 | Repository/module `github.com/albievan/cactusinv` | the name requested (Albie, 2026-10-15) |
 | 2026-10-15 | VAT: one business default (0 %), per-invoice/per-schedule override, invisible at 0 % | requested (M8) |
-| 2026-10-15 | No automatic e-mails for outstanding/overdue invoices | requested (M8); sending stays an explicit action or an opted-in schedule |
+| 2026-10-15 | No automatic e-mails for outstanding/overdue invoices by default | requested (M8); sending is an explicit action or an opted-in per-customer e-mail schedule (M9) |
+| 2026-10-15 | Disclaimer is not stored on the invoice; it is resolved at PDF render time | requested (M9): edits apply to every PDF produced afterwards, including re-renders of issued invoices |
+| 2026-10-15 | SMTP password stored in the DB, AES-256-GCM encrypted with a generated app_key secret | in-app setup requested (M9); the key never leaves the secrets volume |
+| 2026-10-15 | Version from VERSION file, build = git commit count, stamped at build time | requested (M9): visible on login and in the sidebar |
 | 2026-10-15 | One deploy script, Compose for Docker, plain manifests for k3s/k8s (ADR-007) | requested; no Helm dependency |
 | 2026-10-15 | Every invoice archived as PDF, re-exported on change (ADR-008) | requested "all invoices exported to a volume" |
 | 2026-10-15 | Missed schedule periods are caught up one by one | an invoice is never silently skipped; each is dated its own period |

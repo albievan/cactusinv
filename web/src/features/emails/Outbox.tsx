@@ -21,7 +21,7 @@ export function Outbox() {
     }
   }
   return (
-    <Page title="Outbox" back="/more">
+    <Page title="Outbox">
       <div className="mb-3 flex gap-2 overflow-x-auto" role="tablist">
         {statuses.map((s) => (
           <button key={s} role="tab" aria-selected={status === s} onClick={() => setStatus(s)} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white ring-1 ring-slate-200 dark:bg-slate-900'}`}>{s}</button>
@@ -33,7 +33,11 @@ export function Outbox() {
           {data?.items.map((m) => (
             <li key={m.id} className="card text-sm">
               <div className="flex items-center justify-between gap-2">
-                <Link to={`/invoices/${m.invoiceId}`} className="truncate font-semibold text-brand-600">{m.subject}</Link>
+                {m.kind === 'statement' ? (
+                  <Link to={`/customers/${m.customerId}`} className="truncate font-semibold text-brand-700">{m.subject} <span className="chip ml-1 bg-cream-200 text-brand-800">statement</span></Link>
+                ) : (
+                  <Link to={`/invoices/${m.invoiceId}`} className="truncate font-semibold text-brand-700">{m.subject}</Link>
+                )}
                 <Badge status={m.status} />
               </div>
               <div className="truncate text-slate-500">To {m.to.join(', ')}{m.cc.length ? ` · CC ${m.cc.join(', ')}` : ''}</div>

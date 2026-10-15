@@ -20,14 +20,16 @@ test('shows the sign-in form when not authenticated, then the dashboard', async 
   mockFetch({
     'GET /api/v1/auth/me': () => (signedIn ? json({ id: '1', email: 'admin' })() : json({ type: 'u', title: 'Sign in required', status: 401 }, 401)()),
     'POST /api/v1/auth/login': () => { signedIn = true; return new Response(null, { status: 204 }) },
+    'GET /api/v1/version': json({ version: '1.1.0', build: '7' }),
     'GET /api/v1/dashboard': json({ today: '2026-08-21', totals: [{ currency: 'ZAR', openCount: 1, outstanding: '3251.16', overdueCount: 0, overdue: '0.00' }], upcomingEmails: [], upcomingRuns: [], recentInvoices: [], failedEmailCount: 0 }),
   })
   render(<App />)
-  await userEvent.type(await screen.findByLabelText('User'), 'admin')
+  await userEvent.type(await screen.findByLabelText('User name'), 'admin')
   await userEvent.type(screen.getByLabelText('Password'), 'admin')
   await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   expect(await screen.findByText('ZAR 3,251.16')).toBeInTheDocument()
   expect(screen.getAllByRole('navigation', { name: 'Main' }).length).toBeGreaterThan(0)
+  expect(await screen.findByTestId('version')).toHaveTextContent('v1.1.0 · build 7')
 })
 
 test('sends the CSRF header on mutations', async () => {
@@ -37,8 +39,19 @@ test('sends the CSRF header on mutations', async () => {
     return new Response(null, { status: 401 })
   }))
   render(<App />)
-  await userEvent.type(await screen.findByLabelText('User'), 'a')
+  await userEvent.type(await screen.findByLabelText('User name'), 'a')
   await userEvent.type(screen.getByLabelText('Password'), 'b')
   await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
   expect(seen).toContain('POST cactusinv')
+})
+
+test('the login screen shows the version and build', async () => {
+  mockFetch({
+    'GET /api/v1/auth/me': json({ type: 'u', title: 'Sign in required', status: 401 }, 401),
+    'GET /api/v1/version': json({ version: '1.1.0', build: '7' }),
+  })
+  render(<App />)
+  expect(await screen.findByText('v1.1.0 · build 7')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+  expect(screen.getByLabelText('Show what I type')).toBeInTheDocument()
 })

@@ -21,7 +21,15 @@ Released into the public domain — see [LICENSE](LICENSE).
   currency. No exchange-rate guessing.
 - **VAT** — set a default VAT % for the business (0 by default) and override it per invoice or
   schedule. At 0 % nothing about VAT appears on the invoice.
-- **Product look-up** — search and pick products while editing, priced in the invoice currency.
+- **Product look-up** — every invoice line is picked from a searchable product grid (no free
+  text); each product has a unit cost per currency.
+- **Stages** — draft → issued → e-mailed → paid, or overdue / void, shown as a progress tracker;
+  mark invoices paid, overdue or void.
+- **Statements** — a statement of account per customer with aging; download or e-mail it,
+  now or on a schedule.
+- **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
+  password), test button; the password is stored encrypted.
+- **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Scheduled database backups** — daily (configurable), compressed, pruned; one-command restore.

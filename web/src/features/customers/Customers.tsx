@@ -4,34 +4,98 @@ import { api, unwrap, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { IconDownload, IconPlus, IconSend } from '../../components/icons'
 
 export function CustomerList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Customers" actions={<Link to="/customers/new" className="btn-primary">+ New</Link>}>
+    <Page title="Customers" actions={<Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search customers" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No customers yet.</Empty> : (
-        <ul className="grid gap-2 md:grid-cols-2">
-          {data?.items.map((c) => (
-            <li key={c.id}>
-              <Link to={`/customers/${c.id}`} className="card flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-50 font-bold text-brand-600 dark:bg-slate-800">{c.code}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{c.name}</span>
-                  <span className="block truncate text-sm text-slate-500">{c.email}</span>
-                </span>
-                <span className="text-right text-sm">
-                  <span className="chip bg-slate-100 dark:bg-slate-800">{c.currency}</span>
-                  {!c.active && <div className="mt-1"><Badge status="ended" /></div>}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="card overflow-x-auto p-0">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="table-head">
+              <tr>
+                <th className="px-4 py-3">Code</th>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">E-mail</th>
+                <th className="px-4 py-3">Currency</th>
+                <th className="px-4 py-3">Payment terms</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-cream-200">
+              {data?.items.map((c) => (
+                <tr key={c.id} className="hover:bg-cream-50">
+                  <td className="px-4 py-3 font-semibold text-brand-700">{c.code}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <Link to={`/customers/${c.id}`} className="text-brand-800 hover:underline">{c.name}</Link>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{c.email}</td>
+                  <td className="px-4 py-3"><span className="chip bg-brand-50 text-brand-700 ring-1 ring-brand-200">{c.currency}</span></td>
+                  <td className="px-4 py-3 text-slate-600">{c.paymentTerms.text}</td>
+                  <td className="px-4 py-3"><Badge status={c.active ? 'active' : 'ended'} label={c.active ? 'Active' : 'Inactive'} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Page>
+  )
+}
+
+/** StatementPanel shows a customer's balance and aging, with download and e-mail. */
+function StatementPanel({ customerId }: { customerId: string }) {
+  const { data, error, reload } = useAsync(() => unwrap(api.GET('/customers/{id}/statement', { params: { path: { id: customerId } } })), [customerId])
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState<Error | null>(null)
+  const send = async () => {
+    setErr(null)
+    setMsg('')
+    try {
+      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': crypto.randomUUID() } }, body: {} }))
+      setMsg('Statement queued for e-mail.')
+      reload()
+    } catch (e) {
+      setErr(e as Error)
+    }
+  }
+  if (!data) return error ? <ErrorBanner error={error} /> : null
+  const buckets: [string, string][] = [
+    ['Current', data.aging.current], ['1–30 days', data.aging.days1to30], ['31–60 days', data.aging.days31to60],
+    ['61–90 days', data.aging.days61to90], ['90+ days', data.aging.over90],
+  ]
+  return (
+    <section className="card space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Statement</h2>
+          <p className="text-sm text-slate-500">Every unpaid invoice as of today.</p>
+        </div>
+        <div className="text-right">
+          <div className="text-xs text-slate-500">Balance due</div>
+          <div className="text-2xl font-bold tabular-nums text-brand-900">{data.currency} {data.total}</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {buckets.map(([label, v], i) => (
+          <div key={label} className="rounded-xl bg-cream-50 p-3 ring-1 ring-cream-200">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+            <div className={`font-semibold tabular-nums ${i >= 2 && Number(v) > 0 ? 'text-amber-700' : ''}`}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <ErrorBanner error={err} />
+      <div className="flex flex-wrap items-center gap-2">
+        <a className="btn-secondary" href={`/api/v1/customers/${customerId}/statement/pdf`} target="_blank" rel="noreferrer"><IconDownload width={16} height={16} /> Statement PDF</a>
+        <button type="button" className="btn-primary" onClick={send}><IconSend width={16} height={16} /> E-mail statement</button>
+        <Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=email`}>Schedule e-mails…</Link>
+        {msg && <span className="text-sm text-green-700">{msg}</span>}
+      </div>
+    </section>
   )
 }
 
@@ -136,9 +200,10 @@ export function CustomerEditor() {
           <Field label="Tax number">{(f) => <input id={f} className="input" value={c.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
           <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => set({ active: e.target.checked })} /> Active</label>
           <div className="md:col-span-2">
-            <Field label="Default notes / disclaimer">{(f) => <textarea id={f} className="input min-h-[96px]" value={c.defaultNotes} onChange={(e) => set({ defaultNotes: e.target.value })} />}</Field>
+            <Field label="Disclaimer for this customer" hint="Printed at the foot of every invoice and statement PDF for this customer, read fresh each time. Leave empty to use the business disclaimer.">{(f) => <textarea id={f} className="input min-h-[96px]" value={c.defaultNotes} onChange={(e) => set({ defaultNotes: e.target.value })} />}</Field>
           </div>
         </div>
+        {id && <StatementPanel customerId={id} />}
         <StickyActions>
           {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
           <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>

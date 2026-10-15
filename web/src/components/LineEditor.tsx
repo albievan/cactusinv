@@ -1,125 +1,202 @@
-import { useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { api, unwrap, type Product } from '../lib/api/client'
-import { fromMinor, lineAmount, toMinor } from '../lib/money'
-import { useAsync } from '../lib/useAsync'
-import { Sheet } from './ui'
+import { fromMinor, lineAmount } from '../lib/money'
 
 export interface EditLine {
   key: string
   productId: string
+  productName: string
+  /** From the product — not editable (no free-text lines). */
   description: string
   quantity: string
-  /** '' means "use the product's price" (only allowed with a product). */
+  /** The product's unit price in the document currency (display and preview only). */
   unitPrice: string
   discountPercent: string
 }
 
-export const newLine = (): EditLine => ({ key: crypto.randomUUID(), productId: '', description: '', quantity: '1', unitPrice: '', discountPercent: '' })
+export const newLine = (): EditLine => ({ key: crypto.randomUUID(), productId: '', productName: '', description: '', quantity: '1', unitPrice: '', discountPercent: '' })
 
-/** LineEditor edits invoice or schedule lines, with a product look-up priced in currency. */
-export function LineEditor({ lines, onChange, currency, minorUnits, allowListPrice }: {
+/** LineEditor edits invoice or schedule lines. Every line is a product from the look-up. */
+export function LineEditor({ lines, onChange, currency, minorUnits }: {
   lines: EditLine[]
   onChange: (l: EditLine[]) => void
   currency: string
   minorUnits: number
-  allowListPrice?: boolean
 }) {
-  const [pickFor, setPickFor] = useState<string | null>(null)
   const update = (key: string, patch: Partial<EditLine>) => onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   let total = 0n
-  let valid = true
+  let complete = true
   for (const l of lines) {
-    const a = l.unitPrice === '' ? null : lineAmount(l, minorUnits)
-    if (a === null) valid = false
+    const a = l.productId ? lineAmount(l, minorUnits) : null
+    if (a === null) complete = false
     else total += a
   }
   return (
-    <div className="space-y-3">
-      {lines.map((l, i) => {
-        const amount = l.unitPrice === '' ? null : lineAmount(l, minorUnits)
-        return (
-          <div key={l.key} className="card space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase text-slate-500">Line {i + 1}</span>
-              <div className="flex gap-1">
-                <button type="button" className="btn-secondary min-h-[36px] px-3 text-xs" onClick={() => setPickFor(l.key)}>
-                  {l.productId ? 'Change product' : 'Pick product'}
-                </button>
-                <button type="button" aria-label={`Remove line ${i + 1}`} className="btn-secondary min-h-[36px] px-3 text-xs" onClick={() => onChange(lines.filter((x) => x.key !== l.key))} disabled={lines.length === 1}>
-                  ✕
-                </button>
+    <div className="card space-y-3 p-0">
+      <div className="hidden grid-cols-[minmax(0,1fr)_6rem_8rem_6rem_8rem_2.5rem] gap-3 rounded-t-2xl px-4 py-2 md:grid table-head">
+        <span>Product</span>
+        <span className="text-right">Qty</span>
+        <span className="text-right">Unit price</span>
+        <span className="text-right">Disc %</span>
+        <span className="text-right">Amount</span>
+        <span />
+      </div>
+      <ul className="divide-y divide-cream-200">
+        {lines.map((l, i) => {
+          const amount = l.productId ? lineAmount(l, minorUnits) : null
+          return (
+            <li key={l.key} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6rem_8rem_6rem_8rem_2.5rem] md:items-start">
+              <div>
+                <ProductCombobox
+                  currency={currency}
+                  value={l.productName}
+                  label={`Product for line ${i + 1}`}
+                  onPick={(p) => {
+                    const price = p.prices.find((x) => x.currency === currency)?.unitPrice ?? ''
+                    update(l.key, { productId: p.id ?? '', productName: p.name, description: p.description || p.name, unitPrice: price })
+                  }}
+                />
+                {l.description && l.description !== l.productName && <p className="mt-1 text-xs text-slate-500">{l.description}</p>}
               </div>
-            </div>
-            <textarea aria-label="Description" className="input min-h-[64px]" placeholder={allowListPrice ? 'Description (may use {month}, {year}, {period})' : 'Description'} value={l.description} onChange={(e) => update(l.key, { description: e.target.value })} />
-            <div className="grid grid-cols-3 gap-2">
-              <label className="text-xs text-slate-500">Qty
-                <input className="input" inputMode="decimal" value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} />
+              <label className="text-xs text-slate-500 md:text-right">
+                <span className="md:sr-only">Qty</span>
+                <input className="input text-right" inputMode="decimal" aria-label={`Quantity for line ${i + 1}`} value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} />
               </label>
-              <label className="text-xs text-slate-500">Unit price
-                <input className="input" inputMode="decimal" placeholder={l.productId && allowListPrice ? 'List price' : '0.00'} value={l.unitPrice} onChange={(e) => update(l.key, { unitPrice: e.target.value })} />
+              <div className="text-sm md:pt-2.5 md:text-right">
+                <span className="text-xs text-slate-500 md:hidden">Unit price </span>
+                <span className="tabular-nums">{l.unitPrice ? `${l.unitPrice}` : '—'}</span>
+              </div>
+              <label className="text-xs text-slate-500">
+                <span className="md:sr-only">Disc %</span>
+                <input className="input text-right" inputMode="decimal" placeholder="0" aria-label={`Discount for line ${i + 1}`} value={l.discountPercent} onChange={(e) => update(l.key, { discountPercent: e.target.value })} />
               </label>
-              <label className="text-xs text-slate-500">Disc %
-                <input className="input" inputMode="decimal" placeholder="0" value={l.discountPercent} onChange={(e) => update(l.key, { discountPercent: e.target.value })} />
-              </label>
-            </div>
-            <div className="text-right text-sm tabular-nums text-slate-600 dark:text-slate-300">
-              {amount !== null ? `${currency} ${fromMinor(amount, minorUnits)}` : l.productId && allowListPrice ? 'Priced at run time' : '—'}
-            </div>
-          </div>
-        )
-      })}
-      <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold tabular-nums md:pt-2.5 md:text-right">{amount !== null ? fromMinor(amount, minorUnits) : '—'}</div>
+              <button type="button" aria-label={`Remove line ${i + 1}`} className="btn-secondary h-10 w-10 px-0 md:h-[44px]" onClick={() => onChange(lines.filter((x) => x.key !== l.key))} disabled={lines.length === 1}>
+                ✕
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="flex items-center justify-between rounded-b-2xl border-t border-cream-200 px-4 py-3">
         <button type="button" className="btn-secondary" onClick={() => onChange([...lines, newLine()])}>
           + Add line
         </button>
         <div className="text-right">
-          <div className="text-xs text-slate-500">Preview (server computes the final total)</div>
-          <div className="text-lg font-bold tabular-nums">{valid ? `${currency} ${fromMinor(total, minorUnits)}` : '—'}</div>
+          <div className="text-xs text-slate-500">Preview — the server computes the final total</div>
+          <div className="text-lg font-bold tabular-nums text-brand-900">{complete ? `${currency} ${fromMinor(total, minorUnits)}` : 'Choose a product for every line'}</div>
         </div>
       </div>
-      <ProductPicker
-        open={pickFor !== null}
-        currency={currency}
-        onClose={() => setPickFor(null)}
-        onPick={(p) => {
-          const price = p.prices.find((x) => x.currency === currency)?.unitPrice ?? ''
-          const m = toMinor(price, minorUnits)
-          update(pickFor!, {
-            productId: p.id ?? '',
-            description: p.description || p.name,
-            unitPrice: allowListPrice ? '' : m === null ? price : fromMinor(m, minorUnits).replace(/,/g, ''),
-          })
-          setPickFor(null)
-        }}
-      />
     </div>
   )
 }
 
-function ProductPicker({ open, currency, onClose, onPick }: { open: boolean; currency: string; onClose: () => void; onPick: (p: Product) => void }) {
-  const [q, setQ] = useState('')
-  const { data, loading } = useAsync(
-    () => (open ? unwrap(api.GET('/products', { params: { query: { q: q || undefined, currency, limit: 50 } } })) : Promise.resolve(undefined)),
-    [open, q, currency],
-  )
+/** ProductCombobox searches every product; only those priced in currency can be chosen. */
+export function ProductCombobox({ currency, value, label, onPick }: { currency: string; value: string; label: string; onPick: (p: Product) => void }) {
+  const [q, setQ] = useState(value)
+  const [open, setOpen] = useState(false)
+  const [items, setItems] = useState<Product[]>([])
+  const [active, setActive] = useState(0)
+  const listId = useId()
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => setQ(value), [value])
+  useEffect(() => {
+    if (!open) return
+    const t = setTimeout(() => {
+      unwrap(api.GET('/products', { params: { query: { q: q || undefined, limit: 25 } } }))
+        .then((r) => {
+          setItems(r.items)
+          setActive(0)
+        })
+        .catch(() => setItems([]))
+    }, 150)
+    return () => clearTimeout(t)
+  }, [q, open])
+  useEffect(() => {
+    const close = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setOpen(false)
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const priced = (p: Product) => p.prices.find((x) => x.currency === currency)
+  const choose = (p: Product) => {
+    if (!priced(p)) return
+    onPick(p)
+    setQ(p.name)
+    setOpen(false)
+  }
   return (
-    <Sheet title={`Products priced in ${currency}`} open={open} onClose={onClose}>
-      <input type="search" className="input mb-3" placeholder="Search name or SKU" aria-label="Search products" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
-      {loading && <p className="text-sm text-slate-500">Loading…</p>}
-      <ul className="space-y-2">
-        {data?.items.map((p) => (
-          <li key={p.id}>
-            <button type="button" className="card flex w-full items-center justify-between text-left" onClick={() => onPick(p)}>
-              <span>
-                <span className="block font-medium">{p.name}</span>
-                <span className="text-xs text-slate-500">{p.sku}</span>
-              </span>
-              <span className="tabular-nums">{currency} {p.prices.find((x) => x.currency === currency)?.unitPrice}</span>
-            </button>
-          </li>
-        ))}
-        {data && data.items.length === 0 && <li className="text-sm text-slate-500">No products have a {currency} price. Add one under Products.</li>}
-      </ul>
-    </Sheet>
+    <div ref={box} className="relative">
+      <input
+        role="combobox"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        className="input"
+        placeholder="Search products by name or SKU…"
+        value={q}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQ(e.target.value)
+          setOpen(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+            setActive((a) => Math.min(a + 1, items.length - 1))
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActive((a) => Math.max(a - 1, 0))
+          } else if (e.key === 'Enter' && open && items[active]) {
+            e.preventDefault()
+            choose(items[active]!)
+          } else if (e.key === 'Escape') {
+            setOpen(false)
+            setQ(value)
+          }
+        }}
+      />
+      {open && (
+        <div className="absolute z-40 mt-1 w-full min-w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-cream-300">
+          <div className="grid grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] gap-3 px-3 py-2 table-head" aria-hidden="true">
+            <span>Product</span>
+            <span>SKU</span>
+            <span>Unit</span>
+            <span className="text-right">Unit price</span>
+          </div>
+          <ul id={listId} role="listbox" aria-label="Products" className="max-h-72 divide-y divide-cream-100 overflow-y-auto">
+            {items.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">No products found. Add one under Products.</li>}
+            {items.map((p, i) => {
+              const price = priced(p)
+              return (
+                <li
+                  key={p.id}
+                  role="option"
+                  aria-selected={i === active}
+                  aria-disabled={!price}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    choose(p)
+                  }}
+                  className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] items-center gap-3 px-3 py-2.5 text-sm ${i === active ? 'bg-brand-50' : ''} ${price ? '' : 'cursor-not-allowed opacity-50'}`}
+                >
+                  <span className="min-w-0">
+                    <span className="block break-words font-medium text-brand-900">{p.name}</span>
+                    {p.description && p.description !== p.name && <span className="block break-words text-xs text-slate-500">{p.description}</span>}
+                  </span>
+                  <span className="break-all text-xs text-slate-600">{p.sku}</span>
+                  <span className="break-words text-xs text-slate-600">{p.unit || '—'}</span>
+                  <span className="text-right tabular-nums">{price ? `${currency} ${price.unitPrice}` : <span className="text-xs">No {currency} price</span>}</span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </div>
   )
 }

@@ -3,33 +3,45 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Product } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
-import { Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { Badge, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { IconPlus } from '../../components/icons'
 
 export function ProductList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Products" back="/more" actions={<Link to="/products/new" className="btn-primary">+ New</Link>}>
+    <Page title="Products" actions={<Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search name or SKU" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No products yet.</Empty> : (
-        <ul className="grid gap-2 md:grid-cols-2">
-          {data?.items.map((p) => (
-            <li key={p.id}>
-              <Link to={`/products/${p.id}`} className="card block">
-                <div className="flex justify-between gap-2">
-                  <span className="font-semibold">{p.name}</span>
-                  <span className="text-xs text-slate-500">{p.sku}</span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {p.prices.map((pr) => <span key={pr.currency} className="chip bg-brand-50 text-brand-700 dark:bg-slate-800 dark:text-brand-200">{pr.currency} {pr.unitPrice}</span>)}
-                  {p.prices.length === 0 && <span className="text-xs text-amber-600">No prices</span>}
-                  {!p.active && <span className="chip bg-slate-200">inactive</span>}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="card overflow-x-auto p-0">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead className="table-head">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">SKU</th>
+                <th className="px-4 py-3">Unit</th>
+                <th className="px-4 py-3">Unit cost</th>
+                <th className="px-4 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-cream-200">
+              {data?.items.map((p) => (
+                <tr key={p.id} className="hover:bg-cream-50">
+                  <td className="px-4 py-3 font-medium"><Link to={`/products/${p.id}`} className="text-brand-800 hover:underline">{p.name}</Link></td>
+                  <td className="px-4 py-3 text-slate-600">{p.sku}</td>
+                  <td className="px-4 py-3 text-slate-600">{p.unit}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {p.prices.map((pr) => <span key={pr.currency} className="chip bg-brand-50 text-brand-700 ring-1 ring-brand-200">{pr.currency} {pr.unitPrice}</span>)}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3"><Badge status={p.active ? 'active' : 'ended'} label={p.active ? 'Active' : 'Inactive'} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Page>
   )
@@ -46,8 +58,13 @@ export function ProductEditor() {
   const [error, setError] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (existing.data) setP(existing.data) }, [existing.data])
+  // A new product starts with one currency/unit-cost row in the first active currency.
+  useEffect(() => {
+    if (!id && currencies.length > 0) {
+      setP((cur) => (cur.prices.length ? cur : { ...cur, prices: [{ currency: currencies.find((c) => c.active)?.code ?? '', unitPrice: '' }] }))
+    }
+  }, [id, currencies])
   const set = (patch: Partial<Product>) => setP({ ...p, ...patch })
-  const unused = currencies.filter((c) => c.active && !p.prices.some((x) => x.currency === c.code))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -86,20 +103,23 @@ export function ProductEditor() {
           </div>
         </div>
         <div className="card space-y-3">
-          <h2 className="font-semibold">Prices</h2>
-          <p className="text-sm text-slate-500">One explicit price per currency — there is no exchange-rate conversion.</p>
+          <div>
+            <h2 className="text-lg font-semibold">Currency &amp; unit cost</h2>
+            <p className="text-sm text-slate-500">Choose the currency and enter the unit cost. Add another row to sell the product in more currencies — there is no exchange-rate conversion.</p>
+          </div>
           {p.prices.map((pr, i) => (
-            <div key={pr.currency} className="flex items-center gap-2">
-              <span className="chip min-w-[3.5rem] justify-center bg-slate-100 py-2 dark:bg-slate-800">{pr.currency}</span>
-              <input aria-label={`Price in ${pr.currency}`} className="input flex-1" inputMode="decimal" value={pr.unitPrice} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} required />
-              <button type="button" aria-label={`Remove ${pr.currency} price`} className="btn-secondary w-11 px-0" onClick={() => set({ prices: p.prices.filter((_, j) => j !== i) })}>✕</button>
+            <div key={i} className="grid grid-cols-[8rem_minmax(0,1fr)_2.75rem] gap-2">
+              <select aria-label={`Currency ${i + 1}`} className="input" value={pr.currency} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, currency: e.target.value } : x)) })} required>
+                <option value="">Currency…</option>
+                {currencies.filter((c) => c.active && (c.code === pr.currency || !p.prices.some((x) => x.currency === c.code))).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
+              <input aria-label={`Unit cost ${i + 1}`} className="input" inputMode="decimal" placeholder="Unit cost, e.g. 192.94" value={pr.unitPrice} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} required />
+              <button type="button" aria-label={`Remove price ${i + 1}`} className="btn-secondary px-0" disabled={p.prices.length === 1} onClick={() => set({ prices: p.prices.filter((_, j) => j !== i) })}>✕</button>
             </div>
           ))}
-          {unused.length > 0 && (
-            <select aria-label="Add a price in" className="input" value="" onChange={(e) => e.target.value && set({ prices: [...p.prices, { currency: e.target.value, unitPrice: '' }] })}>
-              <option value="">+ Add price in…</option>
-              {unused.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-            </select>
+          {currencies.length === 0 && <p className="text-sm text-amber-700">Add a currency under Settings first.</p>}
+          {currencies.some((c) => c.active && !p.prices.some((x) => x.currency === c.code)) && (
+            <button type="button" className="btn-secondary" onClick={() => set({ prices: [...p.prices, { currency: '', unitPrice: '' }] })}>+ Add another currency</button>
           )}
         </div>
         <StickyActions>

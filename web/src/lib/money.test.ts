@@ -1,4 +1,4 @@
-import { formatMoney, fromMinor, lineAmount, toMinor } from './money'
+import { formatMoney, fromMinor, groupAmount, lineAmount, toMinor } from './money'
 
 describe('money preview', () => {
   it('reproduces the reference invoice lines', () => {
@@ -19,5 +19,7 @@ describe('money preview', () => {
     expect(toMinor('2000', 0)).toBe(2000n)
     expect(fromMinor(-123456n, 2)).toBe('-1,234.56')
     expect(formatMoney('3251.16', 'ZAR')).toBe('ZAR 3,251.16')
+    expect(groupAmount('2688.00')).toBe('2,688.00')
+    expect(groupAmount('-1234567')).toBe('-1,234,567')
   })
 })

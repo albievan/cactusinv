@@ -48,3 +48,10 @@ export function formatMoney(amount: string, currency: string): string {
   const grouped = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
   return `${amount.startsWith('-') ? '-' : ''}${currency} ${grouped}${f !== undefined ? '.' + f : ''}`
 }
+
+/** groupAmount adds thousands separators to a decimal string: "2688.00" → "2,688.00". */
+export function groupAmount(amount: string): string {
+  const neg = amount.startsWith('-')
+  const [i = '0', f] = amount.replace('-', '').split('.')
+  return (neg ? '-' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f !== undefined ? '.' + f : '')
+}

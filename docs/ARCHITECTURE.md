@@ -256,7 +256,24 @@ schedules,settings,auth}`. Mobile layout: sticky top bar, bottom tab bar (Home, 
 Customers, Products, More), full-screen forms with a sticky action bar. ≥ `md`: side nav,
 tables. The production build is embedded in the binary and served with SPA fallback.
 
-## 9. Deployment, backups and the invoice archive
+## 9. Statements, e-mail schedules, SMTP and the disclaimer
+
+- **Statement** (`domain.NewStatement`): every open invoice of the customer in the customer's
+  currency, oldest first, with aging buckets (current, 1–30, 31–60, 61–90, 90+ days past due).
+  Rendered as PDF on demand and when a statement e-mail is delivered.
+- **Schedules** have a `kind`: `invoice` (issue from product lines, optional auto-send) or
+  `email` with a scope — `unsent` (open, never e-mailed), `outstanding` (all open) or
+  `statement`. Runs are idempotent per period and invoice.
+- **Outbox** messages have a `kind` (`invoice` | `statement`); statement e-mails belong to a
+  customer and their PDF is rendered at send time.
+- **SMTP**: a single `smtp_settings` row (Gmail preset until saved); the password is AES-256-GCM
+  ciphertext keyed by the `app_key` secret. `smtp.Dynamic` reads the settings on every send
+  and falls back to the deployment server from `.env`.
+- **Disclaimer**: never copied onto invoices; `domain.Disclaimer(customer, business)` is
+  resolved for each PDF render.
+- **Lines** always reference a product; description and unit price come from it.
+
+## 10. Deployment, backups and the invoice archive
 
 | Concern | Docker Desktop / Engine | k3s / Kubernetes |
 |---|---|---|

@@ -4,7 +4,7 @@ import { formatDateTime } from '../../lib/format'
 import { formatMoney } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
-import { InvoiceCards } from '../invoices/InvoiceList'
+import { InvoiceTable } from '../invoices/InvoiceList'
 
 export function Dashboard() {
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/dashboard')), [])
@@ -49,7 +49,7 @@ export function Dashboard() {
           </section>
           <section>
             <h2 className="mb-2 text-sm font-semibold uppercase text-slate-500">Recent invoices</h2>
-            {data.recentInvoices.length === 0 ? <Empty>No invoices yet.</Empty> : <InvoiceCards items={data.recentInvoices} />}
+            {data.recentInvoices.length === 0 ? <Empty>No invoices yet.</Empty> : <InvoiceTable items={data.recentInvoices} />}
           </section>
         </div>
       )}

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, idempotencyKey, unwrap } from '../../lib/api/client'
 import { formatDate, formatDateTime } from '../../lib/format'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
+import { Badge, ErrorBanner, Field, Page, Sheet, Spinner, StageTracker } from '../../components/ui'
 
 export function InvoiceDetail() {
   const { id = '' } = useParams()
@@ -35,6 +35,9 @@ export function InvoiceDetail() {
     <Page title={inv.number || 'Draft invoice'} back="/invoices">
       <ErrorBanner error={actionError ?? error} />
       <div className="card mb-4">
+        <div className="mb-5">
+          <StageTracker stage={inv.stage} issuedAt={inv.issuedAt} sentAt={inv.sentAt} paidAt={inv.paidAt ?? inv.overdueAt ?? inv.voidedAt} />
+        </div>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="text-sm text-slate-500">Bill to</div>
@@ -42,7 +45,7 @@ export function InvoiceDetail() {
             {inv.billTo.attention && <div className="text-sm">Att: {inv.billTo.attention}</div>}
           </div>
           <div className="text-right">
-            <Badge status={inv.overdue ? 'overdue' : inv.status} />
+            <Badge status={inv.stage} />
             <div className="mt-1 text-2xl font-bold tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</div>
           </div>
         </div>
@@ -62,11 +65,14 @@ export function InvoiceDetail() {
         )}
         {inv.status !== 'void' && <button className="btn-primary" disabled={busy} onClick={() => setSendOpen(true)}>{inv.status === 'draft' ? 'Issue & send' : 'Send'}</button>}
         <a className="btn-secondary" href={`/api/v1/invoices/${id}/pdf`} target="_blank" rel="noreferrer">PDF</a>
+        {['issued', 'sent', 'overdue'].includes(inv.status) && (
+          <button className="btn-secondary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)))}>Mark paid</button>
+        )}
         {(inv.status === 'issued' || inv.status === 'sent') && (
-          <>
-            <button className="btn-secondary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)))}>Mark paid</button>
-            <button className="btn-danger" disabled={busy} onClick={() => setVoidOpen(true)}>Void</button>
-          </>
+          <button className="btn-secondary" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)))}>Mark overdue</button>
+        )}
+        {['issued', 'sent', 'overdue'].includes(inv.status) && (
+          <button className="btn-danger" disabled={busy} onClick={() => setVoidOpen(true)}>Void</button>
         )}
         {inv.status === 'draft' && (
           <button className="btn-danger" disabled={busy} onClick={() => act(async () => { await unwrap(api.DELETE('/invoices/{id}', path)); nav('/invoices') })}>Delete</button>
@@ -80,24 +86,31 @@ export function InvoiceDetail() {
             <li key={i} className="flex gap-3 px-4 py-3 text-sm">
               <div className="flex-1">
                 <div>{l.description}</div>
-                <div className="text-slate-500">{l.quantity} × {l.unitPrice}{l.discountPercent !== '0' ? ` − ${l.discountPercent}%` : ''}</div>
+                <div className="text-slate-500">{l.quantity} × {groupAmount(l.unitPrice)}{l.discountPercent !== '0' ? ` − ${l.discountPercent}%` : ''}</div>
               </div>
-              <div className="tabular-nums">{l.amount}</div>
+              <div className="tabular-nums">{groupAmount(l.amount)}</div>
             </li>
           ))}
         </ul>
         <dl className="space-y-1 border-t border-slate-100 p-4 text-sm dark:border-slate-800">
-          <Row label="Subtotal" value={inv.totals.subtotal} />
-          <Row label="Discount" value={inv.totals.discount} />
-          {inv.vatPercent !== '0' && <Row label={`VAT ${inv.vatPercent}%`} value={inv.totals.vat} />}
-          <div className="flex justify-between text-base font-bold"><dt>Total {inv.currency}</dt><dd className="tabular-nums">{inv.totals.total}</dd></div>
+          <Row label="Subtotal" value={groupAmount(inv.totals.subtotal)} />
+          {Number(inv.totals.discount) !== 0 && <Row label="Discount" value={`-${groupAmount(inv.totals.discount)}`} />}
+          {inv.vatPercent !== '0' && <Row label={`VAT ${inv.vatPercent}%`} value={groupAmount(inv.totals.vat)} />}
+          <div className="flex justify-between text-base font-bold"><dt>Total {inv.currency}</dt><dd className="tabular-nums">{groupAmount(inv.totals.total)}</dd></div>
         </dl>
       </section>
 
       {inv.bank.accountNumber && (
         <section className="card mb-4 text-sm">
           <h2 className="mb-2 font-semibold">Pay into</h2>
-          <p>{inv.bank.bankName} · {inv.bank.branch} · {inv.bank.accountType} {inv.bank.accountNumber} · Code {inv.bank.branchCode}</p>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 md:grid-cols-4">
+            {[
+              ['Bank', inv.bank.bankName], ['Branch name', inv.bank.branch], ['Sort / branch code', inv.bank.branchCode],
+              ['Account number', inv.bank.accountNumber], ['SWIFT', inv.bank.swiftBic], ['IBAN', inv.bank.iban], ['Country', inv.bank.country],
+            ].filter(([, v]) => v).map(([k, v]) => (
+              <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd className="font-medium">{v}</dd></div>
+            ))}
+          </dl>
         </section>
       )}
 

@@ -91,6 +91,7 @@ func TestRenderVariants(t *testing.T) {
 	inv.Status, inv.Number, inv.Bank = domain.InvoiceDraft, "", domain.BankDetails{}
 	draft.Invoice = &inv
 	out := render(t, draft)
+	save(t, "draft.pdf", out)
 	for _, want := range []string{"DRAFT", "Not issued", "Payment details are added when the invoice is issued."} {
 		if !bytes.Contains(out, []byte(want)) {
 			t.Errorf("draft PDF missing %q", want)
@@ -181,5 +182,37 @@ func TestRenderStatement(t *testing.T) {
 	empty.Statement = domain.NewStatement(c, nil, domain.NewDate(2026, 10, 15))
 	if out, _ := (Renderer{Uncompressed: true}).RenderStatement(context.Background(), empty); !bytes.Contains(out, []byte("Nothing is outstanding")) {
 		t.Error("empty statement")
+	}
+}
+
+// TestPaymentCardNeverOverlapsTotals guards the draft-message overlap: every text run in
+// the payment card must end left of the totals box.
+func TestPaymentCardNeverOverlapsTotals(t *testing.T) {
+	p := newPage(Renderer{Uncompressed: true}, "t", "a", "INVOICE", domain.BusinessProfile{Name: "B"}, domain.Currency{Code: "ZAR", MinorUnits: 2})
+	p.pdf.AddPage()
+	cardW := contentW - 90
+	totalsX := pageW - margin - 80
+	check := func(b domain.BankDetails) {
+		p.font("I", 8.5)
+		for _, l := range p.wrap("Payment details are added when the invoice is issued.", cardW-8) {
+			if margin+4+p.pdf.GetStringWidth(l) > totalsX {
+				t.Fatalf("message line %q overflows into the totals", l)
+			}
+		}
+		p.font("B", 8.5)
+		for _, l := range p.wrap(b.IBAN, cardW-8-32) {
+			if margin+4+32+p.pdf.GetStringWidth(l) > totalsX {
+				t.Fatalf("value line %q overflows", l)
+			}
+		}
+		bottom := p.payment(100, margin, cardW, b, "REF")
+		if bottom <= 100 {
+			t.Fatal("card height")
+		}
+	}
+	check(domain.BankDetails{})
+	check(domain.BankDetails{AccountNumber: "1", BankName: strings.Repeat("Very Long Bank Name ", 4), IBAN: "GB29 NWBK 6016 1331 9268 19 EXTRA LONG IDENTIFIER VALUE"})
+	if y := p.infoStrip(50, [][2]string{{"Payment terms", "Payment due before 7th of the next month"}, {"A", "x"}, {"B", "y"}, {"C", "z"}, {"D", "w"}, {"E", "v"}}); y < 50+9+2*3.9 {
+		t.Fatal("info strip must grow for wrapped values")
 	}
 }
