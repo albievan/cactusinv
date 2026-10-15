@@ -3,12 +3,13 @@ SELECT * FROM business_profile WHERE id = 1;
 
 -- name: InsertBusiness :exec
 INSERT INTO business_profile (id, name, address_lines, phone, email, tax_number, number_format, time_zone,
-    default_notes, email_subject, email_body, version, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?);
+    default_notes, email_subject, email_body, vat_rate_bp, version, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?);
 
 -- name: UpdateBusiness :execrows
 UPDATE business_profile SET name = ?, address_lines = ?, phone = ?, email = ?, tax_number = ?, number_format = ?,
-    time_zone = ?, default_notes = ?, email_subject = ?, email_body = ?, version = version + 1, updated_at = ?
+    time_zone = ?, default_notes = ?, email_subject = ?, email_body = ?, vat_rate_bp = ?, version = version + 1,
+    updated_at = ?
 WHERE id = 1 AND version = ?;
 
 -- name: LockSequence :one

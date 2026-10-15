@@ -754,13 +754,16 @@ components:
 
     BusinessSettings:
       type: object
-      required: [name, addressLines, phone, email, taxNumber, numberFormat, timeZone, defaultNotes, emailSubject, emailBody, nextSequence, version]
+      required: [name, addressLines, phone, email, taxNumber, numberFormat, timeZone, defaultNotes, emailSubject, emailBody, vatPercent, nextSequence, version]
       properties:
         name: { type: string, maxLength: 200 }
         addressLines: { type: string, maxLength: 1000 }
         phone: { type: string, maxLength: 100 }
         email: { type: string, maxLength: 254 }
-        taxNumber: { type: string, maxLength: 64 }
+        taxNumber: { type: string, maxLength: 64, description: VAT registration number; printed only when set. }
+        vatPercent:
+          allOf: [{ $ref: '#/components/schemas/Decimal' }]
+          description: Default VAT for new invoices and schedules. "0" means no VAT — nothing VAT-related is printed.
         numberFormat: { type: string, maxLength: 64, example: '{code}/{seq}/{yy}' }
         timeZone: { type: string, maxLength: 64, example: Africa/Johannesburg }
         defaultNotes: { type: string, maxLength: 4000 }
@@ -915,11 +918,11 @@ components:
         amount: { $ref: '#/components/schemas/Decimal' }
     Totals:
       type: object
-      required: [subtotal, discount, tax, total]
+      required: [subtotal, discount, vat, total]
       properties:
         subtotal: { $ref: '#/components/schemas/Decimal' }
         discount: { $ref: '#/components/schemas/Decimal' }
-        tax: { $ref: '#/components/schemas/Decimal' }
+        vat: { $ref: '#/components/schemas/Decimal' }
         total: { $ref: '#/components/schemas/Decimal' }
     BankDetails:
       type: object
@@ -949,7 +952,11 @@ components:
           type: string
           maxLength: 4000
           x-go-type-skip-optional-pointer: false
-        taxPercent: { $ref: '#/components/schemas/Decimal' }
+        vatPercent:
+          type: string
+          pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+          description: Omit to use the business default VAT.
+          x-go-type-skip-optional-pointer: false
         paymentTerms:
           allOf: [{ $ref: '#/components/schemas/PaymentTerms' }]
           x-go-type-skip-optional-pointer: false
@@ -957,7 +964,7 @@ components:
         version: { type: integer, description: Required on update. }
     Invoice:
       type: object
-      required: [id, status, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, taxPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
+      required: [id, status, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, vatPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
       properties:
         id: { type: string }
         number: { type: string }
@@ -971,7 +978,7 @@ components:
         billTo: { $ref: '#/components/schemas/Party' }
         shipTo: { $ref: '#/components/schemas/Party' }
         notes: { type: string }
-        taxPercent: { $ref: '#/components/schemas/Decimal' }
+        vatPercent: { $ref: '#/components/schemas/Decimal' }
         lines: { type: array, items: { $ref: '#/components/schemas/Line' } }
         totals: { $ref: '#/components/schemas/Totals' }
         bank: { $ref: '#/components/schemas/BankDetails' }
@@ -1080,7 +1087,7 @@ components:
         discountPercent: { $ref: '#/components/schemas/Decimal' }
     Schedule:
       type: object
-      required: [customerId, name, recurrence, lines, header, notes, taxPercent, autoSend, emailSubject, emailBody, version]
+      required: [customerId, name, recurrence, lines, header, notes, autoSend, emailSubject, emailBody, version]
       properties:
         id: { type: string, readOnly: true }
         customerId: { type: string }
@@ -1090,8 +1097,12 @@ components:
         lines: { type: array, items: { $ref: '#/components/schemas/ScheduleLine' }, maxItems: 200 }
         header: { $ref: '#/components/schemas/InvoiceHeader' }
         notes: { type: string, maxLength: 4000 }
-        taxPercent: { $ref: '#/components/schemas/Decimal' }
-        autoSend: { type: boolean }
+        vatPercent:
+          type: string
+          pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+          description: Omit to use the business default VAT when each invoice is created.
+          x-go-type-skip-optional-pointer: false
+        autoSend: { type: boolean, description: E-mail each invoice automatically. Off unless chosen. }
         emailSubject: { type: string, maxLength: 300 }
         emailBody: { type: string, maxLength: 10000 }
         nextRunAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }

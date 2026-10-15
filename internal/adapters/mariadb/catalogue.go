@@ -3,9 +3,9 @@ package mariadb
 import (
 	"context"
 
-	"github.com/albievan/cactusinve/internal/adapters/mariadb/sqlcgen"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/adapters/mariadb/sqlcgen"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 type customerRepo struct{ q *sqlcgen.Queries }

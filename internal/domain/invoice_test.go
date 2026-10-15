@@ -272,6 +272,7 @@ func TestBusinessProfileValidate(t *testing.T) {
 		{Name: "x", Email: "nope"},
 		{Name: "x", NumberFormat: "{code}"},
 		{Name: "x", TimeZone: "Mars/Olympus"},
+		{Name: "x", VATRate: 10001},
 	} {
 		if err := bad.Validate(); !errors.Is(err, ErrValidation) {
 			t.Errorf("Validate(%+v) = %v", bad, err)

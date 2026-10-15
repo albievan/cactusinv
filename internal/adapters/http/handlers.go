@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/app"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // handlers implements the generated StrictServerInterface by translating between the
@@ -71,7 +71,8 @@ func toAPIBusiness(s app.BusinessSettings) BusinessSettings {
 	return BusinessSettings{
 		Name: p.Name, AddressLines: p.AddressLines, Phone: p.Phone, Email: p.Email, TaxNumber: p.TaxNumber,
 		NumberFormat: p.NumberFormat, TimeZone: p.TimeZone, DefaultNotes: p.DefaultNotes,
-		EmailSubject: p.EmailSubject, EmailBody: p.EmailBody, NextSequence: s.NextSequence, Version: p.Version,
+		EmailSubject: p.EmailSubject, EmailBody: p.EmailBody, VatPercent: p.VATRate.String(),
+		NextSequence: s.NextSequence, Version: p.Version,
 	}
 }
 
@@ -85,10 +86,14 @@ func (h *handlers) GetBusiness(ctx context.Context, _ GetBusinessRequestObject) 
 
 func (h *handlers) UpdateBusiness(ctx context.Context, req UpdateBusinessRequestObject) (UpdateBusinessResponseObject, error) {
 	b := req.Body
+	vat, err := percent("vatPercent", b.VatPercent)
+	if err != nil {
+		return nil, err
+	}
 	s, err := h.svc.UpdateBusiness(ctx, domain.BusinessProfile{
 		Name: b.Name, AddressLines: b.AddressLines, Phone: b.Phone, Email: b.Email, TaxNumber: b.TaxNumber,
 		NumberFormat: b.NumberFormat, TimeZone: b.TimeZone, DefaultNotes: b.DefaultNotes,
-		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, Version: b.Version,
+		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, VATRate: vat, Version: b.Version,
 	}, b.NextSequence)
 	if err != nil {
 		return nil, err
@@ -330,7 +335,7 @@ func (h *handlers) ListInvoices(ctx context.Context, req ListInvoicesRequestObje
 
 // invoiceInput parses an InvoiceInput; amounts are in currency.
 func invoiceInput(b InvoiceInput, currency domain.CurrencyCode, mu minorUnits) (app.InvoiceInput, error) {
-	tax, err := percent("taxPercent", b.TaxPercent)
+	tax, err := optionalPercent("vatPercent", b.VatPercent)
 	if err != nil {
 		return app.InvoiceInput{}, err
 	}

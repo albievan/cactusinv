@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // Renderer implements ports.InvoiceRenderer.
@@ -380,8 +380,9 @@ func (p *page) footer() {
 	t := inv.Totals
 	cur := string(inv.Currency)
 	totals := [][2]string{{"TOTAL DISCOUNT", p.money(t.Discount)}, {"SUBTOTAL", p.money(t.Subtotal)}}
-	if t.Tax != 0 || inv.TaxRate != 0 {
-		totals = append(totals, [2]string{"TAX " + inv.TaxRate.String() + "%", p.money(t.Tax)})
+	// VAT appears only when charged: a 0 % invoice shows nothing about VAT.
+	if inv.TaxRate > 0 {
+		totals = append(totals, [2]string{"VAT " + inv.TaxRate.String() + "%", p.money(t.Tax)})
 	}
 	totals = append(totals, [2]string{"TOTAL " + cur, p.money(t.Total)})
 	x := margin + colW[0] + colW[1]
@@ -442,7 +443,7 @@ func taxLine(n string) string {
 	if n == "" {
 		return ""
 	}
-	return "Tax No: " + n
+	return "VAT No: " + n
 }
 
 func splitLines(s string) []string {

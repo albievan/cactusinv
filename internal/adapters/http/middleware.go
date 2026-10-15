@@ -18,9 +18,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/albievan/cactusinve/internal/app"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 type ctxKey int

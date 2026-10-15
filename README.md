@@ -13,11 +13,14 @@ Released into the public domain — see [LICENSE](LICENSE).
   Classic business-invoice PDF layout (header band, bill-to/ship-to, line table, bank details,
   totals box), with DRAFT/VOID watermarks.
 - **Automated e-mail** — send now, schedule a send for later, or let a **recurring schedule**
-  (weekly, monthly, quarterly, yearly) issue and e-mail invoices by itself. Reliable
+  (weekly, monthly, quarterly, yearly) issue invoices and, if you opt in, e-mail them.
+  Outstanding invoices are never e-mailed automatically. Reliable
   transactional outbox with retries; failed sends visible in the Outbox.
 - **Multi-currency** — every customer is billed in one currency; every currency has its own
   bank accounts (one default, printed on its invoices); products carry an explicit price per
   currency. No exchange-rate guessing.
+- **VAT** — set a default VAT % for the business (0 by default) and override it per invoice or
+  schedule. At 0 % nothing about VAT appears on the invoice.
 - **Product look-up** — search and pick products while editing, priced in the invoice currency.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
@@ -30,7 +33,7 @@ Released into the public domain — see [LICENSE](LICENSE).
 Requirements: Docker Desktop (or Docker Engine with Compose v2).
 
 ```bash
-git clone https://github.com/albievan/cactusinve.git && cd cactusinve
+git clone https://github.com/albievan/simpleinvoice.git && cd simpleinvoice
 ./deploy.sh --install --dockerdesktop
 ```
 

@@ -101,7 +101,8 @@ function BusinessForm() {
         <Field label="Business name">{(f) => <input id={f} className="input" value={b.name} onChange={(e) => set({ name: e.target.value })} required />}</Field>
         <Field label="Phone">{(f) => <input id={f} className="input" value={b.phone} onChange={(e) => set({ phone: e.target.value })} />}</Field>
         <Field label="Reply-to e-mail">{(f) => <input id={f} type="email" className="input" value={b.email} onChange={(e) => set({ email: e.target.value })} />}</Field>
-        <Field label="Tax number">{(f) => <input id={f} className="input" value={b.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
+        <Field label="VAT number" hint="Printed only when set.">{(f) => <input id={f} className="input" value={b.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
+        <Field label="Default VAT %" hint="Used for new invoices and schedules. 0 = no VAT: nothing about VAT appears on invoices.">{(f) => <input id={f} className="input" inputMode="decimal" value={b.vatPercent} onChange={(e) => set({ vatPercent: e.target.value })} />}</Field>
         <Field label="Address">{(f) => <textarea id={f} className="input min-h-[96px]" value={b.addressLines} onChange={(e) => set({ addressLines: e.target.value })} />}</Field>
         <div className="space-y-4">
           <Field label="Time zone" hint="IANA name, e.g. Africa/Johannesburg">{(f) => <input id={f} className="input" value={b.timeZone} onChange={(e) => set({ timeZone: e.target.value })} />}</Field>

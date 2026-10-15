@@ -41,6 +41,7 @@ type BusinessProfile struct {
 	EmailBody    string
 	Version      int32
 	UpdatedAt    time.Time
+	VatRateBp    int32
 }
 
 type Currency struct {
@@ -204,7 +205,6 @@ type Schedule struct {
 	ShippingMethod string
 	ShippingTerms  string
 	Notes          string
-	TaxRateBp      int32
 	AutoSend       bool
 	EmailSubject   string
 	EmailBody      string
@@ -216,6 +216,7 @@ type Schedule struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	Version        int32
+	TaxRateBp      sql.NullInt32
 }
 
 type ScheduleLine struct {

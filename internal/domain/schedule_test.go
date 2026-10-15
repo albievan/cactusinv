@@ -190,7 +190,7 @@ func TestScheduleValidate(t *testing.T) {
 		func(s *Schedule) { s.Lines = nil },
 		func(s *Schedule) { s.Lines[1].UnitPrice = nil },
 		func(s *Schedule) { s.Lines[0].Quantity = 0 },
-		func(s *Schedule) { s.TaxRate = -1 },
+		func(s *Schedule) { neg := BasisPoints(-1); s.TaxRate = &neg },
 		func(s *Schedule) { s.EmailSubject = strings.Repeat("x", 301) },
 		func(s *Schedule) { s.Recurrence.Frequency = "x" },
 	}
@@ -206,13 +206,24 @@ func TestScheduleValidate(t *testing.T) {
 func TestScheduleBuildDraft(t *testing.T) {
 	s := cityDeepSchedule()
 	s.Notes = "Disclaimer: third party software."
-	s.TaxRate = 0
 	s.Activate(time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC))
 	products := map[string]Product{"p-users": {ID: "p-users", SKU: "U", Name: "Users", Description: "Stock system usage for 14 concurrent users.", Prices: map[CurrencyCode]int64{"ZAR": 19294}}}
-	content, err := s.BuildDraft(cityDeep(), products)
+	content, err := s.BuildDraft(cityDeep(), products, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if content.TaxRate != 0 {
+		t.Fatal("no VAT by default")
+	}
+	if c15, _ := s.BuildDraft(cityDeep(), products, 1500); c15.TaxRate != 1500 {
+		t.Fatal("business default VAT applies")
+	}
+	own := BasisPoints(0)
+	s.TaxRate = &own
+	if c0, _ := s.BuildDraft(cityDeep(), products, 1500); c0.TaxRate != 0 {
+		t.Fatal("schedule's own VAT (0) overrides the default")
+	}
+	s.TaxRate = nil
 	if content.IssueDate != NewDate(2026, 8, 21) || content.Notes != s.Notes {
 		t.Fatalf("content = %+v", content)
 	}
@@ -228,10 +239,10 @@ func TestScheduleBuildDraft(t *testing.T) {
 
 	usd := cityDeep()
 	usd.Currency = "USD"
-	if _, err := s.BuildDraft(usd, products); !errors.Is(err, ErrNoPriceForCurrency) {
+	if _, err := s.BuildDraft(usd, products, 0); !errors.Is(err, ErrNoPriceForCurrency) {
 		t.Fatalf("no USD price: %v", err)
 	}
-	if _, err := s.BuildDraft(cityDeep(), map[string]Product{}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.BuildDraft(cityDeep(), map[string]Product{}, 0); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing product: %v", err)
 	}
 }

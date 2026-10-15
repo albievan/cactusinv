@@ -89,7 +89,7 @@ export function InvoiceDetail() {
         <dl className="space-y-1 border-t border-slate-100 p-4 text-sm dark:border-slate-800">
           <Row label="Subtotal" value={inv.totals.subtotal} />
           <Row label="Discount" value={inv.totals.discount} />
-          {inv.totals.tax !== '0.00' && inv.totals.tax !== '0' && <Row label={`Tax ${inv.taxPercent}%`} value={inv.totals.tax} />}
+          {inv.vatPercent !== '0' && <Row label={`VAT ${inv.vatPercent}%`} value={inv.totals.vat} />}
           <div className="flex justify-between text-base font-bold"><dt>Total {inv.currency}</dt><dd className="tabular-nums">{inv.totals.total}</dd></div>
         </dl>
       </section>

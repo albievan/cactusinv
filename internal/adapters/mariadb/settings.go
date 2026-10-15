@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/adapters/mariadb/sqlcgen"
-	"github.com/albievan/cactusinve/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/adapters/mariadb/sqlcgen"
+	"github.com/albievan/simpleinvoice/internal/domain"
 )
 
 type businessRepo struct{ q *sqlcgen.Queries }
@@ -18,7 +18,8 @@ func (r businessRepo) Get(ctx context.Context) (domain.BusinessProfile, error) {
 	return domain.BusinessProfile{
 		Name: b.Name, AddressLines: b.AddressLines, Phone: b.Phone, Email: b.Email, TaxNumber: b.TaxNumber,
 		NumberFormat: b.NumberFormat, TimeZone: b.TimeZone, DefaultNotes: b.DefaultNotes,
-		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, Version: int(b.Version),
+		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, VATRate: domain.BasisPoints(b.VatRateBp),
+		Version: int(b.Version),
 	}, nil
 }
 
@@ -28,13 +29,14 @@ func (r businessRepo) Save(ctx context.Context, b domain.BusinessProfile) error 
 		return mapErr(r.q.InsertBusiness(ctx, sqlcgen.InsertBusinessParams{
 			Name: b.Name, AddressLines: b.AddressLines, Phone: b.Phone, Email: b.Email, TaxNumber: b.TaxNumber,
 			NumberFormat: b.NumberFormat, TimeZone: b.TimeZone, DefaultNotes: b.DefaultNotes,
-			EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, UpdatedAt: now,
+			EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, VatRateBp: i32(int(b.VATRate)), UpdatedAt: now,
 		}))
 	}
 	n, err := r.q.UpdateBusiness(ctx, sqlcgen.UpdateBusinessParams{
 		Name: b.Name, AddressLines: b.AddressLines, Phone: b.Phone, Email: b.Email, TaxNumber: b.TaxNumber,
 		NumberFormat: b.NumberFormat, TimeZone: b.TimeZone, DefaultNotes: b.DefaultNotes,
-		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, UpdatedAt: now, Version: i32(b.Version),
+		EmailSubject: b.EmailSubject, EmailBody: b.EmailBody, VatRateBp: i32(int(b.VATRate)), UpdatedAt: now,
+		Version: i32(b.Version),
 	})
 	return affected(n, err, domain.ErrConflict)
 }

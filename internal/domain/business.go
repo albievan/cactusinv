@@ -29,6 +29,7 @@ type BusinessProfile struct {
 	DefaultNotes string
 	EmailSubject string
 	EmailBody    string
+	VATRate      BasisPoints // default VAT for new invoices; 0 = no VAT
 	Version      int
 }
 
@@ -50,6 +51,9 @@ func (b *BusinessProfile) Validate() error {
 	}
 	if err := ValidateNumberFormat(b.NumberFormat); err != nil {
 		return err
+	}
+	if b.VATRate < 0 || b.VATRate > 10000 {
+		return invalid("vatPercent", "must be between 0 and 100 percent")
 	}
 	if b.TimeZone == "" {
 		b.TimeZone = "UTC"

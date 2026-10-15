@@ -22,7 +22,7 @@ must be fixed. Principles behind these choices: `docs/ENGINEERING_PRINCIPLES.md`
                  backup job (daily mariadb-dump → backups volume)
 ```
 
-- **Modular monolith** (ADR-001): one module `github.com/albievan/cactusinve`, one binary,
+- **Modular monolith** (ADR-001): one module `github.com/albievan/simpleinvoice`, one binary,
   one image. HTTP API, background workers and the web UI ship together.
 - **MariaDB 11** is the only stateful dependency (ADR-002).
 - Several replicas may run at once: workers coordinate through row locks
@@ -125,9 +125,14 @@ gross  = round(quantity_milli × unit_price_minor / 1000)
 disc   = round(gross × discount_bp / 10000)
 amount = gross − disc
 subtotal       = Σ gross        total_discount = Σ disc
-tax            = round((subtotal − total_discount) × tax_rate_bp / 10000)
-total          = subtotal − total_discount + tax
+vat            = round((subtotal − total_discount) × vat_rate_bp / 10000)
+total          = subtotal − total_discount + vat
 ```
+
+VAT rate: the business default (`business_profile.vat_rate_bp`, 0 by default) unless the
+invoice or schedule sets its own. At 0 % nothing VAT-related is printed or shown; otherwise
+the totals box shows `VAT n%` and the header shows `VAT No` when one is configured.
+Outstanding or overdue invoices are never e-mailed automatically.
 
 Rounding: half away from zero, per line. Reference invoice: `14 × 192.94 = 2701.16`,
 `1 × 550.00 = 550.00`, subtotal `3251.16`, discount `0.00`, total `3251.16`.

@@ -20,7 +20,7 @@ Added the same day:
 
 > Deploy on Docker as an independent application. Schedule database backups. Export every
 > invoice to a mapped invoices volume. Use `.env` for the default volume mappings. Default
-> user `admin` / `admin`. Publish to `github.com/albievan/cactusinve` (public), licensed like
+> user `admin` / `admin`. Publish to `github.com/albievan/simpleinvoice` (public), licensed like
 > SQLite (public domain). Deploy to Docker Desktop or k3s/k8s with one script:
 > `deploy.sh --install|--uninstall|--delete-uninstall --dockerdesktop|--k3s|--k8s
 > --ssh-access user@host`.
@@ -134,7 +134,19 @@ inbound payment reconciliation, user management UI.
 | 7.3 | Scheduled database backups + restore | done | backup written to `data/backups` (verified); CronJob on k8s | `deploy/backup/backup.sh` |
 | 7.4 | `deploy.sh` for Docker Desktop, k3s, k8s, local or over SSH | done | Docker install verified end to end; k8s manifests pass `kubectl --dry-run` | `deploy.sh`, `deploy/k8s` |
 | 7.5 | File-based secrets (Docker/K8s) with Vault as option | done | unit tests | `adapters/filesecrets` |
-| 7.6 | Public domain licence (SQLite-style); publish to GitHub | done | public repo `albievan/cactusinve` | `LICENSE` |
+| 7.6 | Public domain licence (SQLite-style); publish to GitHub | done | public repo `albievan/simpleinvoice` | `LICENSE` |
+
+### M8 — VAT and e-mail policy (Albie, 2026-10-15)
+
+> Do not automatically e-mail outstanding invoices. I want to be able to define the VAT
+> percentage, but by default it must be 0, and if it is 0 do not show anything related to
+> VAT on the invoice.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 8.1 | Business default VAT % (default 0), overridable per invoice and per schedule | done | new invoice takes the default; explicit 0 overrides; 15 % of 3251.16 = 487.67 | `migrations/00003_vat.sql`, domain, app, API, web |
+| 8.2 | VAT hidden entirely at 0 % (PDF, UI); labelled "VAT" otherwise; "VAT No" only when set | done | PDF test asserts no "VAT" text on a 0 % invoice | `adapters/pdf` |
+| 8.3 | No automatic e-mailing of outstanding/overdue invoices; schedule auto-send is off unless chosen | done | no reminder feature; editor defaults auto-send off | `web/src/features/schedules` |
 
 ---
 
@@ -152,7 +164,9 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | No OTel tracing, no NATS | single process — nothing to trace across; recorded under Later |
 | 2026-10-15 | React 18, Vite 5, Tailwind 3 | mature, small bundle (71 KB gz), runs on Node 20 |
 | 2026-10-15 | Default `admin`/`admin` user, created only when no user exists | requested; logged as a warning; README says to change it |
-| 2026-10-15 | Repository/module `github.com/albievan/cactusinve` | the name requested |
+| 2026-10-15 | Repository/module `github.com/albievan/simpleinvoice` | the name requested |
+| 2026-10-15 | VAT: one business default (0 %), per-invoice/per-schedule override, invisible at 0 % | requested (M8) |
+| 2026-10-15 | No automatic e-mails for outstanding/overdue invoices | requested (M8); sending stays an explicit action or an opted-in schedule |
 | 2026-10-15 | One deploy script, Compose for Docker, plain manifests for k3s/k8s (ADR-007) | requested; no Helm dependency |
 | 2026-10-15 | Every invoice archived as PDF, re-exported on change (ADR-008) | requested "all invoices exported to a volume" |
 | 2026-10-15 | Missed schedule periods are caught up one by one | an invoice is never silently skipped; each is dated its own period |
@@ -167,6 +181,4 @@ inbound payment reconciliation, user management UI.
 
 ## Open questions
 
-- Should overdue invoices trigger automatic reminder e-mails? (Easy follow-on: a
-  reminder schedule type on the same outbox.)
-- VAT: the example shows none. A per-invoice tax rate is supported and defaults to 0.
+- None outstanding. (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)

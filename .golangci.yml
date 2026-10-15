@@ -39,11 +39,11 @@ linters-settings:
         files: ["**/internal/domain/**"]
         list-mode: lax
         deny:
-          - pkg: "github.com/albievan/cactusinve/internal/app"
+          - pkg: "github.com/albievan/simpleinvoice/internal/app"
             desc: "domain must not depend on app"
-          - pkg: "github.com/albievan/cactusinve/internal/ports"
+          - pkg: "github.com/albievan/simpleinvoice/internal/ports"
             desc: "domain must not depend on ports"
-          - pkg: "github.com/albievan/cactusinve/internal/adapters"
+          - pkg: "github.com/albievan/simpleinvoice/internal/adapters"
             desc: "domain must not depend on adapters"
           - pkg: "database/sql"
             desc: "domain does no I/O"
@@ -57,7 +57,7 @@ linters-settings:
         files: ["**/internal/app/**", "**/internal/ports/**"]
         list-mode: lax
         deny:
-          - pkg: "github.com/albievan/cactusinve/internal/adapters"
+          - pkg: "github.com/albievan/simpleinvoice/internal/adapters"
             desc: "app and ports must not depend on adapters"
           - pkg: "database/sql"
             desc: "use ports, not the database"

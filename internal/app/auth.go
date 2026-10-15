@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // MinPasswordLength is the shortest accepted password.

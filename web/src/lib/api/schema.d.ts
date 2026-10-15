@@ -557,7 +557,10 @@ export interface components {
             addressLines: string;
             phone: string;
             email: string;
+            /** @description VAT registration number; printed only when set. */
             taxNumber: string;
+            /** @description Default VAT for new invoices and schedules. "0" means no VAT — nothing VAT-related is printed. */
+            vatPercent: components["schemas"]["Decimal"];
             /** @example {code}/{seq}/{yy} */
             numberFormat: string;
             /** @example Africa/Johannesburg */
@@ -685,7 +688,7 @@ export interface components {
         Totals: {
             subtotal: components["schemas"]["Decimal"];
             discount: components["schemas"]["Decimal"];
-            tax: components["schemas"]["Decimal"];
+            vat: components["schemas"]["Decimal"];
             total: components["schemas"]["Decimal"];
         };
         BankDetails: {
@@ -707,7 +710,8 @@ export interface components {
             billTo?: components["schemas"]["Party"];
             shipTo?: components["schemas"]["Party"];
             notes?: string;
-            taxPercent?: components["schemas"]["Decimal"];
+            /** @description Omit to use the business default VAT. */
+            vatPercent?: string;
             paymentTerms?: components["schemas"]["PaymentTerms"];
             lines: components["schemas"]["LineInput"][];
             /** @description Required on update. */
@@ -728,7 +732,7 @@ export interface components {
             billTo: components["schemas"]["Party"];
             shipTo: components["schemas"]["Party"];
             notes: string;
-            taxPercent: components["schemas"]["Decimal"];
+            vatPercent: components["schemas"]["Decimal"];
             lines: components["schemas"]["Line"][];
             totals: components["schemas"]["Totals"];
             bank: components["schemas"]["BankDetails"];
@@ -844,7 +848,9 @@ export interface components {
             lines: components["schemas"]["ScheduleLine"][];
             header: components["schemas"]["InvoiceHeader"];
             notes: string;
-            taxPercent: components["schemas"]["Decimal"];
+            /** @description Omit to use the business default VAT when each invoice is created. */
+            vatPercent?: string;
+            /** @description E-mail each invoice automatically. Off unless chosen. */
             autoSend: boolean;
             emailSubject: string;
             emailBody: string;

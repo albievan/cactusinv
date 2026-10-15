@@ -16,7 +16,8 @@ export function InvoiceEditor() {
   const [customerId, setCustomerId] = useState('')
   const [issueDate, setIssueDate] = useState(todayISO())
   const [notes, setNotes] = useState<string | null>(null)
-  const [taxPercent, setTaxPercent] = useState('')
+  const business = useAsync(() => unwrap(api.GET('/settings/business')), [])
+  const [vatPercent, setVatPercent] = useState<string | null>(null)
   const [header, setHeader] = useState<Schemas['InvoiceHeader']>({})
   const [lines, setLines] = useState<EditLine[]>([newLine()])
   const [error, setError] = useState<Error | null>(null)
@@ -28,7 +29,7 @@ export function InvoiceEditor() {
     setCustomerId(inv.customerId)
     setIssueDate(inv.issueDate)
     setNotes(inv.notes)
-    setTaxPercent(inv.taxPercent === '0' ? '' : inv.taxPercent)
+    setVatPercent(inv.vatPercent)
     setHeader(inv.header)
     setLines(inv.lines.map((l) => ({ key: crypto.randomUUID(), productId: l.productId ?? '', description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent === '0' ? '' : l.discountPercent })))
   }, [existing.data])
@@ -44,7 +45,7 @@ export function InvoiceEditor() {
       customerId,
       issueDate,
       header,
-      taxPercent: taxPercent || '0',
+      vatPercent: (vatPercent ?? business.data?.vatPercent ?? '0') || '0',
       notes: notes ?? undefined,
       version: existing.data?.invoice.version,
       lines: lines.map((l) => ({ productId: l.productId || undefined, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice === '' ? undefined : l.unitPrice, discountPercent: l.discountPercent || '0' })),
@@ -87,7 +88,7 @@ export function InvoiceEditor() {
                 <Field label="Shipping method">{(fid) => <input id={fid} className="input" value={header.shippingMethod ?? ''} onChange={(e) => setHeader({ ...header, shippingMethod: e.target.value })} />}</Field>
                 <Field label="Shipping terms">{(fid) => <input id={fid} className="input" value={header.shippingTerms ?? ''} onChange={(e) => setHeader({ ...header, shippingTerms: e.target.value })} />}</Field>
                 <Field label="Delivery date">{(fid) => <input id={fid} type="date" className="input" value={header.deliveryDate ?? ''} onChange={(e) => setHeader({ ...header, deliveryDate: e.target.value || undefined })} />}</Field>
-                <Field label="Tax %">{(fid) => <input id={fid} className="input" inputMode="decimal" placeholder="0" value={taxPercent} onChange={(e) => setTaxPercent(e.target.value)} />}</Field>
+                <Field label="VAT %" hint="0 = no VAT; nothing about VAT is printed.">{(fid) => <input id={fid} className="input" inputMode="decimal" placeholder="0" value={vatPercent ?? business.data?.vatPercent ?? '0'} onChange={(e) => setVatPercent(e.target.value)} />}</Field>
                 <div className="md:col-span-2">
                   <Field label="Notes / disclaimer" hint="Defaults to the customer's notes.">{(fid) => <textarea id={fid} className="input min-h-[96px]" value={notes ?? customer?.defaultNotes ?? ''} onChange={(e) => setNotes(e.target.value)} />}</Field>
                 </div>

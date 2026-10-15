@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // timeT keeps method-expression signatures short.
@@ -246,7 +246,11 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err != nil {
 		return err
 	}
-	content, err := sc.BuildDraft(c, products)
+	b, err := business(ctx, r)
+	if err != nil {
+		return err
+	}
+	content, err := sc.BuildDraft(c, products, b.VATRate)
 	if err != nil {
 		return err
 	}

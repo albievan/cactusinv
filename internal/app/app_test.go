@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/app"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
-	"github.com/albievan/cactusinve/internal/ports/fakes"
+	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/ports/fakes"
 )
 
 type harness struct {
@@ -418,7 +418,8 @@ func TestInvoiceEditing(t *testing.T) {
 	in.BillTo = &domain.Party{Name: "Someone else"}
 	in.ShipTo = &domain.Party{Name: "Depot", Address: "1 Road"}
 	in.Terms = &domain.PaymentTerms{Kind: domain.TermsDaysAfter, Value: 14}
-	in.TaxRate = 1500
+	vat := domain.BasisPoints(1500)
+	in.TaxRate = &vat
 	in.Header = domain.InvoiceHeader{SalesPerson: "Albie", Job: "J1"}
 	in.IssueDate = domain.NewDate(2026, 8, 25)
 	in.Lines = append(in.Lines, app.LineInput{ProductID: h.usersP.ID, Description: "Custom", Quantity: 1000, UnitPrice: p64(100), Discount: 5000})
@@ -471,6 +472,28 @@ func TestInvoiceEditing(t *testing.T) {
 	}
 	if _, err := h.svc.VoidInvoice(h.ctx, "nope", "x"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatal("void unknown")
+	}
+}
+
+func TestBusinessDefaultVAT(t *testing.T) {
+	h := newHarness(t).seed()
+	inv := must(h.svc.CreateInvoice(h.ctx, h.referenceInput()))
+	if inv.TaxRate != 0 || inv.Totals.Tax != 0 {
+		t.Fatal("VAT defaults to 0")
+	}
+	s := must(h.svc.GetBusiness(h.ctx))
+	p := s.Profile
+	p.VATRate = 1500
+	must(h.svc.UpdateBusiness(h.ctx, p, 0))
+	inv = must(h.svc.CreateInvoice(h.ctx, h.referenceInput()))
+	if inv.TaxRate != 1500 || inv.Totals.Tax != 48767 || inv.Totals.Total != 373883 {
+		t.Fatalf("business VAT applied: %+v", inv.Totals)
+	}
+	in := h.referenceInput()
+	zero := domain.BasisPoints(0)
+	in.TaxRate = &zero
+	if inv := must(h.svc.CreateInvoice(h.ctx, in)); inv.TaxRate != 0 {
+		t.Fatal("explicit 0 overrides the default")
 	}
 }
 

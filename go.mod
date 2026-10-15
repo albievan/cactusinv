@@ -1,4 +1,4 @@
-module github.com/albievan/cactusinve
+module github.com/albievan/simpleinvoice
 
 go 1.26.0
 

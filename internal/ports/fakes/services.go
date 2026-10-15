@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // Mailer records sent mail and can be told to fail.

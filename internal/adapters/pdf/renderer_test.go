@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // reference rebuilds example/Inv_no_CD_1195_26.pdf.
@@ -65,6 +65,9 @@ func TestRenderReferenceInvoice(t *testing.T) {
 			t.Errorf("PDF is missing %q", want)
 		}
 	}
+	if bytes.Contains(out, []byte("VAT")) {
+		t.Error("a 0% invoice must not mention VAT")
+	}
 	if bytes.Contains(out, []byte("DRAFT")) {
 		t.Error("issued invoice must not be watermarked")
 	}
@@ -117,7 +120,7 @@ func TestRenderVariants(t *testing.T) {
 	if n := bytes.Count(out, []byte("/Type /Page\n")); n < 2 {
 		t.Errorf("expected several pages, got %d", n)
 	}
-	for _, want := range []string{"Continued on next page", "TAX 15%", "10%", "SWIFT/BIC:", "CABLZAJJ", "Tax No: 4000000000"} {
+	for _, want := range []string{"Continued on next page", "VAT 15%", "10%", "SWIFT/BIC:", "CABLZAJJ", "VAT No: 4000000000"} {
 		if !bytes.Contains(out, []byte(want)) {
 			t.Errorf("long PDF missing %q", want)
 		}

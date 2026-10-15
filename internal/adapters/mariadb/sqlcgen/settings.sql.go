@@ -65,7 +65,7 @@ func (q *Queries) GetBankAccount(ctx context.Context, id string) (BankAccount, e
 }
 
 const getBusiness = `-- name: GetBusiness :one
-SELECT id, name, address_lines, phone, email, tax_number, number_format, time_zone, default_notes, email_subject, email_body, version, updated_at FROM business_profile WHERE id = 1
+SELECT id, name, address_lines, phone, email, tax_number, number_format, time_zone, default_notes, email_subject, email_body, version, updated_at, vat_rate_bp FROM business_profile WHERE id = 1
 `
 
 func (q *Queries) GetBusiness(ctx context.Context) (BusinessProfile, error) {
@@ -85,6 +85,7 @@ func (q *Queries) GetBusiness(ctx context.Context) (BusinessProfile, error) {
 		&i.EmailBody,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.VatRateBp,
 	)
 	return i, err
 }
@@ -149,8 +150,8 @@ func (q *Queries) InsertBankAccount(ctx context.Context, arg InsertBankAccountPa
 
 const insertBusiness = `-- name: InsertBusiness :exec
 INSERT INTO business_profile (id, name, address_lines, phone, email, tax_number, number_format, time_zone,
-    default_notes, email_subject, email_body, version, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+    default_notes, email_subject, email_body, vat_rate_bp, version, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
 `
 
 type InsertBusinessParams struct {
@@ -164,6 +165,7 @@ type InsertBusinessParams struct {
 	DefaultNotes string
 	EmailSubject string
 	EmailBody    string
+	VatRateBp    int32
 	UpdatedAt    time.Time
 }
 
@@ -179,6 +181,7 @@ func (q *Queries) InsertBusiness(ctx context.Context, arg InsertBusinessParams) 
 		arg.DefaultNotes,
 		arg.EmailSubject,
 		arg.EmailBody,
+		arg.VatRateBp,
 		arg.UpdatedAt,
 	)
 	return err
@@ -366,7 +369,8 @@ func (q *Queries) UpdateBankAccount(ctx context.Context, arg UpdateBankAccountPa
 
 const updateBusiness = `-- name: UpdateBusiness :execrows
 UPDATE business_profile SET name = ?, address_lines = ?, phone = ?, email = ?, tax_number = ?, number_format = ?,
-    time_zone = ?, default_notes = ?, email_subject = ?, email_body = ?, version = version + 1, updated_at = ?
+    time_zone = ?, default_notes = ?, email_subject = ?, email_body = ?, vat_rate_bp = ?, version = version + 1,
+    updated_at = ?
 WHERE id = 1 AND version = ?
 `
 
@@ -381,6 +385,7 @@ type UpdateBusinessParams struct {
 	DefaultNotes string
 	EmailSubject string
 	EmailBody    string
+	VatRateBp    int32
 	UpdatedAt    time.Time
 	Version      int32
 }
@@ -397,6 +402,7 @@ func (q *Queries) UpdateBusiness(ctx context.Context, arg UpdateBusinessParams) 
 		arg.DefaultNotes,
 		arg.EmailSubject,
 		arg.EmailBody,
+		arg.VatRateBp,
 		arg.UpdatedAt,
 		arg.Version,
 	)

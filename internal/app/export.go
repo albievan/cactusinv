@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/albievan/cactusinve/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/domain"
 )
 
 // ExportResult counts what one export pass did.

@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/adapters/mariadb/sqlcgen"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/adapters/mariadb/sqlcgen"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 type scheduleRepo struct{ q *sqlcgen.Queries }
@@ -22,7 +22,7 @@ func toSchedule(r sqlcgen.Schedule) *domain.Schedule {
 		},
 		Header:         domain.InvoiceHeader{SalesPerson: r.SalesPerson, Job: r.Job, ShippingMethod: r.ShippingMethod, ShippingTerms: r.ShippingTerms},
 		Notes:          r.Notes,
-		TaxRate:        domain.BasisPoints(r.TaxRateBp),
+		TaxRate:        optionalRate(r.TaxRateBp),
 		AutoSend:       r.AutoSend,
 		EmailSubject:   r.EmailSubject,
 		EmailBody:      r.EmailBody,
@@ -107,7 +107,7 @@ func (r scheduleRepo) Create(ctx context.Context, s *domain.Schedule) error {
 		SendHour: i32(rc.SendHour), SendMinute: i32(rc.SendMinute), TimeZone: rc.TimeZone,
 		StartDate: dateValue(rc.StartDate), EndDate: nullDate(rc.EndDate), SalesPerson: s.Header.SalesPerson,
 		Job: s.Header.Job, ShippingMethod: s.Header.ShippingMethod, ShippingTerms: s.Header.ShippingTerms,
-		Notes: s.Notes, TaxRateBp: i32(int(s.TaxRate)), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
+		Notes: s.Notes, TaxRateBp: nullRate(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
 		EmailBody: s.EmailBody, NextOccurrence: nullTime(s.NextOccurrence), NextRunAt: nullTime(s.NextRunAt),
 		LastRunAt: nullTime(s.LastRunAt), FailureCount: i32(s.FailureCount), LastError: s.LastError,
 		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
@@ -127,7 +127,7 @@ func (r scheduleRepo) Update(ctx context.Context, s *domain.Schedule) error {
 		SendHour: i32(rc.SendHour), SendMinute: i32(rc.SendMinute), TimeZone: rc.TimeZone,
 		StartDate: dateValue(rc.StartDate), EndDate: nullDate(rc.EndDate), SalesPerson: s.Header.SalesPerson,
 		Job: s.Header.Job, ShippingMethod: s.Header.ShippingMethod, ShippingTerms: s.Header.ShippingTerms,
-		Notes: s.Notes, TaxRateBp: i32(int(s.TaxRate)), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
+		Notes: s.Notes, TaxRateBp: nullRate(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
 		EmailBody: s.EmailBody, NextOccurrence: nullTime(s.NextOccurrence), NextRunAt: nullTime(s.NextRunAt),
 		LastRunAt: nullTime(s.LastRunAt), FailureCount: i32(s.FailureCount), LastError: s.LastError,
 		UpdatedAt: s.UpdatedAt.UTC(), ID: s.ID, Version: i32(s.Version),
@@ -187,4 +187,19 @@ func (r scheduleRepo) ListRuns(ctx context.Context, scheduleID string, limit int
 		out[i] = domain.ScheduleRun{ScheduleID: x.ScheduleID, Period: fromDate(x.Period), InvoiceID: x.InvoiceID, At: x.At.UTC()}
 	}
 	return out, nil
+}
+
+func optionalRate(v sql.NullInt32) *domain.BasisPoints {
+	if !v.Valid {
+		return nil
+	}
+	r := domain.BasisPoints(v.Int32)
+	return &r
+}
+
+func nullRate(r *domain.BasisPoints) sql.NullInt32 {
+	if r == nil {
+		return sql.NullInt32{}
+	}
+	return sql.NullInt32{Int32: i32(int(*r)), Valid: true}
 }

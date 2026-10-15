@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/albievan/cactusinve/internal/app"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // ReadyCheck reports whether a dependency is usable (database, Vault).

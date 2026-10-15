@@ -7,7 +7,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/albievan/cactusinve/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/domain"
 )
 
 // minorUnits maps currency codes to their minor units, for formatting and parsing money.
@@ -76,6 +76,26 @@ func percent(field, s string) (domain.BasisPoints, error) {
 		return 0, &domain.ValidationError{Field: field, Reason: "must be a percentage between 0 and 100"}
 	}
 	return v, nil
+}
+
+// optionalPercent parses an optional percentage; nil (or blank) means "use the default".
+func optionalPercent(field string, s *string) (*domain.BasisPoints, error) {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return nil, nil
+	}
+	v, err := percent(field, *s)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+func ratePtr(r *domain.BasisPoints) *string {
+	if r == nil {
+		return nil
+	}
+	s := r.String()
+	return &s
 }
 
 func quantity(field, s string) (domain.Quantity, error) {
@@ -220,10 +240,10 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 		Id: inv.ID, Number: inv.Number, Status: InvoiceStatus(inv.Status), CustomerId: inv.CustomerID,
 		Currency: string(c), IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDatePtr(inv.DueDate),
 		PaymentTerms: terms, Header: toAPIHeader(inv.Header), BillTo: toAPIParty(inv.BillTo), ShipTo: toAPIParty(inv.ShipTo),
-		Notes: inv.Notes, TaxPercent: inv.TaxRate.String(), Lines: lines,
+		Notes: inv.Notes, VatPercent: inv.TaxRate.String(), Lines: lines,
 		Totals: Totals{
 			Subtotal: mu.format(inv.Totals.Subtotal, c), Discount: mu.format(inv.Totals.Discount, c),
-			Tax: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
+			Vat: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
 		},
 		Bank: BankDetails{
 			BankName: b.BankName, Branch: b.Branch, BranchCode: b.BranchCode, AccountName: b.AccountName,
@@ -296,7 +316,7 @@ func toAPISchedule(s *domain.Schedule, currency domain.CurrencyCode, mu minorUni
 	return Schedule{
 		Id: s.ID, CustomerId: s.CustomerID, Name: s.Name, Status: ScheduleStatus(s.Status),
 		Recurrence: toAPIRecurrence(s.Recurrence), Lines: lines, Header: toAPIHeader(s.Header), Notes: s.Notes,
-		TaxPercent: s.TaxRate.String(), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
+		VatPercent: ratePtr(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
 		NextRunAt: timePtr(s.NextRunAt), LastRunAt: timePtr(s.LastRunAt), FailureCount: s.FailureCount,
 		LastError: s.LastError, Version: s.Version,
 	}
@@ -307,7 +327,7 @@ func fromAPISchedule(id string, s Schedule, currency domain.CurrencyCode, mu min
 	if err != nil {
 		return domain.Schedule{}, err
 	}
-	tax, err := percent("taxPercent", s.TaxPercent)
+	tax, err := optionalPercent("vatPercent", s.VatPercent)
 	if err != nil {
 		return domain.Schedule{}, err
 	}

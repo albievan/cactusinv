@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // ListProducts is the product look-up: search by name/SKU, optionally only products

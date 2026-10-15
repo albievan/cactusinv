@@ -39,8 +39,8 @@ type Schedule struct {
 	Recurrence     Recurrence
 	Lines          []ScheduleLine
 	Header         InvoiceHeader
-	Notes          string // empty → customer default notes
-	TaxRate        BasisPoints
+	Notes          string       // empty → customer default notes
+	TaxRate        *BasisPoints // nil → the business default VAT at run time
 	AutoSend       bool
 	EmailSubject   string // empty → business default
 	EmailBody      string // empty → business default
@@ -87,8 +87,8 @@ func (s *Schedule) Validate() error {
 			return err
 		}
 	}
-	if s.TaxRate < 0 || s.TaxRate > 10000 {
-		return invalid("taxRate", "must be between 0 and 100 percent")
+	if s.TaxRate != nil && (*s.TaxRate < 0 || *s.TaxRate > 10000) {
+		return invalid("vatPercent", "must be between 0 and 100 percent")
 	}
 	if len(s.EmailSubject) > 300 || len(s.EmailBody) > 10000 || len(s.Notes) > 4000 {
 		return invalid("email", "subject, body or notes too long")
@@ -179,12 +179,16 @@ func (s *Schedule) end(now time.Time) {
 }
 
 // BuildDraft turns the schedule's template into draft content for its current period,
-// pricing product lines from the customer's currency price list.
-func (s *Schedule) BuildDraft(c Customer, products map[string]Product) (DraftContent, error) {
+// pricing product lines from the customer's currency price list. defaultVAT applies when
+// the schedule has no VAT rate of its own.
+func (s *Schedule) BuildDraft(c Customer, products map[string]Product, defaultVAT BasisPoints) (DraftContent, error) {
 	period := s.Period()
 	content := DefaultDraftContent(c, period)
 	content.Header = s.Header
-	content.TaxRate = s.TaxRate
+	content.TaxRate = defaultVAT
+	if s.TaxRate != nil {
+		content.TaxRate = *s.TaxRate
+	}
 	if s.Notes != "" {
 		content.Notes = s.Notes
 	}

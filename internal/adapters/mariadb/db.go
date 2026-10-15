@@ -14,10 +14,10 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/pressly/goose/v3"
 
-	"github.com/albievan/cactusinve/internal/adapters/mariadb/sqlcgen"
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
-	"github.com/albievan/cactusinve/migrations"
+	"github.com/albievan/simpleinvoice/internal/adapters/mariadb/sqlcgen"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/simpleinvoice/migrations"
 )
 
 // Config locates the database.

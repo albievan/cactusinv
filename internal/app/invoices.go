@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // LineInput is one line as submitted. With a ProductID, an empty Description uses the
@@ -29,7 +29,7 @@ type InvoiceInput struct {
 	BillTo     *domain.Party
 	ShipTo     *domain.Party
 	Notes      *string
-	TaxRate    domain.BasisPoints
+	TaxRate    *domain.BasisPoints // VAT; nil → the business default VAT rate
 	Terms      *domain.PaymentTerms
 	Lines      []LineInput
 }
@@ -155,7 +155,10 @@ func (s *Service) draftContent(ctx context.Context, r ports.Repos, c domain.Cust
 		content.Notes = b.DefaultNotes
 	}
 	content.Header = in.Header
-	content.TaxRate = in.TaxRate
+	content.TaxRate = b.VATRate
+	if in.TaxRate != nil {
+		content.TaxRate = *in.TaxRate
+	}
 	if in.BillTo != nil {
 		content.BillTo = *in.BillTo
 	}

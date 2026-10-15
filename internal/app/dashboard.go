@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	"github.com/albievan/cactusinve/internal/domain"
-	"github.com/albievan/cactusinve/internal/ports"
+	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/simpleinvoice/internal/ports"
 )
 
 // Dashboard is the home-screen summary. Totals are per currency; currencies are never

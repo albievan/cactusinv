@@ -191,7 +191,7 @@ func (inv *Invoice) applyContent(c DraftContent) error {
 		}
 	}
 	if c.TaxRate < 0 || c.TaxRate > 10000 {
-		return invalid("taxRate", "must be between 0 and 100 percent")
+		return invalid("vatPercent", "must be between 0 and 100 percent")
 	}
 	terms, err := NewPaymentTerms(c.Terms.Kind, c.Terms.Value)
 	if err != nil {

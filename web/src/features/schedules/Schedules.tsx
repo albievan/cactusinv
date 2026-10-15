@@ -100,7 +100,7 @@ export function ScheduleEditor() {
   const { minor } = useCurrencies()
   const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200 } } })).then((r) => r.items), [])
   const existing = useAsync(() => (id ? unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
-  const [s, setS] = useState<Schedule>({ customerId: '', name: '', recurrence: blankRecurrence, lines: [], header: {}, notes: '', taxPercent: '0', autoSend: true, emailSubject: '', emailBody: '', version: 0 })
+  const [s, setS] = useState<Schedule>({ customerId: '', name: '', recurrence: blankRecurrence, lines: [], header: {}, notes: '', autoSend: false, emailSubject: '', emailBody: '', version: 0 })
   const [lines, setLines] = useState<EditLine[]>([newLine()])
   const [preview, setPreview] = useState<string[]>([])
   const [error, setError] = useState<Error | null>(null)
@@ -179,6 +179,7 @@ export function ScheduleEditor() {
           <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={s.autoSend} onChange={(e) => set({ autoSend: e.target.checked })} /> E-mail each invoice to the customer automatically</label>
           <Field label="E-mail subject" hint="Empty uses the default. Placeholders: {{invoice_number}} {{customer_name}} {{total}} {{due_date}} {{business_name}}">{(f) => <input id={f} className="input" value={s.emailSubject} onChange={(e) => set({ emailSubject: e.target.value })} />}</Field>
           <Field label="E-mail body">{(f) => <textarea id={f} className="input min-h-[96px]" value={s.emailBody} onChange={(e) => set({ emailBody: e.target.value })} />}</Field>
+          <Field label="VAT %" hint="Empty uses the business default VAT. 0 = no VAT.">{(f) => <input id={f} className="input" inputMode="decimal" placeholder="Business default" value={s.vatPercent ?? ''} onChange={(e) => set({ vatPercent: e.target.value === '' ? undefined : e.target.value })} />}</Field>
           <Field label="Notes on the invoice" hint="Empty uses the customer's notes.">{(f) => <textarea id={f} className="input" value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}</Field>
         </div>
         <StickyActions>

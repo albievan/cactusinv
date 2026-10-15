@@ -14,9 +14,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	httpapi "github.com/albievan/cactusinve/internal/adapters/http"
-	"github.com/albievan/cactusinve/internal/app"
-	"github.com/albievan/cactusinve/internal/ports/fakes"
+	httpapi "github.com/albievan/simpleinvoice/internal/adapters/http"
+	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/simpleinvoice/internal/ports/fakes"
 )
 
 type client struct {
@@ -153,6 +153,7 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	settings.Name = "Example Software Consulting"
 	settings.TimeZone = "Africa/Johannesburg"
 	settings.NextSequence = 1195
+	settings.VatPercent = "0"
 	c.ok(c.do("PUT", "/api/v1/settings/business", settings, &settings), 200, "put business")
 	if settings.NextSequence != 1195 || settings.Version != 1 {
 		t.Fatalf("settings = %+v", settings)
@@ -297,12 +298,12 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	c.ok(c.do("DELETE", "/api/v1/invoices/"+inv3.Id, nil, nil), 204, "delete draft")
 	c.ok(c.do("POST", "/api/v1/invoices", obj{"lines": []obj{}}, &p), 422, "no customer")
 	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"description": "x", "quantity": "abc", "unitPrice": "1"}}}, &p), 422, "bad quantity")
-	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "taxPercent": "200", "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "1"}}}, &p), 422, "bad tax")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "vatPercent": "200", "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "1"}}}, &p), 422, "bad tax")
 
 	// Schedules.
 	var sched httpapi.ScheduleDetail
 	c.ok(c.do("POST", "/api/v1/schedules", obj{
-		"customerId": customer.Id, "name": "Acme monthly", "autoSend": true, "notes": "", "taxPercent": "0",
+		"customerId": customer.Id, "name": "Acme monthly", "autoSend": true, "notes": "",
 		"emailSubject": "", "emailBody": "", "version": 0, "header": obj{},
 		"recurrence": obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 21, "weekday": 0, "sendTime": "09:00", "startDate": "2026-09-01"},
 		"lines":      []obj{{"productId": product.Id, "quantity": "14"}, {"description": "Alchamex ({period})", "quantity": "1", "unitPrice": "550"}},

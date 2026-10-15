@@ -192,11 +192,16 @@ type BusinessSettings struct {
 	// NumberFormat Example: {code}/{seq}/{yy}
 	NumberFormat string `json:"numberFormat"`
 	Phone        string `json:"phone"`
-	TaxNumber    string `json:"taxNumber"`
+
+	// TaxNumber VAT registration number; printed only when set.
+	TaxNumber string `json:"taxNumber"`
 
 	// TimeZone Example: Africa/Johannesburg
 	TimeZone string `json:"timeZone"`
-	Version  int    `json:"version"`
+
+	// VatPercent Default VAT for new invoices and schedules. "0" means no VAT — nothing VAT-related is printed.
+	VatPercent Decimal `json:"vatPercent"`
+	Version    int     `json:"version"`
 }
 
 // ChangePasswordRequest defines model for ChangePasswordRequest.
@@ -324,11 +329,11 @@ type Invoice struct {
 	SentAt       *time.Time          `json:"sentAt,omitempty"`
 	ShipTo       Party               `json:"shipTo"`
 	Status       InvoiceStatus       `json:"status"`
+	Totals       Totals              `json:"totals"`
+	UpdatedAt    time.Time           `json:"updatedAt"`
 
-	// TaxPercent Example: 2701.16
-	TaxPercent Decimal    `json:"taxPercent"`
-	Totals     Totals     `json:"totals"`
-	UpdatedAt  time.Time  `json:"updatedAt"`
+	// VatPercent Example: 2701.16
+	VatPercent Decimal    `json:"vatPercent"`
 	Version    int        `json:"version"`
 	VoidReason string     `json:"voidReason,omitempty"`
 	VoidedAt   *time.Time `json:"voidedAt,omitempty"`
@@ -370,8 +375,8 @@ type InvoiceInput struct {
 	PaymentTerms *PaymentTerms       `json:"paymentTerms,omitempty"`
 	ShipTo       *Party              `json:"shipTo,omitempty"`
 
-	// TaxPercent Example: 2701.16
-	TaxPercent Decimal `json:"taxPercent,omitempty"`
+	// VatPercent Omit to use the business default VAT.
+	VatPercent *string `json:"vatPercent,omitempty"`
 
 	// Version Required on update.
 	Version int `json:"version,omitempty"`
@@ -520,6 +525,7 @@ type RunPreview struct {
 
 // Schedule defines model for Schedule.
 type Schedule struct {
+	// AutoSend E-mail each invoice automatically. Off unless chosen.
 	AutoSend     bool           `json:"autoSend"`
 	CustomerId   string         `json:"customerId"`
 	EmailBody    string         `json:"emailBody"`
@@ -536,8 +542,8 @@ type Schedule struct {
 	Recurrence   Recurrence     `json:"recurrence"`
 	Status       ScheduleStatus `json:"status,omitempty"`
 
-	// TaxPercent Example: 2701.16
-	TaxPercent Decimal `json:"taxPercent"`
+	// VatPercent Omit to use the business default VAT when each invoice is created.
+	VatPercent *string `json:"vatPercent,omitempty"`
 	Version    int     `json:"version"`
 }
 
@@ -599,11 +605,11 @@ type Totals struct {
 	// Subtotal Example: 2701.16
 	Subtotal Decimal `json:"subtotal"`
 
-	// Tax Example: 2701.16
-	Tax Decimal `json:"tax"`
-
 	// Total Example: 2701.16
 	Total Decimal `json:"total"`
+
+	// Vat Example: 2701.16
+	Vat Decimal `json:"vat"`
 }
 
 // VoidRequest defines model for VoidRequest.
