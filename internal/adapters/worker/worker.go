@@ -11,7 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/albievan/simpleinvoice/internal/app"
+	"github.com/albievan/cactusinv/internal/app"
 )
 
 // Intervals between passes.

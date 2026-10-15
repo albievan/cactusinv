@@ -3,8 +3,8 @@ package app
 import (
 	"context"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // ListCustomers returns a page of customers and the total count.

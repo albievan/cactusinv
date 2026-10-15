@@ -9,9 +9,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/albievan/simpleinvoice/internal/app"
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports/fakes"
+	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
 func TestRunnerPasses(t *testing.T) {

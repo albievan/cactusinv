@@ -15,12 +15,12 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	tcmariadb "github.com/testcontainers/testcontainers-go/modules/mariadb"
 
-	"github.com/albievan/simpleinvoice/internal/adapters/idgen"
-	"github.com/albievan/simpleinvoice/internal/adapters/mariadb"
-	"github.com/albievan/simpleinvoice/internal/app"
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
-	"github.com/albievan/simpleinvoice/internal/ports/fakes"
+	"github.com/albievan/cactusinv/internal/adapters/idgen"
+	"github.com/albievan/cactusinv/internal/adapters/mariadb"
+	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
+	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
 var testDB *sql.DB

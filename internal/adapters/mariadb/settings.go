@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/adapters/mariadb/sqlcgen"
-	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 type businessRepo struct{ q *sqlcgen.Queries }

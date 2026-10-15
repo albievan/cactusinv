@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/adapters/filesecrets"
-	"github.com/albievan/simpleinvoice/internal/adapters/vault"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/adapters/filesecrets"
+	"github.com/albievan/cactusinv/internal/adapters/vault"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 type (

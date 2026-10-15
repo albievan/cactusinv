@@ -20,7 +20,7 @@ Added the same day:
 
 > Deploy on Docker as an independent application. Schedule database backups. Export every
 > invoice to a mapped invoices volume. Use `.env` for the default volume mappings. Default
-> user `admin` / `admin`. Publish to `github.com/albievan/simpleinvoice` (public), licensed like
+> user `admin` / `admin`. Publish to `github.com/albievan/cactusinv` (public), licensed like
 > SQLite (public domain). Deploy to Docker Desktop or k3s/k8s with one script:
 > `deploy.sh --install|--uninstall|--delete-uninstall --dockerdesktop|--k3s|--k8s
 > --ssh-access user@host`.
@@ -134,7 +134,7 @@ inbound payment reconciliation, user management UI.
 | 7.3 | Scheduled database backups + restore | done | backup written to `data/backups` (verified); CronJob on k8s | `deploy/backup/backup.sh` |
 | 7.4 | `deploy.sh` for Docker Desktop, k3s, k8s, local or over SSH | done | Docker install verified end to end; k8s manifests pass `kubectl --dry-run` | `deploy.sh`, `deploy/k8s` |
 | 7.5 | File-based secrets (Docker/K8s) with Vault as option | done | unit tests | `adapters/filesecrets` |
-| 7.6 | Public domain licence (SQLite-style); publish to GitHub | done | public repo `albievan/simpleinvoice` | `LICENSE` |
+| 7.6 | Public domain licence (SQLite-style); publish to GitHub | done | public repo `albievan/cactusinv` | `LICENSE` |
 
 ### M8 — VAT and e-mail policy (Albie, 2026-10-15)
 
@@ -164,7 +164,7 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | No OTel tracing, no NATS | single process — nothing to trace across; recorded under Later |
 | 2026-10-15 | React 18, Vite 5, Tailwind 3 | mature, small bundle (71 KB gz), runs on Node 20 |
 | 2026-10-15 | Default `admin`/`admin` user, created only when no user exists | requested; logged as a warning; README says to change it |
-| 2026-10-15 | Repository/module `github.com/albievan/simpleinvoice` | the name requested |
+| 2026-10-15 | Repository/module `github.com/albievan/cactusinv` | the name requested (Albie, 2026-10-15) |
 | 2026-10-15 | VAT: one business default (0 %), per-invoice/per-schedule override, invisible at 0 % | requested (M8) |
 | 2026-10-15 | No automatic e-mails for outstanding/overdue invoices | requested (M8); sending stays an explicit action or an opted-in schedule |
 | 2026-10-15 | One deploy script, Compose for Docker, plain manifests for k3s/k8s (ADR-007) | requested; no Helm dependency |

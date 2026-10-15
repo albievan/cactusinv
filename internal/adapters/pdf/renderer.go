@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-pdf/fpdf"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // Renderer implements ports.InvoiceRenderer.

@@ -26,17 +26,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
-	"github.com/albievan/simpleinvoice/internal/adapters/archive"
-	"github.com/albievan/simpleinvoice/internal/adapters/argon2"
-	"github.com/albievan/simpleinvoice/internal/adapters/clock"
-	httpapi "github.com/albievan/simpleinvoice/internal/adapters/http"
-	"github.com/albievan/simpleinvoice/internal/adapters/idgen"
-	"github.com/albievan/simpleinvoice/internal/adapters/mariadb"
-	"github.com/albievan/simpleinvoice/internal/adapters/pdf"
-	"github.com/albievan/simpleinvoice/internal/adapters/smtp"
-	"github.com/albievan/simpleinvoice/internal/adapters/worker"
-	"github.com/albievan/simpleinvoice/internal/app"
-	"github.com/albievan/simpleinvoice/web"
+	"github.com/albievan/cactusinv/internal/adapters/archive"
+	"github.com/albievan/cactusinv/internal/adapters/argon2"
+	"github.com/albievan/cactusinv/internal/adapters/clock"
+	httpapi "github.com/albievan/cactusinv/internal/adapters/http"
+	"github.com/albievan/cactusinv/internal/adapters/idgen"
+	"github.com/albievan/cactusinv/internal/adapters/mariadb"
+	"github.com/albievan/cactusinv/internal/adapters/pdf"
+	"github.com/albievan/cactusinv/internal/adapters/smtp"
+	"github.com/albievan/cactusinv/internal/adapters/worker"
+	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/web"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".

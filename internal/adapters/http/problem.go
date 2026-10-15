@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 // problemFor maps an error to an RFC 9457 problem. Only this adapter knows HTTP status

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // LineInput is one line as submitted. With a ProductID, an empty Description uses the

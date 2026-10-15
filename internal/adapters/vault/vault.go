@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // Config locates the secrets.

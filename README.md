@@ -33,7 +33,7 @@ Released into the public domain — see [LICENSE](LICENSE).
 Requirements: Docker Desktop (or Docker Engine with Compose v2).
 
 ```bash
-git clone https://github.com/albievan/simpleinvoice.git && cd simpleinvoice
+git clone https://github.com/albievan/cactusinv.git && cd cactusinv
 ./deploy.sh --install --dockerdesktop
 ```
 

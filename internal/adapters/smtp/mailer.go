@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // TLS modes.

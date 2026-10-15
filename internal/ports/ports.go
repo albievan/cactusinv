@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 // Clock returns the current time. Inject a fake in tests.

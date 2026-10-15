@@ -7,7 +7,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 // minorUnits maps currency codes to their minor units, for formatting and parsing money.

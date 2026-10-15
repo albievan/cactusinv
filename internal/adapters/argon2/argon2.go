@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/crypto/argon2"
 
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // Hasher hashes with argon2id. The zero value uses OWASP-recommended parameters.

@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // Deps are the ports the application needs.

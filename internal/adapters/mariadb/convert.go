@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }

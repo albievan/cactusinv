@@ -14,9 +14,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	httpapi "github.com/albievan/simpleinvoice/internal/adapters/http"
-	"github.com/albievan/simpleinvoice/internal/app"
-	"github.com/albievan/simpleinvoice/internal/ports/fakes"
+	httpapi "github.com/albievan/cactusinv/internal/adapters/http"
+	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
 type client struct {

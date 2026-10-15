@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/domain"
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // reference rebuilds example/Inv_no_CD_1195_26.pdf.

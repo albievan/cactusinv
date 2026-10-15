@@ -10,7 +10,7 @@ Details: `docs/ENGINEERING_PRINCIPLES.md` (why), `docs/ARCHITECTURE.md` (how),
 
 | Property | Value |
 |---|---|
-| Module | `github.com/albievan/simpleinvoice` |
+| Module | `github.com/albievan/cactusinv` |
 | Artifact | ONE binary `cactusinv`, ONE distroless image (web UI embedded) |
 | Database | MariaDB 11, `goose` migrations in `migrations/`, `sqlc` (mysql engine) |
 | API | OpenAPI 3.0 design-first `api/openapi/cactusinv.yaml`, `oapi-codegen` strict server |

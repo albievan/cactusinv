@@ -22,7 +22,7 @@ must be fixed. Principles behind these choices: `docs/ENGINEERING_PRINCIPLES.md`
                  backup job (daily mariadb-dump → backups volume)
 ```
 
-- **Modular monolith** (ADR-001): one module `github.com/albievan/simpleinvoice`, one binary,
+- **Modular monolith** (ADR-001): one module `github.com/albievan/cactusinv`, one binary,
   one image. HTTP API, background workers and the web UI ship together.
 - **MariaDB 11** is the only stateful dependency (ADR-002).
 - Several replicas may run at once: workers coordinate through row locks

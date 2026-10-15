@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/albievan/simpleinvoice/internal/ports"
+	"github.com/albievan/cactusinv/internal/ports"
 )
 
 // fakeServer is a minimal SMTP server that records one transaction.
