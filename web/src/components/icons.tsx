@@ -33,4 +33,5 @@ export const IconPaid = base(<><circle cx="12" cy="12" r="9" /><path d="M8 12.5l
 export const IconClockAlert = base(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>)
 export const IconBan = base(<><circle cx="12" cy="12" r="9" /><path d="M5.6 5.6l12.8 12.8" /></>)
 export const IconShield = base(<><path d="M12 3l8 3v6c0 4.5-3.4 8.4-8 9-4.6-.6-8-4.5-8-9V6z" /><path d="M9 12l2 2 4-4" /></>)
+export const IconInfo = base(<><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 8h.01" /></>)
 export const IconHistory = base(<><path d="M3 12a9 9 0 103-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>)

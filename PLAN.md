@@ -198,6 +198,14 @@ inbound payment reconciliation, user management UI.
 | 11.3 | Statements menu: per-currency totals, Owing/Overdue/All filters, search, aging columns, select and e-mail many | done | web test: filter, select, bulk send payload | `web/src/features/statements` |
 | 11.4 | Full statement page per customer: balance, aging, unpaid invoices, e-mail history, PDF, e-mail, schedule | done | screenshot on a throwaway stack | `web/src/features/statements` |
 
+### M12 — E-mail server setup guide (Albie, 2026-10-15)
+
+> Add a help/info button to give you step by step instructions to setup the email server.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 12.1 | "Setup guide" button beside the E-mail server heading opens a sheet with numbered steps for Gmail, Outlook / Microsoft 365 and a custom server (the provider shown is the one selected, switchable in the sheet), and what to do when the test e-mail fails | done | web test: opens from the button, shows the selected provider's steps, switches provider, Escape and Close close it; `pnpm -C web check` and `make check` green | `web/src/features/settings/EmailSetupGuide.tsx`, `web/src/features/settings/Settings.tsx`, `web/src/components/icons.tsx` |
+
 ---
 
 ## Decisions
@@ -225,6 +233,7 @@ inbound payment reconciliation, user management UI.
 | 2026-10-15 | Every invoice archived as PDF, re-exported on change (ADR-008) | requested "all invoices exported to a volume" |
 | 2026-10-15 | Missed schedule periods are caught up one by one | an invoice is never silently skipped; each is dated its own period |
 | 2026-10-15 | Toolchain pinned to go1.26.9 | go1.26.0 standard library has known vulnerabilities |
+| 2026-10-15 | The e-mail setup guide is static help text in the web app, beside the form it explains | it decides nothing (the server still tests and stores the settings); one place to read it, where it is needed |
 
 ## Later
 

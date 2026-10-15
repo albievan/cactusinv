@@ -7,6 +7,8 @@ type EmailSettings = Schemas['EmailSettings']
 import { useAsync } from '../../lib/useAsync'
 import { ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
 import { useAuth } from '../../components/auth'
+import { IconInfo } from '../../components/icons'
+import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
 
 export function More() {
   const { user, logout } = useAuth()
@@ -97,6 +99,7 @@ function EmailServer() {
   const [testTo, setTestTo] = useState('')
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
+  const [guide, setGuide] = useState(false)
   useEffect(() => { if (data) setE(data) }, [data])
   if (!e) return error ? <ErrorBanner error={error} /> : <Spinner />
   const preset = Object.entries(presets).find(([, p]) => p.host === e.host)?.[0] ?? 'Custom'
@@ -126,7 +129,12 @@ function EmailServer() {
   return (
     <form onSubmit={save} className="card space-y-4">
       <div>
-        <h2 className="text-lg font-semibold">E-mail server</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">E-mail server</h2>
+          <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setGuide(true)} aria-haspopup="dialog">
+            <IconInfo /> Setup guide
+          </button>
+        </div>
         <p className="text-sm text-slate-500">The server cactusInv sends invoices and statements through. Until it is enabled, e-mails go to the deployment's default server (the test mailbox in a local install).</p>
       </div>
       <ErrorBanner error={err} />
@@ -164,6 +172,7 @@ function EmailServer() {
         {msg && <span className="text-sm text-green-700">{msg}</span>}
         <button className="btn-primary">Save e-mail server</button>
       </div>
+      <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />
     </form>
   )
 }

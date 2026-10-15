@@ -29,7 +29,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   customer's full statement, download the PDF, e-mail one or many statements at once, or
   e-mail them on a schedule.
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
-  password), test button; the password is stored encrypted.
+  password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
+  Outlook / Microsoft 365 and other servers; the password is stored encrypted.
 - **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced.
 - **Audit trail** — every change and sign-in with who did it; append-only (the database
   refuses edits and deletes) and hash-chained, with a one-click integrity check.
