@@ -1,0 +1,16 @@
+The author disclaims copyright to this source code. In place of a legal notice, here is a
+blessing:
+
+    May you do good and not evil.
+    May you find forgiveness for yourself and forgive others.
+    May you share freely, never taking more than you give.
+
+------------------------------------------------------------------------------------------
+
+cactusInv is dedicated to the public domain, on the same terms as SQLite
+(https://www.sqlite.org/copyright.html). Anyone is free to copy, modify, publish, use,
+compile, sell, or distribute the original cactusInv code, either in source code form or as a
+compiled binary, for any purpose, commercial or non-commercial, and by any means.
+
+Third-party components used by cactusInv (for example Go modules and npm packages listed in
+go.mod and web/package.json) remain under their own licences.

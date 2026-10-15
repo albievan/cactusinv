@@ -1,0 +1,1146 @@
+openapi: 3.0.3
+info:
+  title: cactusInv API
+  version: 1.0.0
+  description: |
+    Simple, automated, multi-currency invoicing. Design-first contract (CLAUDE.md §2):
+    server stubs are generated with oapi-codegen, web types with openapi-typescript.
+
+    Conventions:
+    - Money and quantities are decimal **strings** ("2701.16"), never JSON numbers (ADR-005).
+      Each resource carries its `currency`; amounts use that currency's minor units.
+    - Errors are `application/problem+json` (RFC 9457).
+    - Mutations require the header `X-Requested-With: cactusinv` (CSRF) and accept an
+      `Idempotency-Key` header; repeating a key replays the first response.
+    - Authentication is a session cookie set by `POST /auth/login`.
+servers:
+  - url: /api/v1
+
+tags:
+  - name: auth
+  - name: settings
+  - name: currencies
+  - name: bank-accounts
+  - name: customers
+  - name: products
+  - name: invoices
+  - name: schedules
+  - name: emails
+  - name: dashboard
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '204':
+          description: Signed in; the session cookie is set.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        '204':
+          description: Signed out; the session cookie is cleared.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+        default: { $ref: '#/components/responses/Problem' }
+  /auth/password:
+    post:
+      tags: [auth]
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Password changed. }
+        default: { $ref: '#/components/responses/Problem' }
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      responses:
+        '200':
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /settings/business:
+    get:
+      tags: [settings]
+      operationId: getBusiness
+      responses:
+        '200':
+          description: Business profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [settings]
+      operationId: updateBusiness
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BusinessSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /currencies:
+    get:
+      tags: [currencies]
+      operationId: listCurrencies
+      responses:
+        '200':
+          description: All currencies.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CurrencyList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [currencies]
+      operationId: createCurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Currency' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Currency' }
+        default: { $ref: '#/components/responses/Problem' }
+  /currencies/{code}:
+    parameters:
+      - { name: code, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z]{3}$' } }
+    put:
+      tags: [currencies]
+      operationId: updateCurrency
+      description: Minor units cannot change once created.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Currency' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Currency' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /bank-accounts:
+    get:
+      tags: [bank-accounts]
+      operationId: listBankAccounts
+      parameters:
+        - { name: currency, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Bank accounts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankAccountList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [bank-accounts]
+      operationId: createBankAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankAccount' }
+      responses:
+        '201':
+          description: Created. The first active account of a currency becomes its default.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankAccount' }
+        default: { $ref: '#/components/responses/Problem' }
+  /bank-accounts/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [bank-accounts]
+      operationId: getBankAccount
+      responses:
+        '200':
+          description: Bank account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankAccount' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [bank-accounts]
+      operationId: updateBankAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BankAccount' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BankAccount' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [bank-accounts]
+      operationId: deleteBankAccount
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /customers:
+    get:
+      tags: [customers]
+      operationId: listCustomers
+      parameters:
+        - { $ref: '#/components/parameters/Query' }
+        - { $ref: '#/components/parameters/IncludeInactive' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of customers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [customers]
+      operationId: createCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Customer' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /customers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [customers]
+      operationId: getCustomer
+      responses:
+        '200':
+          description: Customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [customers]
+      operationId: updateCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Customer' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [customers]
+      operationId: deleteCustomer
+      description: Only customers without invoices or schedules; otherwise deactivate.
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /products:
+    get:
+      tags: [products]
+      operationId: listProducts
+      description: The product look-up. `currency` limits results to products priced in it.
+      parameters:
+        - { $ref: '#/components/parameters/Query' }
+        - { name: currency, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/IncludeInactive' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of products.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProductList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [products]
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        default: { $ref: '#/components/responses/Problem' }
+  /products/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [products]
+      operationId: getProduct
+      responses:
+        '200':
+          description: Product.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [products]
+      operationId: updateProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Product' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [products]
+      operationId: deleteProduct
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /invoices:
+    get:
+      tags: [invoices]
+      operationId: listInvoices
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/InvoiceStatus' } }
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: overdue, in: query, schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Query' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of invoices (without lines), newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [invoices]
+      operationId: createInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceInput' }
+      responses:
+        '201':
+          description: Draft created in the customer's currency.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [invoices]
+      operationId: getInvoice
+      responses:
+        '200':
+          description: Invoice with audit trail and e-mails.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [invoices]
+      operationId: updateInvoice
+      description: Drafts only. `version` is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceInput' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [invoices]
+      operationId: deleteInvoice
+      description: Drafts only; issued invoices are voided.
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/issue:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: issueInvoice
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueRequest' }
+      responses:
+        '200':
+          description: Issued and numbered.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/void:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: voidInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoidRequest' }
+      responses:
+        '200':
+          description: Voided; pending e-mails are cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/mark-paid:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: markInvoicePaid
+      responses:
+        '200':
+          description: Marked paid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/send:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: sendInvoice
+      description: |
+        Queue the invoice e-mail now or at `sendAt`. A draft is issued first. Empty fields
+        use the customer's addresses and the business e-mail templates.
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRequest' }
+      responses:
+        '202':
+          description: Queued in the outbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [invoices]
+      operationId: getInvoicePdf
+      responses:
+        '200':
+          description: The invoice as a PDF (drafts are watermarked).
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /schedules:
+    get:
+      tags: [schedules]
+      operationId: listSchedules
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/ScheduleStatus' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of schedules.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [schedules]
+      operationId: createSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Schedule' }
+      responses:
+        '201':
+          description: Created and active.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/preview:
+    post:
+      tags: [schedules]
+      operationId: previewSchedule
+      description: The next run times of an unsaved recurrence.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Recurrence' }
+      responses:
+        '200':
+          description: Upcoming runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunPreview' }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [schedules]
+      operationId: getSchedule
+      responses:
+        '200':
+          description: Schedule with upcoming runs and history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [schedules]
+      operationId: updateSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Schedule' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [schedules]
+      operationId: deleteSchedule
+      responses:
+        '204': { description: Deleted; invoices it created are kept. }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/{id}/pause:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [schedules]
+      operationId: pauseSchedule
+      responses:
+        '200':
+          description: Paused.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/{id}/resume:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [schedules]
+      operationId: resumeSchedule
+      responses:
+        '200':
+          description: Resumed from the next occurrence.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/{id}/run-now:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [schedules]
+      operationId: runScheduleNow
+      responses:
+        '200':
+          description: The pending occurrence is now due and runs within a minute.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /emails:
+    get:
+      tags: [emails]
+      operationId: listEmails
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EmailStatus' } }
+        - { name: invoiceId, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: The outbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailList' }
+        default: { $ref: '#/components/responses/Problem' }
+  /emails/{id}/cancel:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [emails]
+      operationId: cancelEmail
+      responses:
+        '200':
+          description: Cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+  /emails/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [emails]
+      operationId: retryEmail
+      responses:
+        '200':
+          description: Re-queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /dashboard:
+    get:
+      tags: [dashboard]
+      operationId: getDashboard
+      responses:
+        '200':
+          description: Home-screen summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+        default: { $ref: '#/components/responses/Problem' }
+
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, maxLength: 64 }
+    Query:
+      name: q
+      in: query
+      schema: { type: string, maxLength: 100 }
+    IncludeInactive:
+      name: includeInactive
+      in: query
+      schema: { type: boolean }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0 }
+
+  responses:
+    Problem:
+      description: An error (RFC 9457).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        field: { type: string, description: The input field that failed validation. }
+
+    Decimal:
+      type: string
+      pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+      example: '2701.16'
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, maxLength: 254 }
+        password: { type: string, maxLength: 200 }
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, maxLength: 200 }
+        newPassword: { type: string, minLength: 12, maxLength: 200 }
+    Me:
+      type: object
+      required: [id, email]
+      properties:
+        id: { type: string }
+        email: { type: string }
+
+    BusinessSettings:
+      type: object
+      required: [name, addressLines, phone, email, taxNumber, numberFormat, timeZone, defaultNotes, emailSubject, emailBody, nextSequence, version]
+      properties:
+        name: { type: string, maxLength: 200 }
+        addressLines: { type: string, maxLength: 1000 }
+        phone: { type: string, maxLength: 100 }
+        email: { type: string, maxLength: 254 }
+        taxNumber: { type: string, maxLength: 64 }
+        numberFormat: { type: string, maxLength: 64, example: '{code}/{seq}/{yy}' }
+        timeZone: { type: string, maxLength: 64, example: Africa/Johannesburg }
+        defaultNotes: { type: string, maxLength: 4000 }
+        emailSubject: { type: string, maxLength: 300 }
+        emailBody: { type: string, maxLength: 10000 }
+        nextSequence:
+          type: integer
+          format: int64
+          description: Next invoice sequence value; may only increase.
+        version: { type: integer }
+
+    Currency:
+      type: object
+      required: [code, name, symbol, minorUnits, active]
+      properties:
+        code: { type: string, pattern: '^[A-Za-z]{3}$' }
+        name: { type: string, maxLength: 64 }
+        symbol: { type: string, maxLength: 8 }
+        minorUnits: { type: integer, minimum: 0, maximum: 3 }
+        active: { type: boolean }
+    CurrencyList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Currency' } }
+
+    BankAccount:
+      type: object
+      required: [currency, label, bankName, accountNumber, branch, branchCode, accountName, accountType, swiftBic, iban, isDefault, active, version]
+      properties:
+        id: { type: string, readOnly: true }
+        currency: { type: string }
+        label: { type: string, maxLength: 80 }
+        bankName: { type: string, maxLength: 120 }
+        branch: { type: string, maxLength: 120 }
+        branchCode: { type: string, maxLength: 32 }
+        accountName: { type: string, maxLength: 120 }
+        accountNumber: { type: string, maxLength: 64 }
+        accountType: { type: string, maxLength: 64 }
+        swiftBic: { type: string, maxLength: 16 }
+        iban: { type: string, maxLength: 40 }
+        isDefault: { type: boolean }
+        active: { type: boolean }
+        version: { type: integer }
+    BankAccountList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+
+    PaymentTerms:
+      type: object
+      required: [kind, value]
+      properties:
+        kind: { type: string, enum: [on_receipt, days_after, day_of_next_month] }
+        value: { type: integer, minimum: 0, maximum: 365 }
+        text: { type: string, readOnly: true, example: Payment due before 7th of the next month }
+
+    Customer:
+      type: object
+      required: [code, name, email, cc, attention, billingAddress, shippingName, shippingAddress, phone, taxNumber, currency, paymentTerms, bankAccountId, defaultNotes, active, version]
+      properties:
+        id: { type: string, readOnly: true }
+        code: { type: string, maxLength: 10, description: Invoice number code, e.g. CD. }
+        name: { type: string, maxLength: 200 }
+        email: { type: string, maxLength: 254 }
+        cc: { type: array, items: { type: string }, maxItems: 10 }
+        attention: { type: string, maxLength: 200 }
+        billingAddress: { type: string, maxLength: 1000 }
+        shippingName: { type: string, maxLength: 200 }
+        shippingAddress: { type: string, maxLength: 1000 }
+        phone: { type: string, maxLength: 100 }
+        taxNumber: { type: string, maxLength: 64 }
+        currency: { type: string }
+        paymentTerms: { $ref: '#/components/schemas/PaymentTerms' }
+        bankAccountId: { type: string, description: Override of the currency's default account. }
+        defaultNotes: { type: string, maxLength: 4000 }
+        active: { type: boolean }
+        version: { type: integer }
+    CustomerList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+        total: { type: integer }
+
+    Price:
+      type: object
+      required: [currency, unitPrice]
+      properties:
+        currency: { type: string }
+        unitPrice: { $ref: '#/components/schemas/Decimal' }
+    Product:
+      type: object
+      required: [sku, name, description, unit, prices, active, version]
+      properties:
+        id: { type: string, readOnly: true }
+        sku: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 1000 }
+        unit: { type: string, maxLength: 32 }
+        prices: { type: array, items: { $ref: '#/components/schemas/Price' }, maxItems: 50 }
+        active: { type: boolean }
+        version: { type: integer }
+    ProductList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Product' } }
+        total: { type: integer }
+
+    InvoiceStatus:
+      type: string
+      enum: [draft, issued, sent, paid, void]
+    Party:
+      type: object
+      required: [name, address, attention]
+      properties:
+        name: { type: string, maxLength: 200 }
+        address: { type: string, maxLength: 1000 }
+        attention: { type: string, maxLength: 200 }
+    InvoiceHeader:
+      type: object
+      properties:
+        salesPerson: { type: string, maxLength: 120 }
+        job: { type: string, maxLength: 120 }
+        shippingMethod: { type: string, maxLength: 120 }
+        shippingTerms: { type: string, maxLength: 120 }
+        deliveryDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+    LineInput:
+      type: object
+      required: [quantity]
+      properties:
+        productId: { type: string }
+        description: { type: string, maxLength: 2000 }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        unitPrice:
+          type: string
+          pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+          description: Omit to use the product's price in the invoice currency.
+          x-go-type-skip-optional-pointer: false
+        discountPercent: { $ref: '#/components/schemas/Decimal' }
+    Line:
+      type: object
+      required: [description, quantity, unitPrice, discountPercent, amount]
+      properties:
+        productId: { type: string }
+        description: { type: string }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        unitPrice: { $ref: '#/components/schemas/Decimal' }
+        discountPercent: { $ref: '#/components/schemas/Decimal' }
+        amount: { $ref: '#/components/schemas/Decimal' }
+    Totals:
+      type: object
+      required: [subtotal, discount, tax, total]
+      properties:
+        subtotal: { $ref: '#/components/schemas/Decimal' }
+        discount: { $ref: '#/components/schemas/Decimal' }
+        tax: { $ref: '#/components/schemas/Decimal' }
+        total: { $ref: '#/components/schemas/Decimal' }
+    BankDetails:
+      type: object
+      properties:
+        bankName: { type: string }
+        branch: { type: string }
+        branchCode: { type: string }
+        accountName: { type: string }
+        accountNumber: { type: string }
+        accountType: { type: string }
+        swiftBic: { type: string }
+        iban: { type: string }
+    InvoiceInput:
+      type: object
+      required: [lines]
+      properties:
+        customerId: { type: string, description: Required on create; cannot change. }
+        issueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+        header: { $ref: '#/components/schemas/InvoiceHeader' }
+        billTo:
+          allOf: [{ $ref: '#/components/schemas/Party' }]
+          x-go-type-skip-optional-pointer: false
+        shipTo:
+          allOf: [{ $ref: '#/components/schemas/Party' }]
+          x-go-type-skip-optional-pointer: false
+        notes:
+          type: string
+          maxLength: 4000
+          x-go-type-skip-optional-pointer: false
+        taxPercent: { $ref: '#/components/schemas/Decimal' }
+        paymentTerms:
+          allOf: [{ $ref: '#/components/schemas/PaymentTerms' }]
+          x-go-type-skip-optional-pointer: false
+        lines: { type: array, items: { $ref: '#/components/schemas/LineInput' }, maxItems: 200 }
+        version: { type: integer, description: Required on update. }
+    Invoice:
+      type: object
+      required: [id, status, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, taxPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
+      properties:
+        id: { type: string }
+        number: { type: string }
+        status: { $ref: '#/components/schemas/InvoiceStatus' }
+        customerId: { type: string }
+        currency: { type: string }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+        paymentTerms: { $ref: '#/components/schemas/PaymentTerms' }
+        header: { $ref: '#/components/schemas/InvoiceHeader' }
+        billTo: { $ref: '#/components/schemas/Party' }
+        shipTo: { $ref: '#/components/schemas/Party' }
+        notes: { type: string }
+        taxPercent: { $ref: '#/components/schemas/Decimal' }
+        lines: { type: array, items: { $ref: '#/components/schemas/Line' } }
+        totals: { $ref: '#/components/schemas/Totals' }
+        bank: { $ref: '#/components/schemas/BankDetails' }
+        scheduleId: { type: string }
+        overdue: { type: boolean }
+        issuedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        sentAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        paidAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        voidedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        voidReason: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer }
+    InvoiceEvent:
+      type: object
+      required: [type, at]
+      properties:
+        type: { type: string }
+        detail: { type: string }
+        at: { type: string, format: date-time }
+    InvoiceDetail:
+      type: object
+      required: [invoice, events, emails]
+      properties:
+        invoice: { $ref: '#/components/schemas/Invoice' }
+        events: { type: array, items: { $ref: '#/components/schemas/InvoiceEvent' } }
+        emails: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }
+    InvoiceList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
+        total: { type: integer }
+    IssueRequest:
+      type: object
+      properties:
+        issueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+    VoidRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, maxLength: 500 }
+    SendRequest:
+      type: object
+      properties:
+        to: { type: array, items: { type: string }, maxItems: 10 }
+        cc: { type: array, items: { type: string }, maxItems: 10 }
+        subject: { type: string, maxLength: 300 }
+        body: { type: string, maxLength: 20000 }
+        sendAt: { type: string, format: date-time, description: Omit to send now., x-go-type-skip-optional-pointer: false }
+
+    EmailStatus:
+      type: string
+      enum: [pending, sending, sent, failed, cancelled]
+    EmailMessage:
+      type: object
+      required: [id, invoiceId, to, cc, subject, body, status, attempts, sendAt, nextAttemptAt, lastError, createdAt]
+      properties:
+        id: { type: string }
+        invoiceId: { type: string }
+        to: { type: array, items: { type: string } }
+        cc: { type: array, items: { type: string } }
+        subject: { type: string }
+        body: { type: string }
+        status: { $ref: '#/components/schemas/EmailStatus' }
+        attempts: { type: integer }
+        sendAt: { type: string, format: date-time }
+        nextAttemptAt: { type: string, format: date-time }
+        lastError: { type: string }
+        sentAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        createdAt: { type: string, format: date-time }
+    EmailList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }
+        total: { type: integer }
+
+    ScheduleStatus:
+      type: string
+      enum: [active, paused, ended]
+    Recurrence:
+      type: object
+      required: [frequency, interval, dayOfMonth, weekday, sendTime, startDate]
+      properties:
+        frequency: { type: string, enum: [once, weekly, monthly, quarterly, yearly] }
+        interval: { type: integer, minimum: 1, maximum: 52 }
+        dayOfMonth: { type: integer, minimum: 0, maximum: 31, description: 0 = last day of the month. }
+        weekday: { type: integer, minimum: 0, maximum: 6, description: 0 = Sunday. }
+        sendTime: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '09:00' }
+        timeZone: { type: string, description: Defaults to the business time zone. }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+    ScheduleLine:
+      type: object
+      required: [quantity]
+      properties:
+        productId: { type: string }
+        description: { type: string, maxLength: 2000, description: 'May contain {month}, {year}, {period}.' }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        unitPrice:
+          type: string
+          pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+          description: Omit to use the product's price in the customer's currency at run time.
+          x-go-type-skip-optional-pointer: false
+        discountPercent: { $ref: '#/components/schemas/Decimal' }
+    Schedule:
+      type: object
+      required: [customerId, name, recurrence, lines, header, notes, taxPercent, autoSend, emailSubject, emailBody, version]
+      properties:
+        id: { type: string, readOnly: true }
+        customerId: { type: string }
+        name: { type: string, maxLength: 120 }
+        status: { $ref: '#/components/schemas/ScheduleStatus' }
+        recurrence: { $ref: '#/components/schemas/Recurrence' }
+        lines: { type: array, items: { $ref: '#/components/schemas/ScheduleLine' }, maxItems: 200 }
+        header: { $ref: '#/components/schemas/InvoiceHeader' }
+        notes: { type: string, maxLength: 4000 }
+        taxPercent: { $ref: '#/components/schemas/Decimal' }
+        autoSend: { type: boolean }
+        emailSubject: { type: string, maxLength: 300 }
+        emailBody: { type: string, maxLength: 10000 }
+        nextRunAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }
+        lastRunAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }
+        failureCount: { type: integer, readOnly: true }
+        lastError: { type: string, readOnly: true }
+        version: { type: integer }
+    ScheduleRun:
+      type: object
+      required: [period, invoiceId, at]
+      properties:
+        period: { type: string, format: date }
+        invoiceId: { type: string }
+        at: { type: string, format: date-time }
+    ScheduleDetail:
+      type: object
+      required: [schedule, upcoming, runs]
+      properties:
+        schedule: { $ref: '#/components/schemas/Schedule' }
+        upcoming: { type: array, items: { type: string, format: date-time } }
+        runs: { type: array, items: { $ref: '#/components/schemas/ScheduleRun' } }
+    ScheduleList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
+        total: { type: integer }
+    RunPreview:
+      type: object
+      required: [runs]
+      properties:
+        runs: { type: array, items: { type: string, format: date-time } }
+
+    CurrencyTotal:
+      type: object
+      required: [currency, openCount, outstanding, overdueCount, overdue]
+      properties:
+        currency: { type: string }
+        openCount: { type: integer }
+        outstanding: { $ref: '#/components/schemas/Decimal' }
+        overdueCount: { type: integer }
+        overdue: { $ref: '#/components/schemas/Decimal' }
+    Dashboard:
+      type: object
+      required: [today, totals, upcomingEmails, upcomingRuns, recentInvoices, failedEmailCount]
+      properties:
+        today: { type: string, format: date }
+        totals: { type: array, items: { $ref: '#/components/schemas/CurrencyTotal' } }
+        upcomingEmails: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }
+        upcomingRuns: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
+        recentInvoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
+        failedEmailCount: { type: integer }

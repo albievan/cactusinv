@@ -1,0 +1,1 @@
+{ "name": "cactusInv", "short_name": "cactusInv", "start_url": "/", "display": "standalone", "background_color": "#f8fafc", "theme_color": "#2e75b6", "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }] }

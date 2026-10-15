@@ -1,0 +1,227 @@
+# cactusInv on k3s / Kubernetes. Rendered by deploy.sh, which fills the placeholders from .env.
+# Secrets (cactusinv-secrets) and the backup-script ConfigMap are created by deploy.sh.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cactusinv-config
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+data:
+  TZ: "${TZ}"
+  CACTUSINV_DB_HOST: mariadb
+  CACTUSINV_DB_NAME: "${MARIADB_DATABASE}"
+  CACTUSINV_DB_USER: "${MARIADB_USER}"
+  CACTUSINV_SECRETS: file
+  CACTUSINV_SECRETS_DIR: /run/secrets
+  CACTUSINV_INVOICES_DIR: /data/invoices
+  CACTUSINV_MIGRATE_ON_START: "true"
+  CACTUSINV_LOG_LEVEL: "${CACTUSINV_LOG_LEVEL}"
+  CACTUSINV_COOKIE_SECURE: "${CACTUSINV_COOKIE_SECURE}"
+  CACTUSINV_DEFAULT_ADMIN_USER: "${CACTUSINV_DEFAULT_ADMIN_USER}"
+  CACTUSINV_DEFAULT_ADMIN_PASSWORD: "${CACTUSINV_DEFAULT_ADMIN_PASSWORD}"
+  CACTUSINV_SMTP_HOST: "${CACTUSINV_SMTP_HOST}"
+  CACTUSINV_SMTP_PORT: "${CACTUSINV_SMTP_PORT}"
+  CACTUSINV_SMTP_TLS: "${CACTUSINV_SMTP_TLS}"
+  CACTUSINV_SMTP_USER: "${CACTUSINV_SMTP_USER}"
+  CACTUSINV_SMTP_FROM: "${CACTUSINV_SMTP_FROM}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-data
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ${K8S_STORAGE_CLASS}
+  resources: { requests: { storage: ${K8S_MARIADB_STORAGE} } }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: invoices
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ${K8S_STORAGE_CLASS}
+  resources: { requests: { storage: ${K8S_INVOICES_STORAGE} } }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backups
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ${K8S_STORAGE_CLASS}
+  resources: { requests: { storage: ${K8S_BACKUP_STORAGE} } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/name: mariadb, app.kubernetes.io/part-of: cactusinv }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: mariadb } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mariadb, app.kubernetes.io/part-of: cactusinv }
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:11
+          env:
+            - { name: TZ, value: "${TZ}" }
+            - { name: MARIADB_DATABASE, value: "${MARIADB_DATABASE}" }
+            - { name: MARIADB_USER, value: "${MARIADB_USER}" }
+            - { name: MARIADB_PASSWORD_FILE, value: /run/secrets/db_password }
+            - { name: MARIADB_ROOT_PASSWORD_FILE, value: /run/secrets/db_root_password }
+          ports: [{ containerPort: 3306, name: mysql }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/mysql }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+          readinessProbe:
+            exec: { command: [healthcheck.sh, --connect, --innodb_initialized] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 1Gi } }
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: mariadb-data } }
+        - { name: secrets, secret: { secretName: cactusinv-secrets } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  selector: { app.kubernetes.io/name: mariadb }
+  ports: [{ port: 3306, targetPort: mysql }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cactusinv
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/name: cactusinv, app.kubernetes.io/part-of: cactusinv }
+spec:
+  # One replica: the invoices volume is ReadWriteOnce. With a ReadWriteMany class the
+  # app scales out safely (workers coordinate through row locks).
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app.kubernetes.io/name: cactusinv } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: cactusinv, app.kubernetes.io/part-of: cactusinv }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532 }
+      containers:
+        - name: cactusinv
+          image: ${IMAGE}
+          imagePullPolicy: IfNotPresent
+          envFrom: [{ configMapRef: { name: cactusinv-config } }]
+          ports: [{ containerPort: 8080, name: http }]
+          volumeMounts:
+            - { name: invoices, mountPath: /data/invoices }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 60, periodSeconds: 20 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 512Mi } }
+      volumes:
+        - { name: invoices, persistentVolumeClaim: { claimName: invoices } }
+        - { name: secrets, secret: { secretName: cactusinv-secrets } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cactusinv
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: cactusinv }
+  ports: [{ port: 80, targetPort: http, nodePort: ${K8S_NODE_PORT} }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailpit
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/name: mailpit, app.kubernetes.io/part-of: cactusinv }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: mailpit } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: mailpit, app.kubernetes.io/part-of: cactusinv }
+    spec:
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.21
+          ports: [{ containerPort: 1025, name: smtp }, { containerPort: 8025, name: web }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: mailpit }
+  ports:
+    - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: web, port: 8025, targetPort: web, nodePort: ${K8S_MAILPIT_NODE_PORT} }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cactusinv-backup
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  schedule: "${BACKUP_CRON}"
+  timeZone: "${TZ}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: cactusinv-backup, app.kubernetes.io/part-of: cactusinv }
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: mariadb:11
+              command: [bash, /scripts/backup.sh, once]
+              env:
+                - { name: TZ, value: "${TZ}" }
+                - { name: DB_HOST, value: mariadb }
+                - { name: DB_NAME, value: "${MARIADB_DATABASE}" }
+                - { name: DB_USER, value: "${MARIADB_USER}" }
+                - { name: DB_PASSWORD_FILE, value: /run/secrets/db_password }
+                - { name: BACKUP_RETENTION_DAYS, value: "${BACKUP_RETENTION_DAYS}" }
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: secrets, mountPath: /run/secrets, readOnly: true }
+          volumes:
+            - { name: backups, persistentVolumeClaim: { claimName: backups } }
+            - { name: scripts, configMap: { name: cactusinv-backup-script } }
+            - { name: secrets, secret: { secretName: cactusinv-secrets } }

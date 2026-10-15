@@ -1,0 +1,10 @@
+# oapi-codegen configuration: `make gen` writes internal/adapters/http/api.gen.go.
+package: httpapi
+output: internal/adapters/http/api.gen.go
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+  embedded-spec: false
+output-options:
+  prefer-skip-optional-pointer: true

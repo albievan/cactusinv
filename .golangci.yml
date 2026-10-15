@@ -1,0 +1,79 @@
+# golangci-lint v1 configuration — part of `make check` (CLAUDE.md §3).
+run:
+  timeout: 5m
+  build-tags: [integration]
+
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+    - bodyclose
+    - noctx
+    - sqlclosecheck
+    - rowserrcheck
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+      - name: package-comments
+      - name: var-naming
+      - name: error-strings
+      - name: receiver-naming
+      - name: indent-error-flow
+  depguard:
+    rules:
+      # The dependency rule: domain ← app ← ports ← adapters ← cmd (docs/ARCHITECTURE.md).
+      domain:
+        files: ["**/internal/domain/**"]
+        list-mode: lax
+        deny:
+          - pkg: "github.com/albievan/cactusinve/internal/app"
+            desc: "domain must not depend on app"
+          - pkg: "github.com/albievan/cactusinve/internal/ports"
+            desc: "domain must not depend on ports"
+          - pkg: "github.com/albievan/cactusinve/internal/adapters"
+            desc: "domain must not depend on adapters"
+          - pkg: "database/sql"
+            desc: "domain does no I/O"
+          - pkg: "net/http"
+            desc: "domain does no I/O"
+          - pkg: "os"
+            desc: "domain does no I/O"
+          - pkg: "github.com/go-sql-driver/mysql"
+            desc: "domain does no I/O"
+      app:
+        files: ["**/internal/app/**", "**/internal/ports/**"]
+        list-mode: lax
+        deny:
+          - pkg: "github.com/albievan/cactusinve/internal/adapters"
+            desc: "app and ports must not depend on adapters"
+          - pkg: "database/sql"
+            desc: "use ports, not the database"
+          - pkg: "net/http"
+            desc: "use ports, not HTTP"
+          - pkg: "github.com/go-sql-driver/mysql"
+            desc: "use ports, not the driver"
+
+issues:
+  exclude-dirs:
+    - internal/adapters/mariadb/sqlcgen
+  exclude-files:
+    - ".*\\.gen\\.go$"
+  exclude-rules:
+    # Test helpers may panic on setup failures.
+    - path: _test\.go
+      linters: [gosec]
+  max-issues-per-linter: 0
+  max-same-issues: 0

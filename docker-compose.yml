@@ -1,0 +1,95 @@
+# cactusInv on Docker (Docker Desktop or any Docker Engine). Settings and volume
+# mappings come from .env; secrets from files in ${SECRETS_DIR}. Use ./deploy.sh.
+name: cactusinv
+
+services:
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets: [db_password, db_root_password]
+    volumes:
+      - ${MARIADB_DATA_DIR}:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # The app runs as uid 65532; make the mapped invoices folder writable for it.
+  volume-init:
+    image: busybox:1.37
+    command: ["sh", "-c", "chown -R 65532:65532 /data/invoices && chmod 750 /data/invoices"]
+    volumes:
+      - ${INVOICES_DIR}:/data/invoices
+    restart: "no"
+
+  app:
+    image: ${CACTUSINV_IMAGE}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      mariadb: { condition: service_healthy }
+      volume-init: { condition: service_completed_successfully }
+    environment:
+      TZ: ${TZ}
+      CACTUSINV_DB_HOST: mariadb
+      CACTUSINV_DB_NAME: ${MARIADB_DATABASE}
+      CACTUSINV_DB_USER: ${MARIADB_USER}
+      CACTUSINV_SECRETS: file
+      CACTUSINV_SECRETS_DIR: /run/secrets
+      CACTUSINV_INVOICES_DIR: /data/invoices
+      CACTUSINV_MIGRATE_ON_START: "true"
+      CACTUSINV_LOG_LEVEL: ${CACTUSINV_LOG_LEVEL}
+      CACTUSINV_COOKIE_SECURE: ${CACTUSINV_COOKIE_SECURE}
+      CACTUSINV_DEFAULT_ADMIN_USER: ${CACTUSINV_DEFAULT_ADMIN_USER}
+      CACTUSINV_DEFAULT_ADMIN_PASSWORD: ${CACTUSINV_DEFAULT_ADMIN_PASSWORD}
+      CACTUSINV_SMTP_HOST: ${CACTUSINV_SMTP_HOST}
+      CACTUSINV_SMTP_PORT: ${CACTUSINV_SMTP_PORT}
+      CACTUSINV_SMTP_TLS: ${CACTUSINV_SMTP_TLS}
+      CACTUSINV_SMTP_USER: ${CACTUSINV_SMTP_USER}
+      CACTUSINV_SMTP_FROM: ${CACTUSINV_SMTP_FROM}
+    secrets: [db_password, smtp_password]
+    volumes:
+      - ${INVOICES_DIR}:/data/invoices
+    ports:
+      - "${HTTP_PORT}:8080"
+
+  backup:
+    image: mariadb:11
+    restart: unless-stopped
+    depends_on:
+      mariadb: { condition: service_healthy }
+    entrypoint: ["bash", "/scripts/backup.sh", "loop"]
+    environment:
+      TZ: ${TZ}
+      DB_HOST: mariadb
+      DB_NAME: ${MARIADB_DATABASE}
+      DB_USER: ${MARIADB_USER}
+      DB_PASSWORD_FILE: /run/secrets/db_password
+      BACKUP_TIMES: ${BACKUP_TIMES}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS}
+    secrets: [db_password]
+    volumes:
+      - ${BACKUP_DIR}:/backups
+      - ./deploy/backup/backup.sh:/scripts/backup.sh:ro
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    profiles: [mailpit]
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_PORT}:8025"
+
+secrets:
+  db_password:
+    file: ${SECRETS_DIR}/db_password
+  db_root_password:
+    file: ${SECRETS_DIR}/db_root_password
+  smtp_password:
+    file: ${SECRETS_DIR}/smtp_password

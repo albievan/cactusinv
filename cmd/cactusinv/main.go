@@ -1,0 +1,265 @@
+// Command cactusinv is the composition root: the only place adapters are wired to the
+// application. It serves the API and web app and runs the background workers.
+//
+//	cactusinv [serve]                    run the server (default)
+//	cactusinv migrate up|down            apply or roll back database migrations
+//	cactusinv admin create <login>       create an administrator (password on stdin)
+//	cactusinv admin set-password <login> reset a password (password on stdin)
+//	cactusinv healthcheck                exit 0 if the local server is healthy (Docker)
+//	cactusinv version
+package main
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+	_ "time/tzdata" // the distroless image has no zoneinfo
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/albievan/cactusinve/internal/adapters/archive"
+	"github.com/albievan/cactusinve/internal/adapters/argon2"
+	"github.com/albievan/cactusinve/internal/adapters/clock"
+	httpapi "github.com/albievan/cactusinve/internal/adapters/http"
+	"github.com/albievan/cactusinve/internal/adapters/idgen"
+	"github.com/albievan/cactusinve/internal/adapters/mariadb"
+	"github.com/albievan/cactusinve/internal/adapters/pdf"
+	"github.com/albievan/cactusinve/internal/adapters/smtp"
+	"github.com/albievan/cactusinve/internal/adapters/worker"
+	"github.com/albievan/cactusinve/internal/app"
+	"github.com/albievan/cactusinve/web"
+)
+
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "cactusinv:", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	cmd := "serve"
+	if len(args) > 0 {
+		cmd = args[0]
+	}
+	switch cmd {
+	case "version":
+		fmt.Println(version)
+		return nil
+	case "healthcheck":
+		return healthcheck()
+	}
+	cfg, err := loadConfig(os.Getenv)
+	if err != nil {
+		return err
+	}
+	log := newLogger(cfg.LogLevel)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	switch cmd {
+	case "serve":
+		return serve(ctx, cfg, log)
+	case "migrate":
+		if len(args) < 2 || (args[1] != "up" && args[1] != "down") {
+			return errors.New("usage: cactusinv migrate up|down")
+		}
+		db, err := openDB(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return mariadb.Migrate(ctx, db, args[1] == "down")
+	case "admin":
+		return adminCommand(ctx, cfg, args[1:])
+	default:
+		return fmt.Errorf("unknown command %q", cmd)
+	}
+}
+
+func newLogger(level string) *slog.Logger {
+	var l slog.Level
+	_ = l.UnmarshalText([]byte(level))
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: l}))
+}
+
+func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
+	pw, err := cfg.secret(ctx, "db_password")
+	if err != nil {
+		return nil, err
+	}
+	var db *mariadbDB
+	// MariaDB may still be starting when the container comes up: retry for a while.
+	deadline := time.Now().Add(cfg.DBWait)
+	for {
+		db, err = mariadb.Open(ctx, mariadb.Config{Host: cfg.DBHost, Port: cfg.DBPort, Name: cfg.DBName, User: cfg.DBUser, Password: pw})
+		if err == nil || time.Now().After(deadline) || ctx.Err() != nil {
+			return db, err
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger) (*app.Service, error) {
+	deps := app.Deps{
+		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
+		Hasher: argon2.Hasher{}, Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
+	}
+	if cfg.SMTPHost != "" {
+		pw, err := cfg.optionalSecret(ctx, "smtp_password")
+		if err != nil {
+			return nil, err
+		}
+		m, err := smtp.New(smtp.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUser, Password: pw, From: cfg.SMTPFrom, TLS: cfg.SMTPTLS})
+		if err != nil {
+			return nil, err
+		}
+		deps.Mailer = m
+	} else {
+		deps.Mailer = noMailer{}
+	}
+	return app.New(deps), nil
+}
+
+// noMailer fails deliveries clearly when SMTP is not configured; messages stay queued.
+type noMailer struct{}
+
+func (noMailer) Send(context.Context, portsMail) error {
+	return errors.New("SMTP is not configured (set CACTUSINV_SMTP_HOST)")
+}
+
+func serve(ctx context.Context, cfg config, log *slog.Logger) error {
+	db, err := openDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if cfg.MigrateOnStart {
+		if err := mariadb.Migrate(ctx, db, false); err != nil {
+			return err
+		}
+		log.Info("migrations applied")
+	}
+	if err := os.MkdirAll(cfg.InvoicesDir, 0o750); err != nil {
+		return fmt.Errorf("invoices dir: %w", err)
+	}
+	svc, err := newService(ctx, cfg, db, log)
+	if err != nil {
+		return err
+	}
+	if cfg.DefaultAdminUser != "" {
+		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, cfg.DefaultAdminPassword)
+		if err != nil {
+			return err
+		}
+		if created {
+			log.Warn("created the default administrator — sign in and change its password", "login", cfg.DefaultAdminUser)
+		}
+	}
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	store := mariadb.NewStore(db)
+	arch := archive.Dir{Root: cfg.InvoicesDir}
+	handler := httpapi.NewHandler(httpapi.Options{
+		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, Registry: reg, Web: web.FS(),
+		Ready: map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
+	})
+	srv := &http.Server{
+		Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second,
+	}
+
+	workCtx, stopWork := context.WithCancel(context.WithoutCancel(ctx))
+	workersDone := make(chan struct{})
+	if cfg.Workers {
+		go func() {
+			worker.New(svc, log, worker.Intervals{}, reg).Run(workCtx)
+			close(workersDone)
+		}()
+	} else {
+		close(workersDone)
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		log.Info("listening", "addr", cfg.HTTPAddr, "version", version, "workers", cfg.Workers)
+		errc <- srv.ListenAndServe()
+	}()
+	select {
+	case err := <-errc:
+		stopWork()
+		<-workersDone
+		return err
+	case <-ctx.Done():
+	}
+	log.Info("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	err = srv.Shutdown(shutdownCtx)
+	stopWork()
+	<-workersDone
+	return err
+}
+
+func adminCommand(ctx context.Context, cfg config, args []string) error {
+	if len(args) != 2 || (args[0] != "create" && args[0] != "set-password") {
+		return errors.New("usage: cactusinv admin create|set-password <login>  (password on stdin)")
+	}
+	pw, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && pw == "" {
+		return errors.New("read password from stdin")
+	}
+	pw = strings.TrimRight(pw, "\r\n")
+	db, err := openDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	svc, err := newService(ctx, cfg, db, newLogger("error"))
+	if err != nil {
+		return err
+	}
+	if args[0] == "create" {
+		_, err = svc.CreateUser(ctx, args[1], pw)
+		return err
+	}
+	return svc.SetPassword(ctx, args[1], pw)
+}
+
+func healthcheck() error {
+	addr := os.Getenv("CACTUSINV_HTTP_ADDR")
+	if addr == "" || strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+		if addr == "127.0.0.1" {
+			addr += ":8080"
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthz returned %s", resp.Status)
+	}
+	return nil
+}

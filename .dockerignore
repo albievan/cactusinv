@@ -1,0 +1,8 @@
+.git
+data
+secrets
+.deploy
+web/node_modules
+web/dist
+example
+coverage*.out
