@@ -70,6 +70,9 @@ func (r *statusRecorder) WriteHeader(code int) {
 	r.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the connection (per-route deadlines).
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
+
 func (r *statusRecorder) Write(b []byte) (int, error) {
 	if r.status == 0 {
 		r.status = http.StatusOK
@@ -91,6 +94,10 @@ func withRequestLog(log *slog.Logger, next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w}
 		defer func() {
 			if p := recover(); p != nil {
+				if err, ok := p.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+					log.WarnContext(ctx, "response aborted", "request_id", id, "method", r.Method, "path", r.URL.Path)
+					panic(p) // the server drops the connection: a broken download must not look complete
+				}
 				log.ErrorContext(ctx, "panic", "request_id", id, "panic", p)
 				if rec.status == 0 {
 					writeProblem(rec, problemFor(errors.New("panic")))
@@ -125,10 +132,16 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// withAPIGuards applies the body limit, CSRF check and session authentication to /api.
-func withAPIGuards(svc *app.Service, next http.Handler) http.Handler {
+// withAPIGuards applies the body limit and deadlines (per route, see limitsFor), the CSRF
+// check and session authentication to /api.
+func withAPIGuards(svc *app.Service, maxUpload int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		// Larger bodies and longer deadlines only once the request is authenticated; until
+		// then nothing reads the body of such a route.
+		limits := limitsFor(r, maxUpload)
+		if !limits.long() {
+			applyLimits(w, r, limits)
+		}
 		if isMutation(r.Method) && r.Header.Get(csrfHeader) != csrfValue {
 			writeProblem(w, Problem{Type: problemType("csrf"), Title: "Missing " + csrfHeader + " header", Status: http.StatusForbidden})
 			return
@@ -147,6 +160,9 @@ func withAPIGuards(svc *app.Service, next http.Handler) http.Handler {
 			writeProblem(w, problemFor(err))
 			return
 		}
+		if limits.long() {
+			applyLimits(w, r, limits)
+		}
 		ctx := context.WithValue(r.Context(), keyUser, u)
 		ctx = app.WithActor(ctx, app.Actor{ID: u.ID, Name: u.Email})
 		ctx = context.WithValue(ctx, keyToken, c.Value)
@@ -163,7 +179,7 @@ func isMutation(method string) bool {
 func withIdempotency(store ports.IdempotencyRepository, clock ports.Clock, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("Idempotency-Key")
-		if key == "" || !isMutation(r.Method) {
+		if key == "" || !isMutation(r.Method) || skipsIdempotency(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

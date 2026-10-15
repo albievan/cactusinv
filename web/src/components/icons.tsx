@@ -38,3 +38,4 @@ export const IconHistory = base(<><path d="M3 12a9 9 0 103-6.7L3 8" /><path d="M
 export const IconBuilding = base(<><path d="M4 21V5l8-2v18M12 7l8 3v11M3 21h18" /><path d="M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2" /></>)
 export const IconBank = base(<><path d="M3 9l9-5 9 5M4 9h16" /><path d="M6 9v8M10 9v8M14 9v8M18 9v8M3 20h18" /></>)
 export const IconServer = base(<><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" /></>)
+export const IconArchive = base(<><rect x="3" y="4" width="18" height="5" rx="1" /><path d="M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M10 13h4" /></>)

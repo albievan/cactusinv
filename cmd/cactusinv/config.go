@@ -11,6 +11,7 @@ import (
 
 	"github.com/albievan/cactusinv/internal/adapters/filesecrets"
 	"github.com/albievan/cactusinv/internal/adapters/vault"
+	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
 )
 
@@ -42,6 +43,13 @@ type config struct {
 	CookieSecure         bool
 	DefaultAdminUser     string
 	DefaultAdminPassword string
+	// Backups (ADR-010).
+	BackupDir           string
+	BackupTimes         []domain.TimeOfDay
+	BackupLocation      *time.Location
+	BackupRetentionDays int
+	BackupMaxUploadMB   int
+	RestoreDBName       string
 
 	secrets ports.Secrets
 }
@@ -100,6 +108,31 @@ func loadConfig(getenv func(string) string) (config, error) {
 		CookieSecure:         boolean("CACTUSINV_COOKIE_SECURE", true),
 		DefaultAdminUser:     str("CACTUSINV_DEFAULT_ADMIN_USER", "admin"),
 		DefaultAdminPassword: str("CACTUSINV_DEFAULT_ADMIN_PASSWORD", "admin"),
+	}
+	c.BackupDir = str("CACTUSINV_BACKUP_DIR", "/data/backups")
+	c.BackupRetentionDays = integer("CACTUSINV_BACKUP_RETENTION_DAYS", 14)
+	c.BackupMaxUploadMB = integer("CACTUSINV_BACKUP_MAX_UPLOAD_MB", 256)
+	c.RestoreDBName = str("CACTUSINV_RESTORE_DB_NAME", c.DBName+"_restore")
+	if times, err := domain.ParseBackupTimes(str("CACTUSINV_BACKUP_TIMES", "02:00")); err != nil {
+		errs = append(errs, fmt.Errorf("CACTUSINV_BACKUP_TIMES: %w", err))
+	} else {
+		c.BackupTimes = times
+	}
+	// Scheduled backup times are wall-clock times in TZ (the container's time zone).
+	c.BackupLocation = time.UTC
+	if tz := getenv("TZ"); tz != "" {
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("TZ: unknown time zone %q", tz))
+		} else {
+			c.BackupLocation = loc
+		}
+	}
+	if c.BackupMaxUploadMB < 1 || c.BackupMaxUploadMB > 16384 {
+		errs = append(errs, errors.New("CACTUSINV_BACKUP_MAX_UPLOAD_MB must be 1-16384"))
+	}
+	if c.BackupRetentionDays < 0 {
+		errs = append(errs, errors.New("CACTUSINV_BACKUP_RETENTION_DAYS must be 0 (keep all) or more"))
 	}
 	switch c.SecretsSource {
 	case "file":

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
@@ -155,8 +156,7 @@ func (s *Service) createBackup(ctx context.Context, kind domain.BackupKind) (Cre
 	var out CreatedBackup
 	err := s.backups.Snapshotter.Snapshot(ctx, func(ctx context.Context, src ports.BackupSource) error {
 		h := s.backupHeader(ctx, src)
-		name := domain.BackupName{CreatedAt: h.CreatedAt, Schema: h.SchemaVersion, Kind: kind}.String()
-		fw, err := s.backups.Files.Create(ctx, name)
+		name, fw, err := s.createBackupFile(ctx, h, kind)
 		if err != nil {
 			return err
 		}
@@ -164,20 +164,80 @@ func (s *Service) createBackup(ctx context.Context, kind domain.BackupKind) (Cre
 		digest, err := s.sealAndEncode(ctx, io.MultiWriter(fw, sum), h, src, func(w io.Writer) (io.WriteCloser, error) {
 			return s.backups.Sealer.SealWithKey(w)
 		})
-		if err == nil {
-			err = fw.Commit()
-		}
 		if err != nil {
 			_ = fw.Abort()
-			return err
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				return backupFailure{"disk", err}
+			}
+			return backupFailure{"database", err}
+		}
+		if err := fw.Commit(); err != nil {
+			_ = fw.Abort()
+			return backupFailure{"disk", err}
 		}
 		out = CreatedBackup{Name: name, Size: sum.n, SHA256: sum.Sum(), Schema: h.SchemaVersion, Digest: digest}
 		return nil
 	})
 	if err != nil {
+		var bf backupFailure
+		if !errors.As(err, &bf) && !errors.Is(err, domain.ErrConflict) {
+			err = backupFailure{"database", err}
+		}
 		return CreatedBackup{}, err
 	}
+	if kind == domain.BackupPreRestore {
+		// Recorded by the restore's own entry (backup.restored, or its refusal or failure),
+		// so the live trail does not change between the preview and the swap.
+		return out, nil
+	}
 	return out, s.auditNow(ctx, "backup.created", "backup", out.Name, fmt.Sprintf("%s backup, schema %d, %d bytes, sha256 %s", kind, out.Schema, out.Size, out.SHA256))
+}
+
+// backupFailure tags why a backup failed with a category people can act on (database,
+// disk, key); the error itself is only logged.
+type backupFailure struct {
+	category string
+	err      error
+}
+
+func (b backupFailure) Error() string { return b.category + ": " + b.err.Error() }
+func (b backupFailure) Unwrap() error { return b.err }
+
+// failureCategory is the category recorded for a failed scheduled backup.
+func failureCategory(err error) string {
+	var bf backupFailure
+	switch {
+	case errors.Is(err, domain.ErrNotConfigured):
+		return "key"
+	case errors.As(err, &bf):
+		return bf.category
+	case errors.Is(err, domain.ErrConflict):
+		return "disk"
+	}
+	return "other"
+}
+
+// createBackupFile creates the stored file for a new backup. Names have one-second
+// resolution: a manual or safety backup taken in a second already used takes the next
+// free one (a scheduled backup's slot runs once anyway).
+func (s *Service) createBackupFile(ctx context.Context, h domain.BackupHeader, kind domain.BackupKind) (string, ports.BackupFileWriter, error) {
+	tries := maxUploadNameTries
+	if kind == domain.BackupScheduled {
+		tries = 1
+	}
+	var err error
+	for i := range tries {
+		name := domain.BackupName{CreatedAt: h.CreatedAt.Truncate(time.Second).Add(time.Duration(i) * time.Second), Schema: h.SchemaVersion, Kind: kind}.String()
+		var fw ports.BackupFileWriter
+		if fw, err = s.backups.Files.Create(ctx, name); err == nil {
+			return name, fw, nil
+		}
+		if !errors.Is(err, domain.ErrConflict) {
+			return "", nil, backupFailure{"disk", err}
+		}
+	}
+	return "", nil, err
 }
 
 // sealAndEncode encodes src through an encrypting writer onto w.
@@ -365,9 +425,11 @@ func (s *Service) RunDueBackups(ctx context.Context) (bool, error) {
 	created, berr := s.createBackup(ctx, domain.BackupScheduled)
 	run.FinishedAt, run.Name, run.Result = s.now(), created.Name, domain.BackupRunOK
 	if berr != nil {
-		run.Result, run.Error = domain.BackupRunFailed, truncateRunes(berr.Error(), 1000)
-		s.log.ErrorContext(ctx, "scheduled backup failed", "slot", slot, "err", berr)
-		_ = s.auditNow(ctx, "backup.failed", "backup", "", "scheduled backup failed: "+truncateRunes(berr.Error(), 300))
+		// Only the category is stored and shown (database, disk, key, other); the error
+		// itself, which may quote internal details, goes to the log.
+		run.Result, run.Error = domain.BackupRunFailed, failureCategory(berr)
+		s.log.ErrorContext(ctx, "scheduled backup failed", "slot", slot, "category", run.Error, "err", berr)
+		_ = s.auditNow(ctx, "backup.failed", "backup", "", "scheduled backup failed ("+run.Error+")")
 	}
 	if err := s.tx.Repos().BackupRuns.Finish(ctx, run); err != nil {
 		return true, wrap("app.RunDueBackups", err)

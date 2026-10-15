@@ -19,6 +19,75 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuditMergeMode.
+const (
+	AppendResealed AuditMergeMode = "append_resealed"
+	AppendVerbatim AuditMergeMode = "append_verbatim"
+	KeepCurrent    AuditMergeMode = "keep_current"
+)
+
+// Valid indicates whether the value is a known member of the AuditMergeMode enum.
+func (e AuditMergeMode) Valid() bool {
+	switch e {
+	case AppendResealed:
+		return true
+	case AppendVerbatim:
+		return true
+	case KeepCurrent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupFileKind.
+const (
+	Legacy     BackupFileKind = "legacy"
+	Manual     BackupFileKind = "manual"
+	Prerestore BackupFileKind = "prerestore"
+	Scheduled  BackupFileKind = "scheduled"
+	Upload     BackupFileKind = "upload"
+)
+
+// Valid indicates whether the value is a known member of the BackupFileKind enum.
+func (e BackupFileKind) Valid() bool {
+	switch e {
+	case Legacy:
+		return true
+	case Manual:
+		return true
+	case Prerestore:
+		return true
+	case Scheduled:
+		return true
+	case Upload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackupRunResult.
+const (
+	BackupRunResultFailed  BackupRunResult = "failed"
+	BackupRunResultOk      BackupRunResult = "ok"
+	BackupRunResultRunning BackupRunResult = "running"
+)
+
+// Valid indicates whether the value is a known member of the BackupRunResult enum.
+func (e BackupRunResult) Valid() bool {
+	switch e {
+	case BackupRunResultFailed:
+		return true
+	case BackupRunResultOk:
+		return true
+	case BackupRunResultRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerDisclaimerSource.
 const (
 	CustomerDisclaimerSourceBusiness CustomerDisclaimerSource = "business"
@@ -289,6 +358,13 @@ type Aging struct {
 	Over90 Decimal `json:"over90"`
 }
 
+// ApplyRestoreRequest defines model for ApplyRestoreRequest.
+type ApplyRestoreRequest struct {
+	// Confirmation The word RESTORE.
+	Confirmation    string `json:"confirmation"`
+	CurrentPassword string `json:"currentPassword"`
+}
+
 // AuditEntry defines model for AuditEntry.
 type AuditEntry struct {
 	Action     string    `json:"action"`
@@ -308,6 +384,17 @@ type AuditList struct {
 	Total int          `json:"total"`
 }
 
+// AuditMerge defines model for AuditMerge.
+type AuditMerge struct {
+	BackupBroken bool           `json:"backupBroken"`
+	Count        int            `json:"count"`
+	Mode         AuditMergeMode `json:"mode"`
+	Summary      string         `json:"summary"`
+}
+
+// AuditMergeMode defines model for AuditMerge.Mode.
+type AuditMergeMode string
+
 // AuditVerification defines model for AuditVerification.
 type AuditVerification struct {
 	BrokenAt int64  `json:"brokenAt,omitempty"`
@@ -315,6 +402,55 @@ type AuditVerification struct {
 	Ok       bool   `json:"ok"`
 	Reason   string `json:"reason,omitempty"`
 }
+
+// BackupFile defines model for BackupFile.
+type BackupFile struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Kind prerestore: the safety backup taken just before a restore.
+	Kind BackupFileKind `json:"kind"`
+
+	// Legacy A plaintext .sql.gz dump of the retired backup sidecar; restore it with deploy.sh.
+	Legacy bool   `json:"legacy"`
+	Name   string `json:"name"`
+
+	// Schema Database schema of the backup (0 = not known yet
+	Schema int64 `json:"schema"`
+	Size   int64 `json:"size"`
+}
+
+// BackupFileKind prerestore: the safety backup taken just before a restore.
+type BackupFileKind string
+
+// BackupOverview defines model for BackupOverview.
+type BackupOverview struct {
+	Files []BackupFile `json:"files"`
+
+	// KeyConfigured Whether the server backup key (backup_key) is set: stored and scheduled backups need it.
+	KeyConfigured  bool       `json:"keyConfigured"`
+	LastRun        *BackupRun `json:"lastRun,omitempty"`
+	MaxUploadBytes int64      `json:"maxUploadBytes"`
+	NextRun        *time.Time `json:"nextRun,omitempty"`
+
+	// RestoreUnavailable Why restores cannot be staged (absent when they can).
+	RestoreUnavailable string   `json:"restoreUnavailable,omitempty"`
+	RetentionDays      int      `json:"retentionDays"`
+	TimeZone           string   `json:"timeZone"`
+	Times              []string `json:"times"`
+}
+
+// BackupRun defines model for BackupRun.
+type BackupRun struct {
+	Error      string          `json:"error"`
+	FinishedAt *time.Time      `json:"finishedAt,omitempty"`
+	Name       string          `json:"name"`
+	Result     BackupRunResult `json:"result"`
+	Slot       time.Time       `json:"slot"`
+	StartedAt  time.Time       `json:"startedAt"`
+}
+
+// BackupRunResult defines model for BackupRun.Result.
+type BackupRunResult string
 
 // BankAccount defines model for BankAccount.
 type BankAccount struct {
@@ -392,6 +528,14 @@ type BusinessSettings struct {
 type ChangePasswordRequest struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
+}
+
+// CreatedBackup defines model for CreatedBackup.
+type CreatedBackup struct {
+	Name   string `json:"name"`
+	Schema int64  `json:"schema"`
+	Sha256 string `json:"sha256"`
+	Size   int64  `json:"size"`
 }
 
 // Currency defines model for Currency.
@@ -547,6 +691,11 @@ type EmailSettingsTls string
 // EmailStatus defines model for EmailStatus.
 type EmailStatus string
 
+// ExportRequest defines model for ExportRequest.
+type ExportRequest struct {
+	Passphrase string `json:"passphrase"`
+}
+
 // Invoice defines model for Invoice.
 type Invoice struct {
 	Bank         BankDetails         `json:"bank"`
@@ -692,8 +841,10 @@ type LoginRequest struct {
 
 // Me defines model for Me.
 type Me struct {
-	Email string `json:"email"`
-	Id    string `json:"id"`
+	// AutomationPaused Automatic e-mails and schedules are paused after a restore until resumed (POST /automation/resume).
+	AutomationPaused bool   `json:"automationPaused"`
+	Email            string `json:"email"`
+	Id               string `json:"id"`
 }
 
 // MonthTotal defines model for MonthTotal.
@@ -783,6 +934,53 @@ type Recurrence struct {
 
 // RecurrenceFrequency defines model for Recurrence.Frequency.
 type RecurrenceFrequency string
+
+// RestorePreview defines model for RestorePreview.
+type RestorePreview struct {
+	AppVersion string     `json:"appVersion"`
+	Audit      AuditMerge `json:"audit"`
+
+	// CanSignIn Whether your account exists in the backup.
+	CanSignIn bool `json:"canSignIn"`
+
+	// CreatedAt When the backup was taken.
+	CreatedAt time.Time `json:"createdAt"`
+	CreatedBy string    `json:"createdBy"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        string    `json:"id"`
+
+	// InvoicesSince Invoices created after the backup; restoring removes them.
+	InvoicesSince int  `json:"invoicesSince"`
+	LiveAuditOk   bool `json:"liveAuditOk"`
+
+	// SafetyBackup Whether the current data is backed up just before the restore (needs backup_key).
+	SafetyBackup        bool                `json:"safetyBackup"`
+	SchemaFrom          int64               `json:"schemaFrom"`
+	SchemaTo            int64               `json:"schemaTo"`
+	Sha256              string              `json:"sha256"`
+	SmtpPasswordCleared bool                `json:"smtpPasswordCleared"`
+	Source              string              `json:"source"`
+	Tables              []RestoreTableCount `json:"tables"`
+	Warnings            []string            `json:"warnings"`
+}
+
+// RestoreResult defines model for RestoreResult.
+type RestoreResult struct {
+	Audit AuditMerge `json:"audit"`
+
+	// SafetyBackup The stored backup of the data as it was just before the restore ("" when none could be taken); restore it to undo.
+	SafetyBackup        string `json:"safetyBackup"`
+	SequenceKept        bool   `json:"sequenceKept"`
+	SmtpPasswordCleared bool   `json:"smtpPasswordCleared"`
+	Source              string `json:"source"`
+}
+
+// RestoreTableCount defines model for RestoreTableCount.
+type RestoreTableCount struct {
+	Backup int64  `json:"backup"`
+	Live   int64  `json:"live"`
+	Name   string `json:"name"`
+}
 
 // RunPreview defines model for RunPreview.
 type RunPreview struct {
@@ -875,6 +1073,15 @@ type SendRequest struct {
 	SendAt  *time.Time `json:"sendAt,omitempty"`
 	Subject string     `json:"subject,omitempty"`
 	To      []string   `json:"to,omitempty"`
+}
+
+// StageRestoreRequest defines model for StageRestoreRequest.
+type StageRestoreRequest struct {
+	// Backup A stored backup's name.
+	Backup string `json:"backup"`
+
+	// Passphrase For a passphrase-encrypted file; omit for backups encrypted to this server's key.
+	Passphrase string `json:"passphrase,omitempty"`
 }
 
 // Statement defines model for Statement.
@@ -989,6 +1196,11 @@ type ListAuditParams struct {
 	Offset     Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// CreateBackupParams defines parameters for CreateBackup.
+type CreateBackupParams struct {
+	IdempotencyKey string `json:"Idempotency-Key,omitempty"`
+}
+
 // ListBankAccountsParams defines parameters for ListBankAccounts.
 type ListBankAccountsParams struct {
 	Currency string `form:"currency,omitempty" json:"currency,omitempty"`
@@ -1064,6 +1276,9 @@ type LoginJSONRequestBody = LoginRequest
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
 
+// ExportBackupJSONRequestBody defines body for ExportBackup for application/json ContentType.
+type ExportBackupJSONRequestBody = ExportRequest
+
 // CreateBankAccountJSONRequestBody defines body for CreateBankAccount for application/json ContentType.
 type CreateBankAccountJSONRequestBody = BankAccount
 
@@ -1106,6 +1321,12 @@ type CreateProductJSONRequestBody = Product
 // UpdateProductJSONRequestBody defines body for UpdateProduct for application/json ContentType.
 type UpdateProductJSONRequestBody = Product
 
+// StageRestoreJSONRequestBody defines body for StageRestore for application/json ContentType.
+type StageRestoreJSONRequestBody = StageRestoreRequest
+
+// ApplyRestoreJSONRequestBody defines body for ApplyRestore for application/json ContentType.
+type ApplyRestoreJSONRequestBody = ApplyRestoreRequest
+
 // CreateScheduleJSONRequestBody defines body for CreateSchedule for application/json ContentType.
 type CreateScheduleJSONRequestBody = Schedule
 
@@ -1147,6 +1368,21 @@ type ServerInterface interface {
 
 	// (POST /auth/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+
+	// (POST /automation/resume)
+	ResumeAutomation(w http.ResponseWriter, r *http.Request)
+
+	// (GET /backups)
+	ListBackups(w http.ResponseWriter, r *http.Request)
+
+	// (POST /backups)
+	CreateBackup(w http.ResponseWriter, r *http.Request, params CreateBackupParams)
+
+	// (POST /backups/export)
+	ExportBackup(w http.ResponseWriter, r *http.Request)
+
+	// (POST /backups/uploads)
+	UploadBackup(w http.ResponseWriter, r *http.Request)
 
 	// (GET /bank-accounts)
 	ListBankAccounts(w http.ResponseWriter, r *http.Request, params ListBankAccountsParams)
@@ -1255,6 +1491,18 @@ type ServerInterface interface {
 
 	// (PUT /products/{id})
 	UpdateProduct(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /restores)
+	StageRestore(w http.ResponseWriter, r *http.Request)
+
+	// (GET /restores/current)
+	GetCurrentRestore(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /restores/{id})
+	DiscardRestore(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /restores/{id}/apply)
+	ApplyRestore(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /schedules)
 	ListSchedules(w http.ResponseWriter, r *http.Request, params ListSchedulesParams)
@@ -1476,6 +1724,103 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResumeAutomation operation middleware
+func (siw *ServerInterfaceWrapper) ResumeAutomation(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResumeAutomation(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListBackups operation middleware
+func (siw *ServerInterfaceWrapper) ListBackups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBackups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBackup operation middleware
+func (siw *ServerInterfaceWrapper) CreateBackup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateBackupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBackup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportBackup operation middleware
+func (siw *ServerInterfaceWrapper) ExportBackup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportBackup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadBackup operation middleware
+func (siw *ServerInterfaceWrapper) UploadBackup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadBackup(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2628,6 +2973,86 @@ func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// StageRestore operation middleware
+func (siw *ServerInterfaceWrapper) StageRestore(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StageRestore(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentRestore operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentRestore(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentRestore(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DiscardRestore operation middleware
+func (siw *ServerInterfaceWrapper) DiscardRestore(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DiscardRestore(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApplyRestore operation middleware
+func (siw *ServerInterfaceWrapper) ApplyRestore(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApplyRestore(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSchedules operation middleware
 func (siw *ServerInterfaceWrapper) ListSchedules(w http.ResponseWriter, r *http.Request) {
 
@@ -3175,6 +3600,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit", wrapper.ListAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/audit/verify", wrapper.VerifyAudit)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/dashboard", wrapper.GetDashboard)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backups", wrapper.ListBackups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups", wrapper.CreateBackup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/export", wrapper.ExportBackup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/uploads", wrapper.UploadBackup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/restores", wrapper.StageRestore)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/restores/current", wrapper.GetCurrentRestore)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/restores/{id}/apply", wrapper.ApplyRestore)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/restores/{id}", wrapper.DiscardRestore)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/automation/resume", wrapper.ResumeAutomation)
 
 	return m
 }
@@ -3411,6 +3845,221 @@ type ChangePassworddefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ChangePassworddefaultApplicationProblemPlusJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResumeAutomationRequestObject struct {
+}
+
+type ResumeAutomationResponseObject interface {
+	VisitResumeAutomationResponse(w http.ResponseWriter) error
+}
+
+type ResumeAutomation204Response struct {
+}
+
+func (response ResumeAutomation204Response) VisitResumeAutomationResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ResumeAutomationdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ResumeAutomationdefaultApplicationProblemPlusJSONResponse) VisitResumeAutomationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBackupsRequestObject struct {
+}
+
+type ListBackupsResponseObject interface {
+	VisitListBackupsResponse(w http.ResponseWriter) error
+}
+
+type ListBackups200JSONResponse BackupOverview
+
+func (response ListBackups200JSONResponse) VisitListBackupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBackupsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListBackupsdefaultApplicationProblemPlusJSONResponse) VisitListBackupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBackupRequestObject struct {
+	Params CreateBackupParams
+}
+
+type CreateBackupResponseObject interface {
+	VisitCreateBackupResponse(w http.ResponseWriter) error
+}
+
+type CreateBackup201JSONResponse CreatedBackup
+
+func (response CreateBackup201JSONResponse) VisitCreateBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBackupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateBackupdefaultApplicationProblemPlusJSONResponse) VisitCreateBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExportBackupRequestObject struct {
+	Body *ExportBackupJSONRequestBody
+}
+
+type ExportBackupResponseObject interface {
+	VisitExportBackupResponse(w http.ResponseWriter) error
+}
+
+type ExportBackup200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type ExportBackup200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	Headers       ExportBackup200ResponseHeaders
+	ContentLength int64
+}
+
+func (response ExportBackup200ApplicationoctetStreamResponse) VisitExportBackupResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type ExportBackupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ExportBackupdefaultApplicationProblemPlusJSONResponse) VisitExportBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadBackupRequestObject struct {
+	Body io.Reader
+}
+
+type UploadBackupResponseObject interface {
+	VisitUploadBackupResponse(w http.ResponseWriter) error
+}
+
+type UploadBackup201JSONResponse BackupFile
+
+func (response UploadBackup201JSONResponse) VisitUploadBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadBackup413ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response UploadBackup413ApplicationProblemPlusJSONResponse) VisitUploadBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadBackupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UploadBackupdefaultApplicationProblemPlusJSONResponse) VisitUploadBackupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4835,6 +5484,164 @@ func (response UpdateProductdefaultApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type StageRestoreRequestObject struct {
+	Body *StageRestoreJSONRequestBody
+}
+
+type StageRestoreResponseObject interface {
+	VisitStageRestoreResponse(w http.ResponseWriter) error
+}
+
+type StageRestore200JSONResponse RestorePreview
+
+func (response StageRestore200JSONResponse) VisitStageRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StageRestoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response StageRestoredefaultApplicationProblemPlusJSONResponse) VisitStageRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentRestoreRequestObject struct {
+}
+
+type GetCurrentRestoreResponseObject interface {
+	VisitGetCurrentRestoreResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentRestore200JSONResponse RestorePreview
+
+func (response GetCurrentRestore200JSONResponse) VisitGetCurrentRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentRestoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetCurrentRestoredefaultApplicationProblemPlusJSONResponse) VisitGetCurrentRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscardRestoreRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type DiscardRestoreResponseObject interface {
+	VisitDiscardRestoreResponse(w http.ResponseWriter) error
+}
+
+type DiscardRestore204Response struct {
+}
+
+func (response DiscardRestore204Response) VisitDiscardRestoreResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DiscardRestoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DiscardRestoredefaultApplicationProblemPlusJSONResponse) VisitDiscardRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyRestoreRequestObject struct {
+	Id   Id `json:"id"`
+	Body *ApplyRestoreJSONRequestBody
+}
+
+type ApplyRestoreResponseObject interface {
+	VisitApplyRestoreResponse(w http.ResponseWriter) error
+}
+
+type ApplyRestore200ResponseHeaders struct {
+	SetCookie string
+}
+
+type ApplyRestore200JSONResponse struct {
+	Body    RestoreResult
+	Headers ApplyRestore200ResponseHeaders
+}
+
+func (response ApplyRestore200JSONResponse) VisitApplyRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Set-Cookie", fmt.Sprint(response.Headers.SetCookie))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApplyRestoredefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ApplyRestoredefaultApplicationProblemPlusJSONResponse) VisitApplyRestoreResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListSchedulesRequestObject struct {
 	Params ListSchedulesParams
 }
@@ -5490,6 +6297,21 @@ type StrictServerInterface interface {
 	// (POST /auth/password)
 	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
 
+	// (POST /automation/resume)
+	ResumeAutomation(ctx context.Context, request ResumeAutomationRequestObject) (ResumeAutomationResponseObject, error)
+
+	// (GET /backups)
+	ListBackups(ctx context.Context, request ListBackupsRequestObject) (ListBackupsResponseObject, error)
+
+	// (POST /backups)
+	CreateBackup(ctx context.Context, request CreateBackupRequestObject) (CreateBackupResponseObject, error)
+
+	// (POST /backups/export)
+	ExportBackup(ctx context.Context, request ExportBackupRequestObject) (ExportBackupResponseObject, error)
+
+	// (POST /backups/uploads)
+	UploadBackup(ctx context.Context, request UploadBackupRequestObject) (UploadBackupResponseObject, error)
+
 	// (GET /bank-accounts)
 	ListBankAccounts(ctx context.Context, request ListBankAccountsRequestObject) (ListBankAccountsResponseObject, error)
 
@@ -5597,6 +6419,18 @@ type StrictServerInterface interface {
 
 	// (PUT /products/{id})
 	UpdateProduct(ctx context.Context, request UpdateProductRequestObject) (UpdateProductResponseObject, error)
+
+	// (POST /restores)
+	StageRestore(ctx context.Context, request StageRestoreRequestObject) (StageRestoreResponseObject, error)
+
+	// (GET /restores/current)
+	GetCurrentRestore(ctx context.Context, request GetCurrentRestoreRequestObject) (GetCurrentRestoreResponseObject, error)
+
+	// (DELETE /restores/{id})
+	DiscardRestore(ctx context.Context, request DiscardRestoreRequestObject) (DiscardRestoreResponseObject, error)
+
+	// (POST /restores/{id}/apply)
+	ApplyRestore(ctx context.Context, request ApplyRestoreRequestObject) (ApplyRestoreResponseObject, error)
 
 	// (GET /schedules)
 	ListSchedules(ctx context.Context, request ListSchedulesRequestObject) (ListSchedulesResponseObject, error)
@@ -5842,6 +6676,137 @@ func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
 		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResumeAutomation operation middleware
+func (sh *strictHandler) ResumeAutomation(w http.ResponseWriter, r *http.Request) {
+	var request ResumeAutomationRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResumeAutomation(ctx, request.(ResumeAutomationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResumeAutomation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResumeAutomationResponseObject); ok {
+		if err := validResponse.VisitResumeAutomationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListBackups operation middleware
+func (sh *strictHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
+	var request ListBackupsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBackups(ctx, request.(ListBackupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBackups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBackupsResponseObject); ok {
+		if err := validResponse.VisitListBackupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBackup operation middleware
+func (sh *strictHandler) CreateBackup(w http.ResponseWriter, r *http.Request, params CreateBackupParams) {
+	var request CreateBackupRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBackup(ctx, request.(CreateBackupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBackup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBackupResponseObject); ok {
+		if err := validResponse.VisitCreateBackupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExportBackup operation middleware
+func (sh *strictHandler) ExportBackup(w http.ResponseWriter, r *http.Request) {
+	var request ExportBackupRequestObject
+
+	var body ExportBackupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ExportBackup(ctx, request.(ExportBackupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExportBackup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ExportBackupResponseObject); ok {
+		if err := validResponse.VisitExportBackupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadBackup operation middleware
+func (sh *strictHandler) UploadBackup(w http.ResponseWriter, r *http.Request) {
+	var request UploadBackupRequestObject
+
+	request.Body = r.Body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadBackup(ctx, request.(UploadBackupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadBackup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UploadBackupResponseObject); ok {
+		if err := validResponse.VisitUploadBackupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -6873,6 +7838,120 @@ func (sh *strictHandler) UpdateProduct(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateProductResponseObject); ok {
 		if err := validResponse.VisitUpdateProductResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StageRestore operation middleware
+func (sh *strictHandler) StageRestore(w http.ResponseWriter, r *http.Request) {
+	var request StageRestoreRequestObject
+
+	var body StageRestoreJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StageRestore(ctx, request.(StageRestoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StageRestore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StageRestoreResponseObject); ok {
+		if err := validResponse.VisitStageRestoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCurrentRestore operation middleware
+func (sh *strictHandler) GetCurrentRestore(w http.ResponseWriter, r *http.Request) {
+	var request GetCurrentRestoreRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentRestore(ctx, request.(GetCurrentRestoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentRestore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCurrentRestoreResponseObject); ok {
+		if err := validResponse.VisitGetCurrentRestoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DiscardRestore operation middleware
+func (sh *strictHandler) DiscardRestore(w http.ResponseWriter, r *http.Request, id Id) {
+	var request DiscardRestoreRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DiscardRestore(ctx, request.(DiscardRestoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DiscardRestore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiscardRestoreResponseObject); ok {
+		if err := validResponse.VisitDiscardRestoreResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApplyRestore operation middleware
+func (sh *strictHandler) ApplyRestore(w http.ResponseWriter, r *http.Request, id Id) {
+	var request ApplyRestoreRequestObject
+
+	request.Id = id
+
+	var body ApplyRestoreJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApplyRestore(ctx, request.(ApplyRestoreRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApplyRestore")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApplyRestoreResponseObject); ok {
+		if err := validResponse.VisitApplyRestoreResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

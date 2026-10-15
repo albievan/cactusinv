@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { api, unwrap } from '../lib/api/client'
 import { settingsHref, settingsNav } from '../features/settings/settingsNav'
 import { useVersion } from '../lib/version'
 import { useAuth } from './auth'
@@ -71,6 +72,42 @@ function SettingsNavItem({ folded }: { folded: boolean }) {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/**
+ * PausedBanner is shown on every page while automatic e-mails and schedules are held after
+ * a restore: restored outbox rows and schedules could repeat what was already sent, so an
+ * administrator checks them and resumes.
+ */
+function PausedBanner() {
+  const { user, refresh } = useAuth()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  if (!user?.automationPaused) return null
+  const resume = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await unwrap(api.POST('/automation/resume'))
+      await refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <span className="min-w-0 flex-1">
+        <strong>Automatic sending is paused after a restore.</strong> Check the <Link className="underline" to="/emails">Outbox</Link> and{' '}
+        <Link className="underline" to="/schedules">schedules</Link>, then resume.
+        {error && <span className="ml-2 font-semibold text-red-700">{error}</span>}
+      </span>
+      <button className="btn-primary" onClick={resume} disabled={busy}>
+        Resume automatic sending
+      </button>
     </div>
   )
 }
@@ -166,6 +203,7 @@ export function Layout() {
             cactus<span className="text-[#d9c89f]">Inv</span>
           </span>
         </header>
+        <PausedBanner />
         <main className="flex-1">
           <Outlet />
         </main>

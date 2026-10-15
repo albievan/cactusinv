@@ -64,6 +64,19 @@ func Open(ctx context.Context, cfg Config) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenLazy returns a pool without connecting: for a database that may not be reachable or
+// granted yet (the restore staging database); use it after a successful Ping.
+func OpenLazy(cfg Config) (*sql.DB, error) {
+	db, err := sql.Open("mysql", cfg.DSN())
+	if err != nil {
+		return nil, fmt.Errorf("mariadb.OpenLazy: %w", err)
+	}
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	return db, nil
+}
+
 // Migrate applies (or with down=true, rolls back all) embedded goose migrations.
 func Migrate(ctx context.Context, db *sql.DB, down bool) error {
 	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))

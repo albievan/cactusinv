@@ -13,13 +13,12 @@ must be fixed. Principles behind these choices: `docs/ENGINEERING_PRINCIPLES.md`
                 │        ▼                                                                      │
                 │  app (use cases) ──► ports ◄── adapters: mariadb · smtp · pdf · vault · clock │
                 │        ▲                                                                      │
-                │  workers: schedules (1 min) · e-mail (15 s) · invoice export (30 s) · cleanup │
+                │  workers: schedules · e-mail · invoice export · backups (1 min) · cleanup     │
                 └───────┬──────────────────┬──────────────────┬──────────────────┬──────────────┘
                         ▼                  ▼                  ▼                  ▼
                    MariaDB 11         SMTP server      invoices volume     /run/secrets
               (system of record)   (Mailpit locally)  (<year>/Inv_no_*.pdf) (files or Vault)
-                        ▲
-                 backup job (daily mariadb-dump → backups volume)
+              + <db>_restore (restore staging)              + backups volume (encrypted .age)
 ```
 
 - **Modular monolith** (ADR-001): one module `github.com/albievan/cactusinv`, one binary,
@@ -47,13 +46,14 @@ cactusInv/
 │       ├── filesecrets/           # ports.Secrets from /run/secrets files (default)
 │       ├── vault/                 # ports.Secrets over Vault KV v2 HTTP API (optional)
 │       ├── archive/               # ports.InvoiceArchive on the invoices volume
+│       ├── agecrypt/ backupformat/ backupdir/   # backup encryption, format, backups volume
 │       ├── argon2/ idgen/         # password hashing, UUIDv7
 │       ├── clock/                 # system clock
 │       └── worker/                # tickers: schedules, e-mail, invoice export, housekeeping
 ├── migrations/                    # goose SQL (embedded), 00001_init.sql …
 ├── api/openapi/cactusinv.yaml     # THE contract
 ├── web/                           # React + TS + Vite + Tailwind (mobile-first); dist embedded
-├── deploy/backup/backup.sh        # scheduled mariadb-dump + restore
+├── deploy/mariadb/initdb/         # creates the restore staging database on a new install
 ├── deploy/k8s/cactusinv.yaml      # k3s/k8s manifests (rendered from .env)
 ├── deploy.sh  docker-compose.yml  .env   # one-script deployment; .env = defaults
 ├── docs/                          # this file, ENGINEERING_PRINCIPLES.md, adr/
@@ -240,8 +240,10 @@ Mutations require header `X-Requested-With: cactusinv` (CSRF) and accept `Idempo
 | `CACTUSINV_WORKERS` | run schedule runner + dispatcher in this replica | `true` |
 | `CACTUSINV_MIGRATE_ON_START` | apply migrations at start | `true` |
 | `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag | `true` |
+| `CACTUSINV_BACKUP_DIR` / `_BACKUP_TIMES` / `_BACKUP_RETENTION_DAYS` / `_BACKUP_MAX_UPLOAD_MB` | backups (§12) | `/data/backups` / `02:00` / `14` / `256` |
+| `CACTUSINV_RESTORE_DB_NAME` | restore staging database | `<db>_restore` |
 
-Secrets: `db_password` (required), `smtp_password` (optional) — files or Vault keys
+Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (optional) — files or Vault keys
 (ADR-006). Session tokens are random and stored hashed, so no signing key exists.
 
 ## 7. Observability
@@ -305,12 +307,39 @@ classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in 
 | Image | built by Compose | built for the node's arch; k3s: `k3s ctr images import`; k8s: pushed to `K8S_REGISTRY` |
 | Database data | `${MARIADB_DATA_DIR}` bind mount | PVC `mariadb-data` |
 | Invoice PDFs | `${INVOICES_DIR}` bind mount | PVC `invoices` |
-| Backups | `backup` service at `BACKUP_TIMES` → `${BACKUP_DIR}` | CronJob `BACKUP_CRON` → PVC `backups` |
+| Backups | the app at `BACKUP_TIMES` → `${BACKUP_DIR}` (mounted at `/data/backups`) | the app at `BACKUP_TIMES` → PVC `backups` |
+| Backup key | `${SECRETS_DIR}/backup_key` (generated) | `backup_key` in `cactusinv-secrets` (generated) |
+| Restore staging | `<db>_restore`, created by the MariaDB init script and granted by `--install` | granted by `--install` |
 | Secrets | files in `${SECRETS_DIR}` (generated) | Secret `cactusinv-secrets` (generated in-cluster) |
 | Remote | `--ssh-access user@host` copies the project and runs it there | `--ssh-access` runs `kubectl`/`k3s ctr` over SSH |
 | Uninstall | `--uninstall` keeps data; `--delete-uninstall` removes it | same; delete removes the namespace |
 
 ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning.
+
+## 12. Backup and restore (ADR-010)
+
+- **Backup** (`app.CreateBackup`, scheduled by `RunDueBackups` once per slot across replicas,
+  `ExportBackup` for downloads): `mariadb.Snapshotter` reads every table except the excluded
+  ones in one `START TRANSACTION WITH CONSISTENT SNAPSHOT`; `backupformat` writes
+  `gzip(tar(header.json, tables/<t>/NNNNNN.jsonl, digest.json))`; `agecrypt` encrypts it to
+  the server key (`backup_key`) or a passphrase; `backupdir` stores it under a generated name
+  (`cactusinv-<UTC>-s<schema>-<kind>.age`). Retention prunes after
+  `CACTUSINV_BACKUP_RETENTION_DAYS`, never the newest.
+- **Restore** in two phases: `StageRestore` decrypts and verifies the file into the staging
+  database `<db>_restore`, migrates it to the current schema with the real migrations and
+  returns a preview; `ApplyRestore` (password + `RESTORE`) swaps it in on one connection under
+  `GET_LOCK` + `LOCK TABLES` in one transaction: invoice numbers never rewind, the archive
+  re-renders, an SMTP password this `app_key` cannot read is cleared, sessions are deleted,
+  the audit trail is merged (ADR-009 amendment) and automation is held until
+  `POST /automation/resume`.
+- **HTTP**: `/backups` (list, create, `export` streamed as `application/octet-stream`,
+  `uploads`), `/restores` (stage, current, apply, discard), `/automation/resume`;
+  `Me.automationPaused` drives the app-wide banner. Export and upload get their own body limit
+  (`CACTUSINV_BACKUP_MAX_UPLOAD_MB`) and deadlines and skip `Idempotency-Key`.
+- **Configuration**: `CACTUSINV_BACKUP_DIR` (`/data/backups`), `_BACKUP_TIMES` (`02:00`, in
+  `TZ`), `_BACKUP_RETENTION_DAYS` (14), `_BACKUP_MAX_UPLOAD_MB` (256), `CACTUSINV_RESTORE_DB_NAME`
+  (`<db>_restore`); optional secret `backup_key` (without it stored and scheduled backups are
+  off, downloads still work).
 
 ## 11. Audit trail and dashboard
 

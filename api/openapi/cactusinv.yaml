@@ -29,6 +29,7 @@ tags:
   - name: dashboard
   - name: audit
   - name: statements
+  - name: backups
 
 paths:
   /auth/login:
@@ -870,6 +871,148 @@ paths:
               schema: { $ref: '#/components/schemas/Dashboard' }
         default: { $ref: '#/components/responses/Problem' }
 
+  /backups:
+    get:
+      tags: [backups]
+      operationId: listBackups
+      responses:
+        '200':
+          description: Schedule, key, last scheduled run and the stored backups (newest first).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupOverview' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [backups]
+      operationId: createBackup
+      description: Takes a backup now, encrypted to the server key (backup_key), and stores it.
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedBackup' }
+        default: { $ref: '#/components/responses/Problem' }
+  /backups/export:
+    post:
+      tags: [backups]
+      operationId: exportBackup
+      description: |
+        Takes a fresh backup encrypted with the passphrase and streams it; nothing is stored.
+        The download is recorded in the audit log before the first byte. Exempt from
+        Idempotency-Key (each call is a new backup; the body is never stored).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExportRequest' }
+      responses:
+        '200':
+          description: The encrypted backup (age, passphrase).
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+  /backups/uploads:
+    post:
+      tags: [backups]
+      operationId: uploadBackup
+      description: |
+        Stores an uploaded backup file as it is (still encrypted); stage it with
+        POST /restores. The size limit is maxUploadBytes (413 above it). Exempt from
+        Idempotency-Key.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        '201':
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupFile' }
+        '413': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restores:
+    post:
+      tags: [backups]
+      operationId: stageRestore
+      description: |
+        Decrypts a stored backup (with the passphrase, or the server key when none is given)
+        into the staging database and returns what applying it would do. Live data is not
+        touched. A new stage replaces any earlier one; it expires after 30 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StageRestoreRequest' }
+      responses:
+        '200':
+          description: The preview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestorePreview' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restores/current:
+    get:
+      tags: [backups]
+      operationId: getCurrentRestore
+      responses:
+        '200':
+          description: The staged restore's preview.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestorePreview' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restores/{id}/apply:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [backups]
+      operationId: applyRestore
+      description: |
+        Replaces the live data with the staged backup. Needs the current password and the
+        word RESTORE. With backup_key configured, the current data is first stored as a
+        safety backup (kind prerestore), named in the result. Everyone is signed out (this response clears the session cookie) and
+        automatic e-mails and schedules stay paused until POST /automation/resume.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplyRestoreRequest' }
+      responses:
+        '200':
+          description: Restored; signed out.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RestoreResult' }
+        default: { $ref: '#/components/responses/Problem' }
+  /restores/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [backups]
+      operationId: discardRestore
+      responses:
+        '204': { description: Discarded; the staging database is emptied. }
+        default: { $ref: '#/components/responses/Problem' }
+  /automation/resume:
+    post:
+      tags: [backups]
+      operationId: resumeAutomation
+      responses:
+        '204': { description: Automatic e-mails and schedules run again. }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     Id:
@@ -1026,10 +1169,13 @@ components:
         over90: { $ref: '#/components/schemas/Decimal' }
     Me:
       type: object
-      required: [id, email]
+      required: [id, email, automationPaused]
       properties:
         id: { type: string }
         email: { type: string }
+        automationPaused:
+          type: boolean
+          description: Automatic e-mails and schedules are paused after a restore until resumed (POST /automation/resume).
 
     BusinessSettings:
       type: object
@@ -1524,3 +1670,108 @@ components:
         upcomingRuns: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
         recentInvoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
         failedEmailCount: { type: integer }
+    BackupRun:
+      type: object
+      required: [slot, name, result, error, startedAt]
+      properties:
+        slot: { type: string, format: date-time }
+        name: { type: string }
+        result: { type: string, enum: [running, ok, failed] }
+        error: { type: string }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+    BackupFile:
+      type: object
+      required: [name, size, createdAt, schema, kind, legacy]
+      properties:
+        name: { type: string }
+        size: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        schema: { type: integer, format: int64, description: Database schema of the backup (0 = not known yet, an upload). }
+        kind: { type: string, enum: [scheduled, manual, upload, prerestore, legacy], description: 'prerestore: the safety backup taken just before a restore.' }
+        legacy: { type: boolean, description: A plaintext .sql.gz dump of the retired backup sidecar; restore it with deploy.sh. }
+    BackupOverview:
+      type: object
+      required: [keyConfigured, times, timeZone, retentionDays, files, maxUploadBytes]
+      properties:
+        keyConfigured: { type: boolean, description: 'Whether the server backup key (backup_key) is set: stored and scheduled backups need it.' }
+        times: { type: array, items: { type: string, example: '02:00' } }
+        timeZone: { type: string }
+        nextRun: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        retentionDays: { type: integer }
+        lastRun:
+          allOf: [{ $ref: '#/components/schemas/BackupRun' }]
+          x-go-type-skip-optional-pointer: false
+        files: { type: array, items: { $ref: '#/components/schemas/BackupFile' } }
+        restoreUnavailable: { type: string, description: Why restores cannot be staged (absent when they can). }
+        maxUploadBytes: { type: integer, format: int64 }
+    CreatedBackup:
+      type: object
+      required: [name, size, sha256, schema]
+      properties:
+        name: { type: string }
+        size: { type: integer, format: int64 }
+        sha256: { type: string }
+        schema: { type: integer, format: int64 }
+    ExportRequest:
+      type: object
+      required: [passphrase]
+      properties:
+        passphrase: { type: string, minLength: 16, maxLength: 1024 }
+    StageRestoreRequest:
+      type: object
+      required: [backup]
+      properties:
+        backup: { type: string, maxLength: 100, description: A stored backup's name. }
+        passphrase: { type: string, maxLength: 1024, description: For a passphrase-encrypted file; omit for backups encrypted to this server's key. }
+    ApplyRestoreRequest:
+      type: object
+      required: [currentPassword, confirmation]
+      properties:
+        currentPassword: { type: string, maxLength: 200 }
+        confirmation: { type: string, maxLength: 20, description: The word RESTORE. }
+    RestoreTableCount:
+      type: object
+      required: [name, backup, live]
+      properties:
+        name: { type: string }
+        backup: { type: integer, format: int64 }
+        live: { type: integer, format: int64 }
+    AuditMerge:
+      type: object
+      required: [mode, count, summary, backupBroken]
+      properties:
+        mode: { type: string, enum: [keep_current, append_verbatim, append_resealed] }
+        count: { type: integer }
+        summary: { type: string }
+        backupBroken: { type: boolean }
+    RestorePreview:
+      type: object
+      required: [id, expiresAt, source, sha256, createdAt, createdBy, appVersion, schemaFrom, schemaTo, tables, audit, liveAuditOk, invoicesSince, canSignIn, smtpPasswordCleared, safetyBackup, warnings]
+      properties:
+        id: { type: string }
+        expiresAt: { type: string, format: date-time }
+        source: { type: string }
+        sha256: { type: string }
+        createdAt: { type: string, format: date-time, description: When the backup was taken. }
+        createdBy: { type: string }
+        appVersion: { type: string }
+        schemaFrom: { type: integer, format: int64 }
+        schemaTo: { type: integer, format: int64 }
+        tables: { type: array, items: { $ref: '#/components/schemas/RestoreTableCount' } }
+        audit: { $ref: '#/components/schemas/AuditMerge' }
+        liveAuditOk: { type: boolean }
+        invoicesSince: { type: integer, description: Invoices created after the backup; restoring removes them. }
+        canSignIn: { type: boolean, description: Whether your account exists in the backup. }
+        smtpPasswordCleared: { type: boolean }
+        safetyBackup: { type: boolean, description: 'Whether the current data is backed up just before the restore (needs backup_key).' }
+        warnings: { type: array, items: { type: string } }
+    RestoreResult:
+      type: object
+      required: [source, audit, sequenceKept, smtpPasswordCleared, safetyBackup]
+      properties:
+        source: { type: string }
+        safetyBackup: { type: string, description: 'The stored backup of the data as it was just before the restore ("" when none could be taken); restore it to undo.' }
+        audit: { $ref: '#/components/schemas/AuditMerge' }
+        sequenceKept: { type: boolean }
+        smtpPasswordCleared: { type: boolean }

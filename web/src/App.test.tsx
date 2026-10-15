@@ -115,7 +115,7 @@ test('/settings opens Business, and the sidebar nests the settings pages under S
 
   const group = within(sidebar()).getByRole('list', { name: 'Settings' })
   const links = within(group).getAllByRole('link')
-  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts'])
+  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts', 'Backup & restore'])
   expect(within(group).getByRole('link', { name: 'Business' })).toHaveAttribute('aria-current', 'page')
   expect(within(sidebar()).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'true')
 
@@ -148,6 +148,7 @@ test('the settings pages stay folded away off a settings route; More lists them 
   expect(within(more).getByRole('link', { name: /E-mail server/ })).toHaveAttribute('href', '/settings/email')
   expect(within(more).getByRole('link', { name: /Business/ })).toHaveAttribute('href', '/settings/business')
   expect(within(more).getByRole('link', { name: /Currencies & bank accounts/ })).toHaveAttribute('href', '/settings/currencies')
+  expect(within(more).getByRole('link', { name: /Backup & restore/ })).toHaveAttribute('href', '/settings/backup')
   window.history.pushState({}, '', '/')
 })
 

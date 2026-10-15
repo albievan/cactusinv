@@ -712,6 +712,160 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBackups"];
+        put?: never;
+        /** @description Takes a backup now, encrypted to the server key (backup_key), and stores it. */
+        post: operations["createBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Takes a fresh backup encrypted with the passphrase and streams it; nothing is stored.
+         *     The download is recorded in the audit log before the first byte. Exempt from
+         *     Idempotency-Key (each call is a new backup; the body is never stored).
+         */
+        post: operations["exportBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Stores an uploaded backup file as it is (still encrypted); stage it with
+         *     POST /restores. The size limit is maxUploadBytes (413 above it). Exempt from
+         *     Idempotency-Key.
+         */
+        post: operations["uploadBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Decrypts a stored backup (with the passphrase, or the server key when none is given)
+         *     into the staging database and returns what applying it would do. Live data is not
+         *     touched. A new stage replaces any earlier one; it expires after 30 minutes.
+         */
+        post: operations["stageRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restores/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCurrentRestore"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restores/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Replaces the live data with the staged backup. Needs the current password and the
+         *     word RESTORE. With backup_key configured, the current data is first stored as a
+         *     safety backup (kind prerestore), named in the result. Everyone is signed out (this response clears the session cookie) and
+         *     automatic e-mails and schedules stay paused until POST /automation/resume.
+         */
+        post: operations["applyRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/restores/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["discardRestore"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automation/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resumeAutomation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -819,6 +973,8 @@ export interface components {
         Me: {
             id: string;
             email: string;
+            /** @description Automatic e-mails and schedules are paused after a restore until resumed (POST /automation/resume). */
+            automationPaused: boolean;
         };
         BusinessSettings: {
             name: string;
@@ -1247,6 +1403,125 @@ export interface components {
             upcomingRuns: components["schemas"]["Schedule"][];
             recentInvoices: components["schemas"]["Invoice"][];
             failedEmailCount: number;
+        };
+        BackupRun: {
+            /** Format: date-time */
+            slot: string;
+            name: string;
+            /** @enum {string} */
+            result: "running" | "ok" | "failed";
+            error: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string;
+        };
+        BackupFile: {
+            name: string;
+            /** Format: int64 */
+            size: number;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: int64
+             * @description Database schema of the backup (0 = not known yet
+             */
+            schema: number;
+            /**
+             * @description prerestore: the safety backup taken just before a restore.
+             * @enum {string}
+             */
+            kind: "scheduled" | "manual" | "upload" | "prerestore" | "legacy";
+            /** @description A plaintext .sql.gz dump of the retired backup sidecar; restore it with deploy.sh. */
+            legacy: boolean;
+        };
+        BackupOverview: {
+            /** @description Whether the server backup key (backup_key) is set: stored and scheduled backups need it. */
+            keyConfigured: boolean;
+            times: string[];
+            timeZone: string;
+            /** Format: date-time */
+            nextRun?: string;
+            retentionDays: number;
+            lastRun?: components["schemas"]["BackupRun"];
+            files: components["schemas"]["BackupFile"][];
+            /** @description Why restores cannot be staged (absent when they can). */
+            restoreUnavailable?: string;
+            /** Format: int64 */
+            maxUploadBytes: number;
+        };
+        CreatedBackup: {
+            name: string;
+            /** Format: int64 */
+            size: number;
+            sha256: string;
+            /** Format: int64 */
+            schema: number;
+        };
+        ExportRequest: {
+            passphrase: string;
+        };
+        StageRestoreRequest: {
+            /** @description A stored backup's name. */
+            backup: string;
+            /** @description For a passphrase-encrypted file; omit for backups encrypted to this server's key. */
+            passphrase?: string;
+        };
+        ApplyRestoreRequest: {
+            currentPassword: string;
+            /** @description The word RESTORE. */
+            confirmation: string;
+        };
+        RestoreTableCount: {
+            name: string;
+            /** Format: int64 */
+            backup: number;
+            /** Format: int64 */
+            live: number;
+        };
+        AuditMerge: {
+            /** @enum {string} */
+            mode: "keep_current" | "append_verbatim" | "append_resealed";
+            count: number;
+            summary: string;
+            backupBroken: boolean;
+        };
+        RestorePreview: {
+            id: string;
+            /** Format: date-time */
+            expiresAt: string;
+            source: string;
+            sha256: string;
+            /**
+             * Format: date-time
+             * @description When the backup was taken.
+             */
+            createdAt: string;
+            createdBy: string;
+            appVersion: string;
+            /** Format: int64 */
+            schemaFrom: number;
+            /** Format: int64 */
+            schemaTo: number;
+            tables: components["schemas"]["RestoreTableCount"][];
+            audit: components["schemas"]["AuditMerge"];
+            liveAuditOk: boolean;
+            /** @description Invoices created after the backup; restoring removes them. */
+            invoicesSince: number;
+            /** @description Whether your account exists in the backup. */
+            canSignIn: boolean;
+            smtpPasswordCleared: boolean;
+            /** @description Whether the current data is backed up just before the restore (needs backup_key). */
+            safetyBackup: boolean;
+            warnings: string[];
+        };
+        RestoreResult: {
+            source: string;
+            /** @description The stored backup of the data as it was just before the restore ("" when none could be taken); restore it to undo. */
+            safetyBackup: string;
+            audit: components["schemas"]["AuditMerge"];
+            sequenceKept: boolean;
+            smtpPasswordCleared: boolean;
         };
     };
     responses: {
@@ -2696,6 +2971,216 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Dashboard"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listBackups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Schedule, key, last scheduled run and the stored backups (newest first). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupOverview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createBackup: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedBackup"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportRequest"];
+            };
+        };
+        responses: {
+            /** @description The encrypted backup (age, passphrase). */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    uploadBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupFile"];
+                };
+            };
+            413: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    stageRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StageRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description The preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestorePreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getCurrentRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The staged restore's preview. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestorePreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    applyRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyRestoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Restored; signed out. */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    discardRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discarded; the staging database is emptied. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    resumeAutomation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Automatic e-mails and schedules run again. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

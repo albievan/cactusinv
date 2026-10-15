@@ -8,8 +8,11 @@
 #   --uninstall          stop and remove cactusInv, KEEPING the database, invoices and backups
 #   --delete-uninstall   remove cactusInv AND DELETE all its data (asks for confirmation)
 #   --status             show what is running
-#   --backup-now         take a database backup immediately
-#   --restore FILE       restore a database backup (a cactusinv-*.sql.gz from the backups volume)
+#   --backup-now         take an encrypted backup now (stored in the backups volume)
+#   --restore FILE       restore a backup: a cactusinv-*.age file (a stored name or a path;
+#                        passphrase-encrypted ones read $CACTUSINV_BACKUP_PASSPHRASE), shown
+#                        first and confirmed by typing RESTORE; or a legacy cactusinv-*.sql.gz
+#                        dump (checked, a safety backup taken, then the database replaced)
 #
 # TARGET
 #   --dockerdesktop      Docker Desktop, or Docker Engine on a Linux host (docker compose)
@@ -71,6 +74,22 @@ load_env() {
 }
 load_env
 
+# Names that end up in SQL (database, user) are restricted to plain identifiers.
+[[ "${MARIADB_DATABASE:-}" =~ ^[A-Za-z0-9_]{1,57}$ ]] || die "MARIADB_DATABASE must be 1-57 letters, digits or _"
+[[ "${MARIADB_USER:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]] || die "MARIADB_USER must be 1-80 letters, digits or _"
+
+# confirm_word asks for a word (RESTORE) before replacing data; --yes skips it.
+# Without a terminal it fails (the caller cleans up), unless --yes was given.
+confirm_word() {
+  [[ $ASSUME_YES -eq 1 ]] && return 0
+  if [[ ! -t 0 ]]; then
+    echo "$2 Re-run with --yes to confirm non-interactively." >&2
+    return 1
+  fi
+  read -r -p "$2 Type '$1' to continue: " answer
+  [[ "$answer" == "$1" ]]
+}
+
 confirm() {
   [[ $ASSUME_YES -eq 1 ]] && return 0
   [[ -t 0 ]] || die "$1 — re-run with --yes to confirm non-interactively"
@@ -116,9 +135,48 @@ ensure_secrets_dir() {
     random_key >"$SECRETS_DIR/app_key"
     ok "generated $SECRETS_DIR/app_key (encrypts the SMTP password stored in the app)"
   fi
-  # MariaDB and the backup container run as other users and must read the files.
+  # Placeholder until the image can generate the key (ensure_backup_key).
+  [[ -f "$SECRETS_DIR/backup_key" ]] || : >"$SECRETS_DIR/backup_key"
+  # MariaDB and the app run as other users and must read the files.
   chmod 644 "$SECRETS_DIR"/*
 }
+
+backup_key_notice() {
+  echo "    backup_key:    keep a copy OFF this machine, apart from the backups - without it the"
+  echo "                   stored backups cannot be restored (age -d -i backup_key FILE opens one)"
+}
+
+# ensure_backup_key generates the age identity stored backups are encrypted to (ADR-006),
+# with the image just built, on new and older installations alike.
+ensure_backup_key() {
+  [[ -s "$SECRETS_DIR/backup_key" ]] && return 0
+  local tmp="$SECRETS_DIR/.backup_key.new"
+  docker run --rm --entrypoint /cactusinv "$CACTUSINV_IMAGE" backup keygen >"$tmp"
+  mv "$tmp" "$SECRETS_DIR/backup_key"
+  chmod 644 "$SECRETS_DIR/backup_key"
+  ok "generated $SECRETS_DIR/backup_key (encrypts the stored backups)"
+  backup_key_notice
+}
+
+# The privileges the restore stager needs on the staging database (migrations, loading,
+# LOCK TABLES … READ during the swap) — no more. Kept identical to
+# deploy/mariadb/initdb/10-restore-db.sh.
+STAGING_PRIVILEGES='SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LOCK TABLES, TRIGGER'
+
+# The restore staging database and its grant (ADR-010), as MariaDB root. Idempotent: an
+# older, wider grant (ALL) is narrowed to the list. The root password goes through the
+# environment of the client, never its command line.
+staging_grant_sql() {
+  local db="${MARIADB_DATABASE}_restore" to="'${MARIADB_USER}'@'%'"
+  printf 'CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$db"
+  printf 'GRANT %s ON `%s`.* TO %s;\n' "$STAGING_PRIVILEGES" "$db" "$to"
+  printf 'REVOKE ALL PRIVILEGES ON `%s`.* FROM %s;\n' "$db" "$to"
+  printf 'GRANT %s ON `%s`.* TO %s;\n' "$STAGING_PRIVILEGES" "$db" "$to"
+}
+# Run inside the MariaDB container: as root (only to drop and recreate the database), and
+# as the application user (everything a dump does).
+MARIADB_ROOT_SQL='MYSQL_PWD="$(cat /run/secrets/db_root_password)" exec mariadb -uroot'
+MARIADB_APP_SQL="MYSQL_PWD=\"\$(cat /run/secrets/db_password)\" exec mariadb -u'${MARIADB_USER}' '${MARIADB_DATABASE}'"
 
 docker_preflight() {
   command -v docker >/dev/null || die "docker is not installed"
@@ -130,15 +188,22 @@ docker_install() {
   docker_preflight
   mkdir -p "$MARIADB_DATA_DIR" "$INVOICES_DIR" "$BACKUP_DIR"
   ensure_secrets_dir
-  info "building and starting cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"
-  compose up -d --build --remove-orphans
+  info "building cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"
+  compose build app
+  ensure_backup_key
+  info "starting cactusInv"
+  compose up -d --wait --remove-orphans mariadb
+  info "granting the restore staging database ${MARIADB_DATABASE}_restore"
+  staging_grant_sql | compose exec -T mariadb sh -c "$MARIADB_ROOT_SQL"
+  compose up -d --remove-orphans
   info "waiting for the app to become healthy"
   for _ in $(seq 1 90); do
     if curl -fsS "http://localhost:${HTTP_PORT}/healthz" >/dev/null 2>&1; then
       ok "cactusInv is running at http://localhost:${HTTP_PORT}"
       echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (change it after signing in)"
       [[ ",${COMPOSE_PROFILES:-}," == *",mailpit,"* ]] && echo "    test mailbox:  http://localhost:${MAILPIT_PORT}"
-      echo "    invoices:      $INVOICES_DIR    backups: $BACKUP_DIR (daily at ${BACKUP_TIMES})"
+      echo "    invoices:      $INVOICES_DIR    backups: $BACKUP_DIR (encrypted, daily at ${BACKUP_TIMES})"
+      backup_key_notice
       return 0
     fi
     sleep 2
@@ -174,13 +239,102 @@ docker_status() { docker_preflight; compose ps; }
 
 docker_backup_now() {
   docker_preflight
-  compose run --rm --entrypoint bash backup /scripts/backup.sh once
+  compose exec -T app /cactusinv backup create </dev/null
+}
+
+# restore_source resolves RESTORE_FILE: a local path, or the name of a file in the backups
+# volume ("stored:NAME"; read through the app, which owns that volume).
+restore_source() {
+  if [[ -f "$RESTORE_FILE" ]]; then echo "$RESTORE_FILE"; return; fi
+  if [[ "$RESTORE_FILE" != */* ]]; then echo "stored:$RESTORE_FILE"; return; fi
+  die "no such backup: $RESTORE_FILE"
+}
+
+legacy_warning() {
+  printf '\033[33mwarning:\033[0m %s is a legacy plaintext mariadb-dump backup. Restoring it drops and\n' "$1"
+  echo "         recreates the whole database, the audit trail included (it is replaced by the one in"
+  echo "         the dump); the restore is recorded in the new trail afterwards. Prefer an .age backup."
+  echo "         The current data was saved first as $2 (restore that to undo)."
+}
+
+# legacy_reset_sql drops and recreates the live database (a legacy dump replaces it whole).
+legacy_reset_sql() {
+  printf 'DROP DATABASE IF EXISTS `%s`; CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$MARIADB_DATABASE" "$MARIADB_DATABASE"
+}
+
+# check_dump refuses anything but an intact gzip of a mariadb-dump/mysqldump file.
+check_dump() {
+  gzip -t "$1" 2>/dev/null || die "$2 is not an intact .gz file; nothing was changed"
+  local start
+  # (gunzip is cut off by head on purpose: under pipefail that is not a failure here)
+  start="$(gunzip -c "$1" 2>/dev/null | head -c 1024 | tr -d '\0' || true)"
+  grep -Eq '(MariaDB|MySQL) dump' <<<"$start" || die "$2 is not a mariadb-dump backup; nothing was changed"
+}
+
+# with_legacy_dump fetches the dump into a private temporary file, checks it, and runs
+# "$1" with the file and its name. Nothing is changed before the checks pass.
+LEGACY_TMP=""
+with_legacy_dump() {
+  local fetch="$1" apply="$2" src name file
+  src="$(restore_source)"
+  if [[ "$src" == stored:* ]]; then
+    name="${src#stored:}"
+    LEGACY_TMP="$(umask 077 && mktemp "${TMPDIR:-/tmp}/cactusinv-legacy.XXXXXX")"
+    trap 'rm -f "$LEGACY_TMP"' EXIT
+    "$fetch" "$name" >"$LEGACY_TMP" || die "cannot read $name from the backups volume"
+    file="$LEGACY_TMP"
+  else
+    name="$(basename "$src")" file="$src"
+  fi
+  check_dump "$file" "$name"
+  "$apply" "$file" "$name"
+}
+
+# restore_age stages the backup (the app prints the preview), asks, then applies it.
+restore_age() {
+  local run="$1" src out id
+  src="$(restore_source)"
+  if [[ "$src" == stored:* ]]; then
+    out="$("$run" stage "${src#stored:}" </dev/null)" || { echo "$out"; die "the backup cannot be restored"; }
+  else
+    out="$("$run" stage - <"$src")" || { echo "$out"; die "the backup cannot be restored"; }
+  fi
+  echo "$out" | grep -v '^restore-id:'
+  id="$(echo "$out" | sed -n 's/^restore-id: //p')"
+  [[ -n "$id" ]] || die "no restore was staged"
+  if ! confirm_word RESTORE "Restoring replaces the current data."; then
+    "$run" discard "$id" </dev/null >/dev/null
+    die "aborted; nothing was changed"
+  fi
+  "$run" apply "$id" --yes </dev/null
+}
+
+docker_app_backup() { compose exec -T -e CACTUSINV_BACKUP_PASSPHRASE app /cactusinv backup "$@"; }
+docker_cat_legacy() { compose exec -T app /cactusinv backup cat-legacy "$1" </dev/null; }
+
+docker_load_legacy() {
+  local file="$1" name="$2" safety
+  info "taking a safety backup of the current data"
+  safety="$(docker_app_backup create </dev/null | awk '{print $1}')" || true
+  [[ "$safety" == cactusinv-*.age ]] || die "could not take a safety backup first (is backup_key set up?); nothing was changed"
+  legacy_warning "$name" "$safety"
+  confirm_word RESTORE "Restoring $name replaces the whole database." || die "aborted; nothing was changed"
+  info "replacing database ${MARIADB_DATABASE} with $name"
+  compose stop app </dev/null
+  legacy_reset_sql | compose exec -T mariadb sh -c "$MARIADB_ROOT_SQL"
+  gunzip -c "$file" | compose exec -T mariadb sh -c "$MARIADB_APP_SQL"
+  compose up -d --wait app </dev/null
+  compose exec -T app /cactusinv backup note-legacy-restore - --name "$name" <"$file"
+  ok "restored $name (migrated to this version on start); the data before is in $safety"
 }
 
 docker_restore() {
   docker_preflight
-  confirm "Restoring $RESTORE_FILE replaces the current database contents."
-  compose run --rm --entrypoint bash backup /scripts/backup.sh restore "$RESTORE_FILE"
+  if [[ "$RESTORE_FILE" == *.sql.gz ]]; then
+    with_legacy_dump docker_cat_legacy docker_load_legacy
+  else
+    restore_age docker_app_backup
+  fi
 }
 
 # ---------------------------------------------------------------------------------------
@@ -273,22 +427,35 @@ YAML
   if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.app_key}' | grep -q .; then
     printf '{"stringData":{"app_key":"%s"}}' "$(random_key)" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
   fi
-  kc -n "$K8S_NAMESPACE" create configmap cactusinv-backup-script --from-literal=backup.sh="$(cat "$ROOT/deploy/backup/backup.sh")" \
-    --dry-run=client -o yaml | kc apply -f -
+  # The mariadb-dump CronJob and its script are retired: the app takes the backups now.
+  kc -n "$K8S_NAMESPACE" delete cronjob cactusinv-backup --ignore-not-found
+  kc -n "$K8S_NAMESPACE" delete configmap cactusinv-backup-script --ignore-not-found
   render | kc apply -f -
   info "waiting for the rollout"
   kc -n "$K8S_NAMESPACE" rollout status deploy/mariadb --timeout=300s
+  info "granting the restore staging database ${MARIADB_DATABASE}_restore"
+  staging_grant_sql | kc -n "$K8S_NAMESPACE" exec -i deploy/mariadb -- sh -c "$MARIADB_ROOT_SQL"
   kc -n "$K8S_NAMESPACE" rollout status deploy/cactusinv --timeout=300s
+  # backup_key: generated by the deployed image, straight into the Secret (never on disk).
+  if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.backup_key}' | grep -q .; then
+    local key
+    key="$(kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv backup keygen </dev/null | base64 | tr -d '\n')"
+    printf '{"data":{"backup_key":"%s"}}' "$key" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
+    unset key
+    kc -n "$K8S_NAMESPACE" rollout restart deploy/cactusinv
+    kc -n "$K8S_NAMESPACE" rollout status deploy/cactusinv --timeout=300s
+    ok "generated backup_key in secret cactusinv-secrets"
+  fi
   local host="${SSH_HOST#*@}"; [[ -n "$host" ]] || host="<node-ip>"
   ok "cactusInv is running at http://${host}:${K8S_NODE_PORT}"
   echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (change it after signing in)"
-  echo "    test mailbox:  http://${host}:${K8S_MAILPIT_NODE_PORT}    backups: CronJob '${BACKUP_CRON}'"
+  echo "    test mailbox:  http://${host}:${K8S_MAILPIT_NODE_PORT}    backups: encrypted, daily at ${BACKUP_TIMES}"
+  echo "    backup_key:    copy it OFF the cluster: kubectl -n ${K8S_NAMESPACE} get secret cactusinv-secrets -o jsonpath='{.data.backup_key}' | base64 -d"
 }
 
 k8s_uninstall() {
   info "removing cactusInv workloads (volumes and secrets are kept)"
   kc -n "$K8S_NAMESPACE" delete deploy,svc,cronjob,job,configmap -l app.kubernetes.io/part-of=cactusinv --ignore-not-found
-  kc -n "$K8S_NAMESPACE" delete configmap cactusinv-backup-script --ignore-not-found
   ok "uninstalled; persistent volumes kept in namespace ${K8S_NAMESPACE}"
 }
 
@@ -298,52 +465,38 @@ k8s_delete_uninstall() {
   ok "cactusInv and all of its data were removed"
 }
 
-k8s_status() { kc -n "$K8S_NAMESPACE" get deploy,pods,svc,pvc,cronjob,jobs; }
+k8s_status() { kc -n "$K8S_NAMESPACE" get deploy,pods,svc,pvc; }
 
 k8s_backup_now() {
-  local job
-  job="cactusinv-backup-manual-$(date +%s)"
-  kc -n "$K8S_NAMESPACE" create job "$job" --from=cronjob/cactusinv-backup
-  kc -n "$K8S_NAMESPACE" wait --for=condition=complete "job/$job" --timeout=600s
-  kc -n "$K8S_NAMESPACE" logs "job/$job"
+  kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv backup create </dev/null
+}
+
+k8s_app_backup() { kc -n "$K8S_NAMESPACE" exec -i deploy/cactusinv -- /cactusinv backup "$@"; }
+k8s_cat_legacy() { kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv backup cat-legacy "$1" </dev/null; }
+
+k8s_load_legacy() {
+  local file="$1" name="$2" safety
+  info "taking a safety backup of the current data"
+  safety="$(k8s_app_backup create </dev/null | awk '{print $1}')" || true
+  [[ "$safety" == cactusinv-*.age ]] || die "could not take a safety backup first (is backup_key set up?); nothing was changed"
+  legacy_warning "$name" "$safety"
+  confirm_word RESTORE "Restoring $name replaces the whole database." || die "aborted; nothing was changed"
+  kc -n "$K8S_NAMESPACE" scale deploy/cactusinv --replicas=0 </dev/null
+  legacy_reset_sql | kc -n "$K8S_NAMESPACE" exec -i deploy/mariadb -- sh -c "$MARIADB_ROOT_SQL"
+  gunzip -c "$file" | kc -n "$K8S_NAMESPACE" exec -i deploy/mariadb -- sh -c "$MARIADB_APP_SQL"
+  kc -n "$K8S_NAMESPACE" scale deploy/cactusinv --replicas=1 </dev/null
+  kc -n "$K8S_NAMESPACE" rollout status deploy/cactusinv --timeout=300s </dev/null
+  kc -n "$K8S_NAMESPACE" exec -i deploy/cactusinv -- /cactusinv backup note-legacy-restore - --name "$name" <"$file"
+  ok "restored $name; the data before is in $safety"
 }
 
 k8s_restore() {
-  confirm "Restoring $RESTORE_FILE replaces the current database contents."
-  local job
-  job="cactusinv-restore-$(date +%s)"
-  kc apply -f - <<YAML
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ${job}
-  namespace: ${K8S_NAMESPACE}
-  labels: { app.kubernetes.io/part-of: cactusinv }
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: restore
-          image: mariadb:11
-          command: [bash, /scripts/backup.sh, restore, "${RESTORE_FILE}"]
-          env:
-            - { name: DB_HOST, value: mariadb }
-            - { name: DB_NAME, value: "${MARIADB_DATABASE}" }
-            - { name: DB_USER, value: "${MARIADB_USER}" }
-            - { name: DB_PASSWORD_FILE, value: /run/secrets/db_password }
-          volumeMounts:
-            - { name: backups, mountPath: /backups }
-            - { name: scripts, mountPath: /scripts, readOnly: true }
-            - { name: secrets, mountPath: /run/secrets, readOnly: true }
-      volumes:
-        - { name: backups, persistentVolumeClaim: { claimName: backups } }
-        - { name: scripts, configMap: { name: cactusinv-backup-script } }
-        - { name: secrets, secret: { secretName: cactusinv-secrets } }
-YAML
-  kc -n "$K8S_NAMESPACE" wait --for=condition=complete "job/$job" --timeout=900s
-  kc -n "$K8S_NAMESPACE" logs "job/$job"
+  if [[ "$RESTORE_FILE" == *.sql.gz ]]; then
+    with_legacy_dump k8s_cat_legacy k8s_load_legacy
+  else
+    [[ -z "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]] || die "on k3s/k8s restore passphrase-encrypted backups in the app (Settings > Backup & restore)"
+    restore_age k8s_app_backup
+  fi
 }
 
 # ---------------------------------------------------------------------------------------

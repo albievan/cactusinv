@@ -43,7 +43,9 @@ Released into the public domain — see [LICENSE](LICENSE).
   straight away or a set number of days later.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
-- **Scheduled database backups** — daily (configurable), compressed, pruned; one-command restore.
+- **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
+  with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
+  from Settings → Backup & restore with a preview first. The audit log is never rewritten.
 - **Mobile first** — designed for a phone, bottom navigation, large touch targets; scales
   up to a desktop layout. Installable as a home-screen app.
 
@@ -91,8 +93,9 @@ TARGET   --dockerdesktop | --k3s | --k8s
 | `./deploy.sh --install --k8s` | push the image to `K8S_REGISTRY` and apply to the current `kubectl` context |
 | `./deploy.sh --uninstall --k3s …` | remove the app, **keep** database, invoices and backups |
 | `./deploy.sh --delete-uninstall --dockerdesktop` | remove the app **and all data** (asks to confirm; `--yes` to skip) |
-| `./deploy.sh --backup-now --dockerdesktop` | take a backup immediately |
-| `./deploy.sh --restore cactusinv-20261015-020000.sql.gz --dockerdesktop` | restore a backup |
+| `./deploy.sh --backup-now --dockerdesktop` | take an encrypted backup now (stored in `BACKUP_DIR`) |
+| `./deploy.sh --restore cactusinv-20261015T000000Z-s14-scheduled.age --dockerdesktop` | restore a stored backup (or a path to an `.age` file) |
+| `./deploy.sh --restore cactusinv-20261001-020000.sql.gz --dockerdesktop` | restore an old plaintext dump (whole database replaced; with a warning) |
 
 On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Mailpit on
 `K8S_MAILPIT_NODE_PORT` (30025).
@@ -105,14 +108,51 @@ All defaults live in [`.env`](.env) (no secrets in it):
 |---|---|---|
 | `MARIADB_DATA_DIR` | `./data/mariadb` | database files (Docker) |
 | `INVOICES_DIR` | `./data/invoices` | exported invoice PDFs (Docker) |
-| `BACKUP_DIR` | `./data/backups` | database backups (Docker) |
-| `SECRETS_DIR` | `./secrets` | generated passwords (`db_password`, `db_root_password`, `smtp_password`) |
+| `BACKUP_DIR` | `./data/backups` | encrypted backups (Docker) |
+| `SECRETS_DIR` | `./secrets` | generated secrets (`db_password`, `db_root_password`, `smtp_password`, `app_key`, `backup_key`) |
 | `HTTP_PORT` / `MAILPIT_PORT` | `8080` / `8025` | published ports (Docker) |
 | `CACTUSINV_DEFAULT_ADMIN_USER` / `_PASSWORD` | `admin` / `admin` | created on first start only |
 | `CACTUSINV_SMTP_*` | Mailpit | outgoing mail server |
-| `BACKUP_TIMES` / `BACKUP_CRON` / `BACKUP_RETENTION_DAYS` | `02:00` / `0 2 * * *` / `14` | backup schedule (Docker / k8s) and retention |
+| `BACKUP_TIMES` / `BACKUP_RETENTION_DAYS` | `02:00` / `14` | daily backup times (in `TZ`) and how long backups are kept (0 = always) |
+| `BACKUP_MAX_UPLOAD_MB` | `256` | largest backup file that can be uploaded for a restore |
 | `K8S_*` | | namespace, NodePorts, storage class and sizes, registry |
 | `TZ` | `Africa/Johannesburg` | time zone for backups; the business time zone is set in the app |
+
+## Backup and restore
+
+The app takes the backups itself (ADR-010): every table except sessions and other transient
+state, as one consistent snapshot, compressed and **encrypted** with
+[age](https://age-encryption.org). Invoice PDFs are not in backups; they are recreated after a
+restore. No secret is in a backup.
+
+- **Stored and scheduled backups** are encrypted to the server key `backup_key`, which
+  `deploy.sh --install` generates in `SECRETS_DIR` (on k3s/k8s: in the `cactusinv-secrets`
+  Secret). **Copy `backup_key` off the machine and keep it apart from the backups**: without it
+  the stored backups cannot be restored, and a key kept next to its backups protects nothing.
+  A stored backup opens without the app: `age -d -i secrets/backup_key FILE.age | tar -xz`
+  (JSON lines per table).
+- **Download a backup** (Settings → Backup & restore) makes a fresh backup encrypted with a
+  passphrase of at least 16 characters; nothing is stored on the server. The passphrase cannot
+  be recovered.
+- **Restore** (Settings → Backup & restore → Restore… on a stored backup, or Restore from file
+  for a downloaded one): the backup is decrypted, checked and loaded into a separate staging
+  database first, and a preview shows what restoring changes — invoices created since the
+  backup, whether your account is in it, warnings. Applying it needs your password and the word
+  `RESTORE`; it replaces the data in one transaction, never reuses invoice numbers, signs
+  everyone out, and **pauses automatic e-mails and schedules** until you check the Outbox and
+  resume (a banner on every page). With `backup_key` set up, the current data is saved first
+  as a **safety backup** ("Before a restore"), so a wrong restore can be undone. The audit log
+  is never rewritten: the backup's entries are added to it.
+- From the command line (in the app container): `cactusinv backup create`, `backup list`,
+  `backup create --out FILE --passphrase-file P`, `backup restore NAME|FILE|- [--yes]`
+  (shows what restoring does and asks for `RESTORE`), `backup stage …` / `backup apply ID
+  --yes` / `backup discard ID`, `backup note-legacy-restore FILE`, `backup keygen`.
+- Old plaintext `.sql.gz` dumps of the retired backup container are listed and pruned with the
+  rest; restore one with `deploy.sh --restore NAME` (this release only). The script reads it
+  from the backups volume through the app (`cactusinv backup cat-legacy NAME`), checks it,
+  takes a safety backup, asks for `RESTORE`, and loads it as the application user.
+- A download in the browser is put together in memory before it is saved; for a very large
+  database use `cactusinv backup create --out FILE` instead.
 
 ## Development
 
@@ -147,7 +187,7 @@ internal/adapters    mariadb (sqlc), http (OpenAPI), pdf, smtp, archive, secrets
 migrations           goose SQL migrations (embedded)
 api/openapi          the API contract
 web                  React + TypeScript + Vite + Tailwind (embedded in the binary)
-deploy, deploy.sh    Docker Compose, k3s/k8s manifests, backups
+deploy, deploy.sh    Docker Compose, k3s/k8s manifests, MariaDB init (restore staging database)
 ```
 
 ## Operations

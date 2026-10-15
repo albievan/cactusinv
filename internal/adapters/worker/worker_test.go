@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -70,5 +71,39 @@ func TestRunnerPasses(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not stop")
+	}
+}
+
+// TestBackupSlotOnceAcrossReplicas: two replicas' runners share the database and the
+// backups directory; the due slot is taken once.
+func TestBackupSlotOnceAcrossReplicas(t *testing.T) {
+	ctx := context.Background()
+	store := fakes.NewStore()
+	clock := &fakes.Clock{T: time.Date(2026, 10, 15, 3, 0, 0, 0, time.UTC)}
+	files := &fakes.Files{Clock: clock}
+	times, _ := domain.ParseBackupTimes("02:00")
+	replica := func() *Runner {
+		svc := app.New(app.Deps{Tx: store, Clock: clock, IDs: &fakes.IDs{}, Hasher: fakes.Hasher{}, Backups: app.BackupDeps{
+			Snapshotter: &fakes.Snapshotter{Store: store}, Codec: fakes.Codec{}, Sealer: fakes.Sealer{Key: true}, Files: files,
+			Stager: &fakes.Stager{Store: store}, Times: times, Location: time.UTC,
+		}})
+		return New(svc, slog.New(slog.DiscardHandler), Intervals{}, prometheus.NewRegistry())
+	}
+	a, b := replica(), replica()
+	a.Backups(ctx)
+	b.Backups(ctx)
+	a.Backups(ctx)
+	fs, _ := files.List(ctx)
+	if len(fs) != 1 {
+		t.Fatalf("files = %+v", fs)
+	}
+	if got := testutil.ToFloat64(a.backups.WithLabelValues("ok")) + testutil.ToFloat64(b.backups.WithLabelValues("ok")); got != 1 {
+		t.Fatalf("ok = %v", got)
+	}
+	files.FailCommit = errors.New("disk full")
+	clock.Advance(24 * time.Hour)
+	b.Backups(ctx)
+	if got := testutil.ToFloat64(b.backups.WithLabelValues("failed")); got != 1 {
+		t.Fatalf("failed = %v", got)
 	}
 }

@@ -14,11 +14,12 @@ import (
 // handlers implements the generated StrictServerInterface by translating between the
 // wire types and the application's use cases. No business rules live here.
 type handlers struct {
-	svc     *app.Service
-	clock   ports.Clock
-	cookies cookieConfig
-	version string
-	build   string
+	svc       *app.Service
+	clock     ports.Clock
+	cookies   cookieConfig
+	version   string
+	build     string
+	maxUpload int64
 }
 
 var _ StrictServerInterface = (*handlers)(nil)
@@ -63,7 +64,11 @@ func (h *handlers) ChangePassword(ctx context.Context, req ChangePasswordRequest
 
 func (h *handlers) Me(ctx context.Context, _ MeRequestObject) (MeResponseObject, error) {
 	u := currentUser(ctx)
-	return Me200JSONResponse{Id: u.ID, Email: u.Email}, nil
+	held, err := h.svc.AutomationHeld(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return Me200JSONResponse{Id: u.ID, Email: u.Email, AutomationPaused: held}, nil
 }
 
 // ---- settings ----

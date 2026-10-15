@@ -5,6 +5,8 @@
 //	cactusinv migrate up|down            apply or roll back database migrations
 //	cactusinv admin create <login>       create an administrator (password on stdin)
 //	cactusinv admin set-password <login> reset a password (password on stdin)
+//	cactusinv backup keygen|create|list|restore|note-legacy-restore
+//	                                     backups and restores (cactusinv backup for help)
 //	cactusinv healthcheck                exit 0 if the local server is healthy (Docker)
 //	cactusinv version
 package main
@@ -90,6 +92,9 @@ func run(args []string) error {
 		return mariadb.Migrate(ctx, db, args[1] == "down")
 	case "admin":
 		return adminCommand(ctx, cfg, args[1:])
+	case "backup":
+		st, _ := os.Stdin.Stat()
+		return backupCommand(ctx, cfg, args[1:], os.Stdin, os.Stdout, st != nil && st.Mode()&os.ModeCharDevice != 0)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
 	}
@@ -101,8 +106,17 @@ func newLogger(level string) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: l}))
 }
 
-func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
+// dbConfig locates the live database (the password comes from the secrets).
+func dbConfig(ctx context.Context, cfg config) (mariadb.Config, error) {
 	pw, err := cfg.secret(ctx, "db_password")
+	if err != nil {
+		return mariadb.Config{}, err
+	}
+	return mariadb.Config{Host: cfg.DBHost, Port: cfg.DBPort, Name: cfg.DBName, User: cfg.DBUser, Password: pw}, nil
+}
+
+func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
+	dc, err := dbConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +124,7 @@ func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
 	// MariaDB may still be starting when the container comes up: retry for a while.
 	deadline := time.Now().Add(cfg.DBWait)
 	for {
-		db, err = mariadb.Open(ctx, mariadb.Config{Host: cfg.DBHost, Port: cfg.DBPort, Name: cfg.DBName, User: cfg.DBUser, Password: pw})
+		db, err = mariadb.Open(ctx, dc)
 		if err == nil || time.Now().After(deadline) || ctx.Err() != nil {
 			return db, err
 		}
@@ -118,18 +132,30 @@ func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
 	}
 }
 
-func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger) (*app.Service, error) {
+// newService builds the application; the returned func releases what it opened.
+func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger) (*app.Service, func(), error) {
 	deps := app.Deps{
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
 		Hasher: argon2.Hasher{}, Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
 	}
+	dc, err := dbConfig(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	backups, closeBackups, err := backupDeps(ctx, cfg, db, dc, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	deps.Backups = backups
 	// app_key encrypts the SMTP password saved in Settings → E-mail server.
 	if key, err := cfg.optionalSecret(ctx, "app_key"); err != nil {
-		return nil, err
+		closeBackups()
+		return nil, nil, err
 	} else if key != "" {
 		c, err := aesgcm.New(key)
 		if err != nil {
-			return nil, err
+			closeBackups()
+			return nil, nil, err
 		}
 		deps.Cipher = c
 	} else {
@@ -140,11 +166,13 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 	if cfg.SMTPHost != "" {
 		pw, err := cfg.optionalSecret(ctx, "smtp_password")
 		if err != nil {
-			return nil, err
+			closeBackups()
+			return nil, nil, err
 		}
 		m, err := smtp.New(smtp.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, Username: cfg.SMTPUser, Password: pw, From: cfg.SMTPFrom, TLS: cfg.SMTPTLS})
 		if err != nil {
-			return nil, err
+			closeBackups()
+			return nil, nil, err
 		}
 		fallback = m
 	}
@@ -157,7 +185,7 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 		return smtp.Config{Host: st.Host, Port: st.Port, Username: st.Username, Password: pw, From: st.From, TLS: st.TLS}, true, nil
 	}}
 	svc = app.New(deps)
-	return svc, nil
+	return svc, closeBackups, nil
 }
 
 // noMailer fails deliveries clearly when SMTP is not configured; messages stay queued.
@@ -182,10 +210,11 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	if err := os.MkdirAll(cfg.InvoicesDir, 0o750); err != nil {
 		return fmt.Errorf("invoices dir: %w", err)
 	}
-	svc, err := newService(ctx, cfg, db, log)
+	svc, closeSvc, err := newService(ctx, cfg, db, log)
 	if err != nil {
 		return err
 	}
+	defer closeSvc()
 	if cfg.DefaultAdminUser != "" {
 		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, cfg.DefaultAdminPassword)
 		if err != nil {
@@ -202,7 +231,8 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	arch := archive.Dir{Root: cfg.InvoicesDir}
 	handler := httpapi.NewHandler(httpapi.Options{
 		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, Registry: reg, Web: web.FS(), Version: version, Build: build,
-		Ready: map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
+		MaxUploadBytes: int64(cfg.BackupMaxUploadMB) << 20,
+		Ready:          map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
 	})
 	srv := &http.Server{
 		Addr: cfg.HTTPAddr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
@@ -255,10 +285,11 @@ func adminCommand(ctx context.Context, cfg config, args []string) error {
 		return err
 	}
 	defer db.Close()
-	svc, err := newService(ctx, cfg, db, newLogger("error"))
+	svc, closeSvc, err := newService(ctx, cfg, db, newLogger("error"))
 	if err != nil {
 		return err
 	}
+	defer closeSvc()
 	if args[0] == "create" {
 		_, err = svc.CreateUser(ctx, args[1], pw)
 		return err

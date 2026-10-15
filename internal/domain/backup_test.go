@@ -219,6 +219,9 @@ func TestBackupNames(t *testing.T) {
 	if got, err := ParseBackupName("cactusinv-20261015T020000Z-s0-upload.age"); err != nil || got.Schema != 0 || got.Kind != BackupUpload {
 		t.Fatal("upload")
 	}
+	if got, err := ParseBackupName("cactusinv-20261015T020000Z-s14-prerestore.age"); err != nil || got.Kind != BackupPreRestore {
+		t.Fatal("prerestore")
+	}
 	for _, s := range []string{
 		"", "cactusinv-20261015T020000Z-s14-scheduled.age.part", "../cactusinv-20261015T020000Z-s14-manual.age",
 		"cactusinv-20261015T020000Z-s14-evil.age", "cactusinv-20261015T020000Z-s014-manual.age",

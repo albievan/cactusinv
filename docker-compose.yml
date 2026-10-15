@@ -15,18 +15,22 @@ services:
     secrets: [db_password, db_root_password]
     volumes:
       - ${MARIADB_DATA_DIR}:/var/lib/mysql
+      # Creates <db>_restore, the restore staging database, on a new data directory.
+      - ./deploy/mariadb/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
       timeout: 5s
       retries: 30
 
-  # The app runs as uid 65532; make the mapped invoices folder writable for it.
+  # The app runs as uid 65532; make the mapped invoices and backups folders writable for
+  # it (backups only for it: they hold the encrypted copies of everything).
   volume-init:
     image: busybox:1.37
-    command: ["sh", "-c", "chown -R 65532:65532 /data/invoices && chmod 750 /data/invoices"]
+    command: ["sh", "-c", "chown -R 65532:65532 /data/invoices /data/backups && chmod 750 /data/invoices && chmod 700 /data/backups"]
     volumes:
       - ${INVOICES_DIR}:/data/invoices
+      - ${BACKUP_DIR}:/data/backups
     restart: "no"
 
   app:
@@ -58,30 +62,18 @@ services:
       CACTUSINV_SMTP_TLS: ${CACTUSINV_SMTP_TLS}
       CACTUSINV_SMTP_USER: ${CACTUSINV_SMTP_USER}
       CACTUSINV_SMTP_FROM: ${CACTUSINV_SMTP_FROM}
-    secrets: [db_password, smtp_password, app_key]
+      # Encrypted backups taken by the app (ADR-010); the restore staging database is
+      # <MARIADB_DATABASE>_restore.
+      CACTUSINV_BACKUP_DIR: /data/backups
+      CACTUSINV_BACKUP_TIMES: ${BACKUP_TIMES}
+      CACTUSINV_BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS}
+      CACTUSINV_BACKUP_MAX_UPLOAD_MB: ${BACKUP_MAX_UPLOAD_MB}
+    secrets: [db_password, smtp_password, app_key, backup_key]
     volumes:
       - ${INVOICES_DIR}:/data/invoices
+      - ${BACKUP_DIR}:/data/backups
     ports:
       - "${HTTP_PORT}:8080"
-
-  backup:
-    image: mariadb:11
-    restart: unless-stopped
-    depends_on:
-      mariadb: { condition: service_healthy }
-    entrypoint: ["bash", "/scripts/backup.sh", "loop"]
-    environment:
-      TZ: ${TZ}
-      DB_HOST: mariadb
-      DB_NAME: ${MARIADB_DATABASE}
-      DB_USER: ${MARIADB_USER}
-      DB_PASSWORD_FILE: /run/secrets/db_password
-      BACKUP_TIMES: ${BACKUP_TIMES}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS}
-    secrets: [db_password]
-    volumes:
-      - ${BACKUP_DIR}:/backups
-      - ./deploy/backup/backup.sh:/scripts/backup.sh:ro
 
   mailpit:
     image: axllent/mailpit:v1.21
@@ -99,3 +91,5 @@ secrets:
     file: ${SECRETS_DIR}/smtp_password
   app_key:
     file: ${SECRETS_DIR}/app_key
+  backup_key:
+    file: ${SECRETS_DIR}/backup_key

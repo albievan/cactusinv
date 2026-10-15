@@ -110,7 +110,8 @@ function SettingsSections() {
   )
 }
 
-function SettingsPage({ children }: { children: ReactNode }) {
+/** SettingsPage frames a Settings sub-page (title and the phone section links). */
+export function SettingsPage({ children }: { children: ReactNode }) {
   return (
     <Page title="Settings">
       <SettingsSections />

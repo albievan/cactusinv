@@ -71,7 +71,14 @@ migrations (Go migrations included). A backup from a newer schema is refused
    schema N → M, row counts (backup vs. live), the audit merge plan, invoices created since
    the backup (they will disappear), whether the actor's account exists in the backup, and
    warnings. A stage expires after 30 minutes.
-2. *Apply* (`ApplyRestore`, needs the actor's current password and the word `RESTORE`):
+2. *Safety backup*: before the swap, with `backup_key` configured, the live data is stored
+   as a backup of kind `prerestore`, named in the result and in `backup.restored`, so a
+   wrong restore can be undone by restoring it. If it cannot be taken the restore stops and
+   nothing changes. Without `backup_key` the preview warns that no safety backup will be
+   taken, and the confirmation says so. (Writes between that snapshot and the swap are not
+   in it; the window is the time the snapshot takes.) It is recorded by the restore's own
+   audit entry, so the live trail does not change between preview and swap.
+3. *Apply* (`ApplyRestore`, needs the actor's current password and the word `RESTORE`):
    on one connection, `SET autocommit=0; LOCK TABLES <every live table> WRITE, <staging
    tables> READ`; refuse when an outbox row is `sending` (`ErrBusy`); delete the live rows
    child → parent (never `audit_log`); `INSERT … SELECT` parent → child with explicit
@@ -81,7 +88,7 @@ migrations (Go migrations included). A backup from a newer schema is refused
    automation (`system_state.automation_held`) and append `backup.restored`; `COMMIT`,
    then `UNLOCK TABLES`. Any error rolls back the whole swap. Refusals and failures are
    audited in their own transaction (`backup.restore_refused`, `backup.restore_failed`).
-3. After a restore the dispatcher and the schedule runner claim nothing (their claim
+4. After a restore the dispatcher and the schedule runner claim nothing (their claim
    queries read `system_state` in share mode) until an admin resumes automation: restored
    outbox rows and schedules may otherwise repeat e-mails sent after the backup was taken.
 
@@ -130,6 +137,15 @@ the first and last name, not every name.
 - A restore can roll the business back in time; the preview says how far, and automation
   stays paused until someone has looked at the Outbox and schedules.
 - Existing installations need the staging database and its GRANT (done by `deploy.sh
-  --install`); until then restore is disabled with a reason.
+  --install`); until then restore is disabled with a reason. The grant is exactly what the
+  stager needs: `SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
+  LOCK TABLES, TRIGGER` on `<db>_restore` (an older `ALL` is narrowed).
+- Legacy `.sql.gz` dumps (this release only, `deploy.sh --restore`): the dump is read from
+  the backups volume through the app (`cactusinv backup cat-legacy NAME`), checked (`gzip
+  -t`, mariadb-dump header) and a safety backup taken before anything changes; only `DROP`
+  and `CREATE DATABASE` run as MariaDB root, the dump itself as the application user.
+- In the browser a download is assembled in memory (a `Blob`) before it is saved: fine for
+  the sizes an invoicing database reaches; very large installations should use
+  `cactusinv backup create --out FILE`.
 - Format changes need a new `formatVersion`, a decoder for the old one, and a test.
 - `filippo.io/age` (BSD-3-Clause) is a new dependency.

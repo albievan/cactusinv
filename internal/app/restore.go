@@ -40,12 +40,15 @@ type RestorePreview struct {
 	CanSignIn bool
 	// SMTPPasswordCleared says the backup's e-mail server password cannot be decrypted here.
 	SMTPPasswordCleared bool
-	Warnings            []string
+	// SafetyBackup says the live data will be backed up just before the restore.
+	SafetyBackup bool
+	Warnings     []string
 }
 
 // RestoreResult is what an applied restore did.
 type RestoreResult struct {
 	Source              string
+	SafetyBackup        string // the backup of the data just before the restore ("" when none)
 	Audit               domain.AuditMergePlan
 	SequenceKept        bool // the live invoice sequence was ahead and was kept
 	SMTPPasswordCleared bool
@@ -100,10 +103,16 @@ func refusalReason(err error) string {
 }
 
 // auditRestoreOutcome records a refused or failed restore in its own transaction.
-func (s *Service) auditRestoreOutcome(ctx context.Context, source string, err error) {
+func (s *Service) auditRestoreOutcome(ctx context.Context, source string, err error, notes ...string) {
 	action, summary := "backup.restore_failed", "restore failed"
+	if errors.Is(err, errSafetyBackup) {
+		summary = "restore failed: " + errSafetyBackup.Error() + "; nothing was changed"
+	}
 	if restoreRefusal(err) {
 		action, summary = "backup.restore_refused", "restore refused: "+refusalReason(err)
+	}
+	for _, n := range notes {
+		summary += "; " + n
 	}
 	if aerr := s.auditNow(ctx, action, "backup", source, summary); aerr != nil {
 		s.log.ErrorContext(ctx, "could not audit a restore outcome", "action", action, "err", aerr)
@@ -280,14 +289,22 @@ func (s *Service) preview(ctx context.Context) (RestorePreview, error) {
 		ID: st.RestoreID, ExpiresAt: st.RestoreExpiresAt, Source: st.RestoreSource, SHA256: st.RestoreSHA256,
 		Header: st.RestoreHeader, SchemaFrom: st.RestoreHeader.SchemaVersion, SchemaTo: staged.SchemaVersion,
 		Audit: domain.PlanAuditMerge(liveAudit, backupAudit), LiveAuditOK: domain.VerifyAuditChain(liveAudit).OK,
-		InvoicesSince: since, CanSignIn: slices.Contains(staged.UserIDs, ActorFrom(ctx).ID),
+		InvoicesSince: since, CanSignIn: canSignIn(ActorFrom(ctx), staged.UserIDs),
 		SMTPPasswordCleared: staged.SMTPPasswordEnc != nil && !s.canDecrypt(staged.SMTPPasswordEnc),
+		SafetyBackup:        s.safetyBackupPossible(),
 	}
 	for _, name := range sortedKeys(staged.Counts, staged.LiveCounts) {
 		p.Tables = append(p.Tables, RestoreTableCount{Name: name, Backup: staged.Counts[name], Live: staged.LiveCounts[name]})
 	}
 	p.Warnings = restoreWarnings(p)
 	return p, nil
+}
+
+// canSignIn reports whether the actor staging a restore can sign in afterwards: a user
+// whose account is in the backup, or a system actor (the CLI operator), which has no
+// account to lose.
+func canSignIn(a Actor, userIDs []string) bool {
+	return strings.HasPrefix(a.ID, "system") || slices.Contains(userIDs, a.ID)
 }
 
 func sortedKeys(maps ...map[string]int64) []string {
@@ -321,6 +338,9 @@ func restoreWarnings(p RestorePreview) []string {
 		w = append(w, fmt.Sprintf("the backup's audit trail does not verify (broken at #%d); its entries will be re-sealed and the break recorded", p.Audit.BackupBrokenAt))
 	} else if p.Audit.Mode == domain.AuditAppendResealed {
 		w = append(w, fmt.Sprintf("the audit trails have diverged; %d entries from the backup will be added re-sealed between two markers", p.Audit.Count))
+	}
+	if !p.SafetyBackup {
+		w = append(w, "no safety backup of the current data will be taken (the server backup key, backup_key, is not set up): download a backup first if you may want it back")
 	}
 	if !p.LiveAuditOK {
 		w = append(w, "the current audit trail does not verify; the restore leaves it as it is")
@@ -385,6 +405,34 @@ func (s *Service) ApplyRestore(ctx context.Context, id, currentPassword, confirm
 		s.auditRestoreOutcome(ctx, id, err)
 		return RestoreResult{}, wrap("app.ApplyRestore", err)
 	}
+	return s.applyRestore(ctx, id)
+}
+
+// ActorOperator is someone with a shell on the server running the cactusinv CLI.
+var ActorOperator = Actor{ID: "system:operator", Name: "Operator (CLI)"}
+
+// ApplyRestoreAsOperator applies a staged restore from the command line. Shell access to
+// the server stands in for the password; the CLI asks for explicit confirmation (--yes).
+func (s *Service) ApplyRestoreAsOperator(ctx context.Context, id string) (RestoreResult, error) {
+	if err := s.restoresConfigured(); err != nil {
+		return RestoreResult{}, wrap("app.ApplyRestore", err)
+	}
+	return s.applyRestore(WithActor(ctx, ActorOperator), id)
+}
+
+// NoteLegacyRestore records in the audit trail that a plaintext mariadb-dump backup was
+// restored outside the application (deploy.sh, retired sidecar format): such a restore
+// replaces audit_log wholesale, so this entry marks the break (ADR-009 amendment).
+func (s *Service) NoteLegacyRestore(ctx context.Context, name string, r io.Reader) error {
+	sum := newCountingHash()
+	if _, err := io.Copy(sum, r); err != nil {
+		return wrap("app.NoteLegacyRestore", err)
+	}
+	return wrap("app.NoteLegacyRestore", s.auditNow(WithActor(ctx, ActorOperator), "backup.legacy_restored", "backup", domain.TruncateUTF8(name, 64),
+		fmt.Sprintf("a plaintext mariadb-dump backup (%d bytes, sha256 %s) was restored with deploy.sh; the audit trail before this entry came from that dump", sum.n, sum.Sum())))
+}
+
+func (s *Service) applyRestore(ctx context.Context, id string) (RestoreResult, error) {
 	// The in-process slot only: the stager takes the installation-wide lock on the swap's
 	// own connection (ADR-010).
 	unlock, err := s.lockBackups()
@@ -393,7 +441,31 @@ func (s *Service) ApplyRestore(ctx context.Context, id, currentPassword, confirm
 		return RestoreResult{}, wrap("app.ApplyRestore", err)
 	}
 	defer unlock()
-	res, err := s.apply(ctx, id)
+	// A safety backup of the live data comes first, so a wrong restore can be undone
+	// (ADR-010). Only for a stage that can be applied now.
+	if st, err := s.tx.Repos().System.Get(ctx); err != nil || st.RestoreID != id || !st.HasStagedRestore(s.now()) {
+		if err == nil {
+			err = domain.ErrNotFound
+		}
+		s.auditRestoreOutcome(ctx, id, err)
+		return RestoreResult{}, wrap("app.ApplyRestore", err)
+	}
+	safety := ""
+	if s.safetyBackupPossible() {
+		b, err := s.createBackup(ctx, domain.BackupPreRestore)
+		if err != nil {
+			s.log.ErrorContext(ctx, "safety backup before a restore failed", "err", err)
+			err = fmt.Errorf("%w: %w", errSafetyBackup, err)
+			s.auditRestoreOutcome(ctx, id, err)
+			return RestoreResult{}, wrap("app.ApplyRestore", err)
+		}
+		safety = b.Name
+	}
+	res, err := s.apply(ctx, id, safety)
+	var notes []string
+	if safety != "" {
+		notes = append(notes, "safety backup "+safety+" was taken first")
+	}
 	if err != nil && !restoreRefusal(err) {
 		// The swap failed — or only its COMMIT reported an error. The swap writes its own
 		// id into system_state, so its outcome is read from there.
@@ -402,12 +474,12 @@ func (s *Service) ApplyRestore(ctx context.Context, id, currentPassword, confirm
 			s.log.WarnContext(ctx, "restore commit reported an error but the restore is in place", "source", res.Source)
 			err = nil
 		case outcomeUnknown:
-			s.auditOutcomeUnknown(ctx, id)
+			s.auditOutcomeUnknown(ctx, id, notes...)
 			return RestoreResult{}, wrap("app.ApplyRestore", fmt.Errorf("%w: check the audit log and the data before retrying", domain.ErrOutcomeUnknown))
 		}
 	}
 	if err != nil {
-		s.auditRestoreOutcome(ctx, id, err)
+		s.auditRestoreOutcome(ctx, id, err, notes...)
 		return RestoreResult{}, wrap("app.ApplyRestore", err)
 	}
 	// The staged plaintext copy goes even if the request was cancelled meanwhile.
@@ -448,9 +520,12 @@ func (s *Service) restoreOutcome(ctx context.Context, id string) restoreOutcome 
 }
 
 // auditOutcomeUnknown records a restore whose result could not be determined.
-func (s *Service) auditOutcomeUnknown(ctx context.Context, id string) {
-	if err := s.auditNow(context.WithoutCancel(ctx), "backup.restore_outcome_unknown", "backup", id,
-		"the restore's COMMIT failed and whether it took effect could not be determined; check the data and the audit log"); err != nil {
+func (s *Service) auditOutcomeUnknown(ctx context.Context, id string, notes ...string) {
+	summary := "the restore's COMMIT failed and whether it took effect could not be determined; check the data and the audit log"
+	for _, n := range notes {
+		summary += "; " + n
+	}
+	if err := s.auditNow(context.WithoutCancel(ctx), "backup.restore_outcome_unknown", "backup", id, summary); err != nil {
 		s.log.ErrorContext(ctx, "could not audit an unknown restore outcome", "err", err)
 	}
 }
@@ -472,8 +547,18 @@ func (s *Service) discardStagingIfIdle(ctx context.Context) {
 	}
 }
 
-func (s *Service) apply(ctx context.Context, id string) (RestoreResult, error) {
-	var res RestoreResult
+// errSafetyBackup marks a restore stopped because the safety backup failed.
+var errSafetyBackup = errors.New("the safety backup of the current data could not be taken")
+
+// safetyBackupPossible reports whether a restore can first back up the live data (needs
+// the server backup key and the backups directory).
+func (s *Service) safetyBackupPossible() bool {
+	b := s.backups
+	return b.Sealer != nil && b.Sealer.KeyConfigured() && b.Files != nil && b.Snapshotter != nil
+}
+
+func (s *Service) apply(ctx context.Context, id, safety string) (RestoreResult, error) {
+	res := RestoreResult{SafetyBackup: safety}
 	err := s.backups.Stager.Apply(ctx, func(ctx context.Context, tx ports.RestoreTx) error {
 		r := tx.Repos()
 		st, err := r.System.Lock(ctx)
@@ -553,6 +638,11 @@ func restoredSummary(res RestoreResult, h domain.BackupHeader, sha string, liveS
 	}
 	if res.SMTPPasswordCleared {
 		parts = append(parts, "e-mail server password cleared")
+	}
+	if res.SafetyBackup != "" {
+		parts = append(parts, "safety backup of the data before: "+res.SafetyBackup)
+	} else {
+		parts = append(parts, "no safety backup (no backup_key)")
 	}
 	parts = append(parts, "automation held, everyone signed out")
 	return strings.Join(parts, "; ")

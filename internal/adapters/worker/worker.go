@@ -20,10 +20,11 @@ type Intervals struct {
 	Emails       time.Duration
 	Export       time.Duration
 	Housekeeping time.Duration
+	Backups      time.Duration
 }
 
 // DefaultIntervals are used for zero fields.
-var DefaultIntervals = Intervals{Schedules: time.Minute, Emails: 15 * time.Second, Export: 30 * time.Second, Housekeeping: time.Hour}
+var DefaultIntervals = Intervals{Schedules: time.Minute, Emails: 15 * time.Second, Export: 30 * time.Second, Housekeeping: time.Hour, Backups: time.Minute}
 
 // Runner runs the loops until its context is cancelled.
 type Runner struct {
@@ -35,6 +36,7 @@ type Runner struct {
 	exported  *prometheus.CounterVec
 	pending   prometheus.Gauge
 	oldestAge prometheus.Gauge
+	backups   *prometheus.CounterVec
 }
 
 // New builds a Runner and registers its metrics.
@@ -51,6 +53,9 @@ func New(svc *app.Service, log *slog.Logger, every Intervals, reg prometheus.Reg
 	if every.Housekeeping == 0 {
 		every.Housekeeping = DefaultIntervals.Housekeeping
 	}
+	if every.Backups == 0 {
+		every.Backups = DefaultIntervals.Backups
+	}
 	r := &Runner{
 		svc: svc, log: log, every: every,
 		runs:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "cactusinv_schedule_runs_total", Help: "Schedule occurrences processed."}, []string{"result"}),
@@ -59,7 +64,8 @@ func New(svc *app.Service, log *slog.Logger, every Intervals, reg prometheus.Reg
 		pending:   prometheus.NewGauge(prometheus.GaugeOpts{Name: "cactusinv_outbox_pending", Help: "Pending outbox messages."}),
 		oldestAge: prometheus.NewGauge(prometheus.GaugeOpts{Name: "cactusinv_outbox_oldest_pending_seconds", Help: "Age of the oldest due pending message."}),
 	}
-	reg.MustRegister(r.runs, r.sent, r.exported, r.pending, r.oldestAge)
+	r.backups = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "cactusinv_backups_total", Help: "Scheduled backups taken."}, []string{"result"})
+	reg.MustRegister(r.runs, r.sent, r.exported, r.pending, r.oldestAge, r.backups)
 	return r
 }
 
@@ -87,6 +93,7 @@ func (r *Runner) Run(ctx context.Context) {
 	loop("emails", r.every.Emails, r.Emails)
 	loop("export", r.every.Export, r.Export)
 	loop("housekeeping", r.every.Housekeeping, r.Housekeeping)
+	loop("backups", r.every.Backups, r.Backups)
 	wg.Wait()
 }
 
@@ -132,5 +139,17 @@ func (r *Runner) Export(ctx context.Context) {
 func (r *Runner) Housekeeping(ctx context.Context) {
 	if err := r.svc.Housekeeping(ctx); err != nil {
 		r.log.ErrorContext(ctx, "housekeeping", "err", err)
+	}
+}
+
+// Backups takes the scheduled backup of the current slot (once across replicas) and prunes.
+func (r *Runner) Backups(ctx context.Context) {
+	ran, err := r.svc.RunDueBackups(ctx)
+	switch {
+	case err != nil:
+		r.backups.WithLabelValues("failed").Inc()
+		r.log.ErrorContext(ctx, "scheduled backup", "err", err)
+	case ran:
+		r.backups.WithLabelValues("ok").Inc()
 	}
 }

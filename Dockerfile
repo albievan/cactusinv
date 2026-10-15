@@ -19,15 +19,15 @@ COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 ARG BUILD=0
 RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.build=${BUILD}" -o /out/cactusinv ./cmd/cactusinv \
- && mkdir -p /out/data/invoices
+ && mkdir -p /out/data/invoices /out/data/backups
 
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/cactusinv /cactusinv
 COPY --from=build --chown=65532:65532 /out/data /data
 USER 65532:65532
-ENV CACTUSINV_INVOICES_DIR=/data/invoices
+ENV CACTUSINV_INVOICES_DIR=/data/invoices CACTUSINV_BACKUP_DIR=/data/backups
 EXPOSE 8080
-VOLUME ["/data/invoices"]
+VOLUME ["/data/invoices", "/data/backups"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD ["/cactusinv", "healthcheck"]
 ENTRYPOINT ["/cactusinv"]
 CMD ["serve"]

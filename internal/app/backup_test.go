@@ -136,11 +136,6 @@ func TestBackupUseCaseErrors(t *testing.T) {
 			}
 			return err
 		}, nil},
-		{"same second", func(b *backupHarness) error {
-			must(b.svc.CreateBackup(b.ctx, domain.BackupManual))
-			_, err := b.svc.CreateBackup(b.ctx, domain.BackupManual)
-			return err
-		}, domain.ErrConflict},
 		{"busy", func(b *backupHarness) error {
 			var inner error
 			err := b.svc.ExportBackup(b.ctx, "a long enough passphrase", func(string) (io.Writer, error) {
@@ -234,7 +229,7 @@ func TestRunDueBackupsOncePerSlot(t *testing.T) {
 	if ran, err := b.svc.RunDueBackups(context.Background()); !ran || err == nil {
 		t.Fatalf("failed slot: %v %v", ran, err)
 	}
-	if ov := must(b.svc.ListBackups(b.ctx)); ov.LastRun.Result != domain.BackupRunFailed || !strings.Contains(ov.LastRun.Error, "disk full") {
+	if ov := must(b.svc.ListBackups(b.ctx)); ov.LastRun.Result != domain.BackupRunFailed || ov.LastRun.Error != "disk" {
 		t.Fatalf("failed run recorded: %+v", ov.LastRun)
 	}
 	if !slices.Contains(b.actions(), "backup.failed") {
@@ -901,5 +896,116 @@ func TestConcurrentUploadsInOneSecond(t *testing.T) {
 	done.Wait()
 	if errs[0] != nil || errs[1] != nil || names[0] == names[1] {
 		t.Fatalf("names %v, errors %v", names, errs)
+	}
+}
+
+func TestOperatorRestoreAndLegacyNote(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	name := b.backupNow()
+	p := must(b.svc.StageRestore(app.WithActor(context.Background(), app.ActorOperator), name, ""))
+	if !p.CanSignIn || strings.Contains(strings.Join(p.Warnings, "\n"), "your account") {
+		t.Fatalf("the CLI operator has no account to lose: %+v", p.Warnings)
+	}
+	res := must(b.svc.ApplyRestoreAsOperator(context.Background(), p.ID))
+	if a := b.lastAudit(); a.Action != "backup.restored" || a.ActorName != "Operator (CLI)" || res.Source != name {
+		t.Fatalf("audit = %+v", a)
+	}
+	must0(t, b.svc.NoteLegacyRestore(context.Background(), "cactusinv-20261001-020000.sql.gz", strings.NewReader("-- dump")))
+	if a := b.lastAudit(); a.Action != "backup.legacy_restored" || !strings.Contains(a.Summary, "7 bytes") || a.ActorName != "Operator (CLI)" {
+		t.Fatalf("legacy note = %+v", a)
+	}
+	plain := app.New(app.Deps{Tx: b.store, Clock: b.clock, IDs: &fakes.IDs{}, Hasher: fakes.Hasher{}})
+	if _, err := plain.ApplyRestoreAsOperator(b.ctx, "x"); !errors.Is(err, domain.ErrNotConfigured) {
+		t.Fatalf("not configured: %v", err)
+	}
+	if err := b.svc.NoteLegacyRestore(b.ctx, "x", errReader{}); err == nil {
+		t.Fatal("read error")
+	}
+}
+
+func TestBackupsInOneSecondTakeTheNextName(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	first := must(b.svc.CreateBackup(b.ctx, domain.BackupManual)).Name
+	second := must(b.svc.CreateBackup(b.ctx, domain.BackupManual)).Name
+	n1, _ := domain.ParseBackupName(first)
+	n2, _ := domain.ParseBackupName(second)
+	if first == second || !n2.CreatedAt.Equal(n1.CreatedAt.Add(time.Second)) {
+		t.Fatalf("%s / %s", first, second)
+	}
+}
+
+func TestBackupFailureCategories(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	b.snap.Err = errors.New("Error 2013: Lost connection to server at 'mariadb:3306'")
+	b.clock.Set(time.Date(2026, 8, 21, 3, 0, 0, 0, time.UTC))
+	if _, err := b.svc.RunDueBackups(context.Background()); err == nil {
+		t.Fatal("must fail")
+	}
+	ov := must(b.svc.ListBackups(b.ctx))
+	if ov.LastRun.Error != "database" || strings.Contains(b.lastAudit().Summary, "mariadb:3306") {
+		t.Fatalf("category %q; audit %q", ov.LastRun.Error, b.lastAudit().Summary)
+	}
+}
+
+// TestSafetyBackupBeforeRestore: with the server key a restore first backs up the live
+// data (named in the result and in backup.restored), and restoring that undoes it.
+func TestSafetyBackupBeforeRestore(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	name := b.backupNow()
+	must(b.svc.CreateUser(b.ctx, "later@example.com", "another long password"))
+	p := must(b.svc.StageRestore(b.ctx, name, ""))
+	if !p.SafetyBackup || strings.Contains(strings.Join(p.Warnings, "\n"), "no safety backup") {
+		t.Fatalf("preview: %+v", p)
+	}
+	res := must(b.svc.ApplyRestore(b.ctx, p.ID, adminPassword, "RESTORE"))
+	if n, err := domain.ParseBackupName(res.SafetyBackup); err != nil || n.Kind != domain.BackupPreRestore {
+		t.Fatalf("safety backup %q: %v", res.SafetyBackup, err)
+	}
+	if a := b.lastAudit(); a.Action != "backup.restored" || !strings.Contains(a.Summary, res.SafetyBackup) {
+		t.Fatalf("audit = %+v", a)
+	}
+	if must(b.store.Repos().Users.Count(b.ctx)) != 1 {
+		t.Fatal("restored")
+	}
+	// Undo: restore the safety backup.
+	p = must(b.svc.StageRestore(b.ctx, res.SafetyBackup, ""))
+	must(b.svc.ApplyRestore(b.ctx, p.ID, adminPassword, "RESTORE"))
+	if must(b.store.Repos().Users.Count(b.ctx)) != 2 {
+		t.Fatal("the safety backup brings the replaced data back")
+	}
+}
+
+func TestNoSafetyBackupWithoutKey(t *testing.T) {
+	b := newBackupHarness(t, nil, false, nil)
+	var buf bytes.Buffer
+	must0(t, b.svc.ExportBackup(b.ctx, "a long enough passphrase", func(string) (io.Writer, error) { return &buf, nil }))
+	up := must(b.svc.UploadBackup(b.ctx, &buf))
+	p := must(b.svc.StageRestore(b.ctx, up.Name, "a long enough passphrase"))
+	if p.SafetyBackup || !strings.Contains(strings.Join(p.Warnings, "\n"), "no safety backup of the current data will be taken") {
+		t.Fatalf("preview: %+v", p)
+	}
+	res := must(b.svc.ApplyRestore(b.ctx, p.ID, adminPassword, "RESTORE"))
+	if res.SafetyBackup != "" || !strings.Contains(b.lastAudit().Summary, "no safety backup") {
+		t.Fatalf("result %+v; audit %q", res, b.lastAudit().Summary)
+	}
+}
+
+func TestRestoreStopsWhenTheSafetyBackupFails(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	name := b.backupNow()
+	must(b.svc.CreateUser(b.ctx, "later@example.com", "another long password"))
+	p := must(b.svc.StageRestore(b.ctx, name, ""))
+	b.files.FailCommit = errors.New("disk full")
+	if _, err := b.svc.ApplyRestore(b.ctx, p.ID, adminPassword, "RESTORE"); err == nil {
+		t.Fatal("must stop")
+	}
+	if must(b.store.Repos().Users.Count(b.ctx)) != 2 || must(b.svc.AutomationHeld(b.ctx)) {
+		t.Fatal("nothing changed")
+	}
+	if a := b.lastAudit(); a.Action != "backup.restore_failed" || !strings.Contains(a.Summary, "safety backup") {
+		t.Fatalf("audit = %+v", a)
+	}
+	if _, err := b.svc.ApplyRestore(b.ctx, "nope", adminPassword, "RESTORE"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("unknown id is refused before any backup: %v", err)
 	}
 }

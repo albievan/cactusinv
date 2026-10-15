@@ -5,11 +5,15 @@ import { Wordmark } from './Logo'
 import { Spinner } from './ui'
 
 interface Auth {
-  user: { id: string; email: string } | null
+  user: { id: string; email: string; automationPaused?: boolean } | null
   logout: () => Promise<void>
+  /** refresh re-reads the signed-in user (e.g. after resuming automation). */
+  refresh: () => Promise<void>
+  /** endSession shows the sign-in screen with a notice (the server already ended the session). */
+  endSession: (notice: string) => void
 }
 
-const AuthContext = createContext<Auth>({ user: null, logout: async () => {} })
+const AuthContext = createContext<Auth>({ user: null, logout: async () => {}, refresh: async () => {}, endSession: () => {} })
 
 export const useAuth = () => useContext(AuthContext)
 
@@ -41,9 +45,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setNotice('You signed out.')
     setUser(null)
   }
+  const endSession = (n: string) => {
+    setNotice(n)
+    setUser(null)
+  }
   if (!checked) return <Spinner />
   if (!user) return <Login onLogin={load} notice={notice} />
-  return <AuthContext.Provider value={{ user, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, logout, refresh: load, endSession }}>{children}</AuthContext.Provider>
 }
 
 function WaveLines() {
