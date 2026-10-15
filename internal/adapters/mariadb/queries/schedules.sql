@@ -17,14 +17,14 @@ SELECT * FROM schedules WHERE id = ?;
 SELECT * FROM schedule_lines WHERE schedule_id IN (sqlc.slice(ids)) ORDER BY schedule_id, position;
 
 -- name: InsertSchedule :exec
-INSERT INTO schedules (id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour,
+INSERT INTO schedules (id, customer_id, name, kind, email_scope, status, frequency, interval_count, day_of_month, weekday, send_hour,
     send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes,
     tax_rate_bp, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count,
     last_error, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
 
 -- name: UpdateSchedule :execrows
-UPDATE schedules SET customer_id = ?, name = ?, status = ?, frequency = ?, interval_count = ?, day_of_month = ?,
+UPDATE schedules SET customer_id = ?, name = ?, kind = ?, email_scope = ?, status = ?, frequency = ?, interval_count = ?, day_of_month = ?,
     weekday = ?, send_hour = ?, send_minute = ?, time_zone = ?, start_date = ?, end_date = ?, sales_person = ?,
     job = ?, shipping_method = ?, shipping_terms = ?, notes = ?, tax_rate_bp = ?, auto_send = ?, email_subject = ?,
     email_body = ?, next_occurrence = ?, next_run_at = ?, last_run_at = ?, failure_count = ?, last_error = ?,

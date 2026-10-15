@@ -80,6 +80,11 @@ confirm() {
 
 ssh_run() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST" "$@"; }
 
+# Release version (VERSION file) and build number (commit count) shown in the app.
+export CACTUSINV_VERSION CACTUSINV_BUILD
+CACTUSINV_VERSION="$(tr -d '[:space:]' <"$ROOT/VERSION" 2>/dev/null || echo dev)"
+CACTUSINV_BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
+
 image_tag() {
   local v
   v="$(git describe --tags --always --dirty 2>/dev/null || date +%Y%m%d%H%M%S)"
@@ -90,6 +95,9 @@ image_tag() {
 # Docker (Docker Desktop / Docker Engine)
 # ---------------------------------------------------------------------------------------
 compose() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
+
+# 32 random bytes as 64 hex characters (the AES-256 app_key).
+random_key() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 
 random_secret() { od -An -N24 -tx1 /dev/urandom | tr -d ' \n'; }
 
@@ -104,6 +112,10 @@ ensure_secrets_dir() {
     fi
   done
   [[ -f "$SECRETS_DIR/smtp_password" ]] || : >"$SECRETS_DIR/smtp_password"
+  if [[ ! -s "$SECRETS_DIR/app_key" ]]; then
+    random_key >"$SECRETS_DIR/app_key"
+    ok "generated $SECRETS_DIR/app_key (encrypts the SMTP password stored in the app)"
+  fi
   # MariaDB and the backup container run as other users and must read the files.
   chmod 644 "$SECRETS_DIR"/*
 }
@@ -118,7 +130,7 @@ docker_install() {
   docker_preflight
   mkdir -p "$MARIADB_DATA_DIR" "$INVOICES_DIR" "$BACKUP_DIR"
   ensure_secrets_dir
-  info "building and starting cactusInv (image ${CACTUSINV_IMAGE})"
+  info "building and starting cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"
   compose up -d --build --remove-orphans
   info "waiting for the app to become healthy"
   for _ in $(seq 1 90); do
@@ -206,7 +218,8 @@ build_image() {
   command -v docker >/dev/null || die "docker is needed to build the image"
   local arch; arch="$(target_arch)"
   info "building ${IMAGE} for linux/${arch}"
-  docker buildx build --platform "linux/${arch}" --build-arg "VERSION=${IMAGE##*:}" -t "$IMAGE" --load "$ROOT"
+  docker buildx build --platform "linux/${arch}" --build-arg "VERSION=${CACTUSINV_VERSION}" \
+    --build-arg "BUILD=${CACTUSINV_BUILD}" -t "$IMAGE" --load "$ROOT"
 }
 
 publish_image() {
@@ -251,9 +264,14 @@ stringData:
   db_password: "$(random_secret)"
   db_root_password: "$(random_secret)"
   smtp_password: "${CACTUSINV_SMTP_PASSWORD:-}"
+  app_key: "$(random_key)"
 YAML
     kc -n "$K8S_NAMESPACE" label secret cactusinv-secrets app.kubernetes.io/part-of=cactusinv
     ok "generated database passwords in secret cactusinv-secrets"
+  fi
+  # Older installs: add the app_key that encrypts the in-app SMTP password.
+  if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.app_key}' | grep -q .; then
+    printf '{"stringData":{"app_key":"%s"}}' "$(random_key)" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
   fi
   kc -n "$K8S_NAMESPACE" create configmap cactusinv-backup-script --from-literal=backup.sh="$(cat "$ROOT/deploy/backup/backup.sh")" \
     --dry-run=client -o yaml | kc apply -f -

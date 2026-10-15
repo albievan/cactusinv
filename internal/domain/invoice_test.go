@@ -301,3 +301,56 @@ func TestDates(t *testing.T) {
 		t.Fatal("IsZero")
 	}
 }
+
+func TestOverdueStageAndDisclaimer(t *testing.T) {
+	c := cityDeep()
+	d := DefaultDraftContent(c, NewDate(2026, 8, 21))
+	d.Lines = referenceLines()
+	inv, _ := NewDraftInvoice("i", c, d, t0)
+	today := NewDate(2026, 8, 22)
+	if inv.Stage(today) != StageDraft {
+		t.Fatal("draft")
+	}
+	if err := inv.MarkOverdue(t0); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatal("draft cannot be overdue")
+	}
+	_ = inv.Issue("N", NewDate(2026, 8, 21), BankDetails{}, t0)
+	if inv.Stage(today) != StageIssued {
+		t.Fatal("issued")
+	}
+	_ = inv.MarkSent(t0)
+	if inv.Stage(today) != StageEmailed {
+		t.Fatal("emailed")
+	}
+	if inv.Stage(NewDate(2026, 9, 8)) != StageOverdue {
+		t.Fatal("past due shows overdue")
+	}
+	if err := inv.MarkOverdue(t0); err != nil || inv.Status != InvoiceOverdue || inv.Stage(today) != StageOverdue || !inv.IsOverdue(today) {
+		t.Fatalf("mark overdue: %v %v", err, inv.Status)
+	}
+	if err := inv.MarkOverdue(t0); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatal("already overdue")
+	}
+	if err := inv.MarkSent(t0); err != nil || inv.Status != InvoiceOverdue || !inv.CanSend() {
+		t.Fatal("re-sending keeps overdue")
+	}
+	if err := inv.MarkPaid(t0); err != nil || inv.Stage(today) != StagePaid {
+		t.Fatal("overdue can be paid")
+	}
+	inv2, _ := NewDraftInvoice("j", c, d, t0)
+	_ = inv2.Issue("M", NewDate(2026, 8, 21), BankDetails{}, t0)
+	_ = inv2.MarkOverdue(t0)
+	if err := inv2.Void("x", t0); err != nil || inv2.Stage(today) != StageVoid {
+		t.Fatal("overdue can be voided")
+	}
+	if inv.Notes != "" {
+		t.Fatal("the disclaimer is not copied onto the invoice")
+	}
+	b := BusinessProfile{DefaultNotes: " Business disclaimer "}
+	if Disclaimer(Customer{}, b) != "Business disclaimer" {
+		t.Fatal("business disclaimer")
+	}
+	if Disclaimer(Customer{DefaultNotes: "Customer disclaimer"}, b) != "Customer disclaimer" {
+		t.Fatal("customer disclaimer wins")
+	}
+}

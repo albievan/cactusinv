@@ -25,6 +25,7 @@ type BankAccount struct {
 	Active        bool
 	Version       int32
 	DefaultMarker sql.NullInt16
+	Country       string
 }
 
 type BusinessProfile struct {
@@ -75,7 +76,6 @@ type Customer struct {
 
 type EmailOutbox struct {
 	ID             string
-	InvoiceID      string
 	ToAddrs        string
 	CcAddrs        string
 	Subject        string
@@ -89,6 +89,9 @@ type EmailOutbox struct {
 	IdempotencyKey sql.NullString
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	Kind           string
+	CustomerID     sql.NullString
+	InvoiceID      sql.NullString
 }
 
 type IdempotencyKey struct {
@@ -144,6 +147,8 @@ type Invoice struct {
 	UpdatedAt         time.Time
 	Version           int32
 	ExportedVersion   sql.NullInt32
+	OverdueAt         sql.NullTime
+	BankCountry       string
 }
 
 type InvoiceEvent struct {
@@ -217,6 +222,8 @@ type Schedule struct {
 	UpdatedAt      time.Time
 	Version        int32
 	TaxRateBp      sql.NullInt32
+	Kind           string
+	EmailScope     string
 }
 
 type ScheduleLine struct {
@@ -241,6 +248,19 @@ type Session struct {
 	UserID    string
 	ExpiresAt time.Time
 	CreatedAt time.Time
+}
+
+type SmtpSetting struct {
+	ID          int8
+	Enabled     bool
+	Host        string
+	Port        int32
+	Username    string
+	PasswordEnc sql.NullString
+	FromAddress string
+	TlsMode     string
+	Version     int32
+	UpdatedAt   time.Time
 }
 
 type User struct {

@@ -13,8 +13,11 @@ const (
 	InvoiceDraft  InvoiceStatus = "draft"
 	InvoiceIssued InvoiceStatus = "issued"
 	InvoiceSent   InvoiceStatus = "sent"
-	InvoicePaid   InvoiceStatus = "paid"
-	InvoiceVoid   InvoiceStatus = "void"
+	// InvoiceOverdue is set explicitly by the user (see MarkOverdue); an unpaid invoice
+	// past its due date also reports IsOverdue without the status change.
+	InvoiceOverdue InvoiceStatus = "overdue"
+	InvoicePaid    InvoiceStatus = "paid"
+	InvoiceVoid    InvoiceStatus = "void"
 )
 
 // MaxInvoiceLines bounds the number of lines on one invoice.
@@ -115,6 +118,7 @@ type Invoice struct {
 	IssuedAt   time.Time
 	SentAt     time.Time
 	PaidAt     time.Time
+	OverdueAt  time.Time
 	VoidedAt   time.Time
 	VoidReason string
 	CreatedAt  time.Time
@@ -159,7 +163,6 @@ func DefaultDraftContent(c Customer, issue Date) DraftContent {
 		IssueDate: issue,
 		BillTo:    Party{Name: c.Name, Address: c.BillingAddress, Attention: c.Attention},
 		ShipTo:    Party{Name: shipName, Address: c.ShippingAddress},
-		Notes:     c.DefaultNotes,
 		Terms:     c.Terms,
 	}
 }
@@ -239,17 +242,22 @@ func (inv *Invoice) Issue(number string, issueDate Date, bank BankDetails, now t
 	return nil
 }
 
-// CanSend reports whether the invoice may be e-mailed.
-func (inv *Invoice) CanSend() bool {
-	return inv.Status == InvoiceIssued || inv.Status == InvoiceSent || inv.Status == InvoicePaid
+// IsOpen reports whether the invoice is issued and awaiting payment.
+func (inv *Invoice) IsOpen() bool {
+	return inv.Status == InvoiceIssued || inv.Status == InvoiceSent || inv.Status == InvoiceOverdue
 }
 
-// MarkSent records a delivered e-mail.
+// CanSend reports whether the invoice may be e-mailed.
+func (inv *Invoice) CanSend() bool {
+	return inv.IsOpen() || inv.Status == InvoicePaid
+}
+
+// MarkSent records a delivered e-mail. Overdue and paid invoices keep their status.
 func (inv *Invoice) MarkSent(now time.Time) error {
 	switch inv.Status {
 	case InvoiceIssued:
 		inv.Status = InvoiceSent
-	case InvoiceSent, InvoicePaid:
+	case InvoiceSent, InvoiceOverdue, InvoicePaid:
 	default:
 		return ErrInvalidTransition
 	}
@@ -260,9 +268,20 @@ func (inv *Invoice) MarkSent(now time.Time) error {
 	return nil
 }
 
+// MarkOverdue flags an open invoice as overdue.
+func (inv *Invoice) MarkOverdue(now time.Time) error {
+	if inv.Status != InvoiceIssued && inv.Status != InvoiceSent {
+		return ErrInvalidTransition
+	}
+	inv.Status = InvoiceOverdue
+	inv.OverdueAt = now
+	inv.UpdatedAt = now
+	return nil
+}
+
 // MarkPaid records payment.
 func (inv *Invoice) MarkPaid(now time.Time) error {
-	if inv.Status != InvoiceIssued && inv.Status != InvoiceSent {
+	if !inv.IsOpen() {
 		return ErrInvalidTransition
 	}
 	inv.Status = InvoicePaid
@@ -273,7 +292,7 @@ func (inv *Invoice) MarkPaid(now time.Time) error {
 
 // Void cancels an issued invoice. Its number stays used (gap-free numbering).
 func (inv *Invoice) Void(reason string, now time.Time) error {
-	if inv.Status != InvoiceIssued && inv.Status != InvoiceSent {
+	if !inv.IsOpen() {
 		return ErrInvalidTransition
 	}
 	reason = strings.TrimSpace(reason)
@@ -290,9 +309,51 @@ func (inv *Invoice) Void(reason string, now time.Time) error {
 // CanDelete reports whether the invoice may be deleted (drafts only).
 func (inv *Invoice) CanDelete() bool { return inv.Status == InvoiceDraft }
 
-// IsOverdue reports whether an unpaid, live invoice is past its due date on day today.
+// IsOverdue reports whether the invoice is marked overdue, or is open and past its due
+// date on day today.
 func (inv *Invoice) IsOverdue(today Date) bool {
-	return (inv.Status == InvoiceIssued || inv.Status == InvoiceSent) && inv.DueDate.Before(today)
+	return inv.Status == InvoiceOverdue || (inv.IsOpen() && inv.DueDate.Before(today))
+}
+
+// Stage is where an invoice is in its life, as shown to the user.
+type Stage string
+
+// Stages, in order of progress.
+const (
+	StageDraft   Stage = "draft"
+	StageIssued  Stage = "issued"  // issued, not yet e-mailed
+	StageEmailed Stage = "emailed" // issued and e-mailed, awaiting payment
+	StageOverdue Stage = "overdue"
+	StagePaid    Stage = "paid"
+	StageVoid    Stage = "void"
+)
+
+// Stage summarises status, delivery and due date for display.
+func (inv *Invoice) Stage(today Date) Stage {
+	switch {
+	case inv.Status == InvoiceDraft:
+		return StageDraft
+	case inv.Status == InvoiceVoid:
+		return StageVoid
+	case inv.Status == InvoicePaid:
+		return StagePaid
+	case inv.IsOverdue(today):
+		return StageOverdue
+	case !inv.SentAt.IsZero():
+		return StageEmailed
+	default:
+		return StageIssued
+	}
+}
+
+// Disclaimer is the text printed at the foot of every invoice PDF. It is resolved when the
+// PDF is rendered — the customer's disclaimer, else the business's — so edits apply to
+// every PDF produced afterwards.
+func Disclaimer(c Customer, b BusinessProfile) string {
+	if strings.TrimSpace(c.DefaultNotes) != "" {
+		return strings.TrimSpace(c.DefaultNotes)
+	}
+	return strings.TrimSpace(b.DefaultNotes)
 }
 
 // InvoiceEvent is an audit-trail entry for an invoice.

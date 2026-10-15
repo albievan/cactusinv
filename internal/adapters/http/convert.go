@@ -116,8 +116,8 @@ func toAPIBank(b domain.BankAccount) BankAccount {
 	return BankAccount{
 		Id: b.ID, Currency: string(b.Currency), Label: b.Label, BankName: b.BankName, Branch: b.Branch,
 		BranchCode: b.BranchCode, AccountName: b.AccountName, AccountNumber: b.AccountNumber,
-		AccountType: b.AccountType, SwiftBic: b.SwiftBIC, Iban: b.IBAN, IsDefault: b.IsDefault, Active: b.Active,
-		Version: b.Version,
+		AccountType: b.AccountType, SwiftBic: b.SwiftBIC, Iban: b.IBAN, Country: b.Country, IsDefault: b.IsDefault,
+		Active: b.Active, Version: b.Version,
 	}
 }
 
@@ -125,8 +125,8 @@ func fromAPIBank(id string, b BankAccount) domain.BankAccount {
 	return domain.BankAccount{
 		ID: id, Currency: domain.CurrencyCode(strings.ToUpper(b.Currency)), Label: b.Label, BankName: b.BankName,
 		Branch: b.Branch, BranchCode: b.BranchCode, AccountName: b.AccountName, AccountNumber: b.AccountNumber,
-		AccountType: b.AccountType, SwiftBIC: b.SwiftBic, IBAN: b.Iban, IsDefault: b.IsDefault, Active: b.Active,
-		Version: b.Version,
+		AccountType: b.AccountType, SwiftBIC: b.SwiftBic, IBAN: b.Iban, Country: b.Country, IsDefault: b.IsDefault,
+		Active: b.Active, Version: b.Version,
 	}
 }
 
@@ -237,8 +237,9 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 	}
 	b := inv.Bank
 	return Invoice{
-		Id: inv.ID, Number: inv.Number, Status: InvoiceStatus(inv.Status), CustomerId: inv.CustomerID,
-		Currency: string(c), IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDatePtr(inv.DueDate),
+		Id: inv.ID, Number: inv.Number, Status: InvoiceStatus(inv.Status), Stage: InvoiceStage(inv.Stage(today)),
+		CustomerId: inv.CustomerID,
+		Currency:   string(c), IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDatePtr(inv.DueDate),
 		PaymentTerms: terms, Header: toAPIHeader(inv.Header), BillTo: toAPIParty(inv.BillTo), ShipTo: toAPIParty(inv.ShipTo),
 		Notes: inv.Notes, VatPercent: inv.TaxRate.String(), Lines: lines,
 		Totals: Totals{
@@ -248,9 +249,10 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 		Bank: BankDetails{
 			BankName: b.BankName, Branch: b.Branch, BranchCode: b.BranchCode, AccountName: b.AccountName,
 			AccountNumber: b.AccountNumber, AccountType: b.AccountType, SwiftBic: b.SwiftBIC, Iban: b.IBAN,
+			Country: b.Country,
 		},
 		ScheduleId: inv.ScheduleID, Overdue: inv.IsOverdue(today), IssuedAt: timePtr(inv.IssuedAt),
-		SentAt: timePtr(inv.SentAt), PaidAt: timePtr(inv.PaidAt), VoidedAt: timePtr(inv.VoidedAt),
+		SentAt: timePtr(inv.SentAt), PaidAt: timePtr(inv.PaidAt), OverdueAt: timePtr(inv.OverdueAt), VoidedAt: timePtr(inv.VoidedAt),
 		VoidReason: inv.VoidReason, CreatedAt: inv.CreatedAt.UTC(), UpdatedAt: inv.UpdatedAt.UTC(), Version: inv.Version,
 	}
 }
@@ -264,13 +266,27 @@ func toAPIEmail(m domain.EmailMessage) EmailMessage {
 		cc = []string{}
 	}
 	return EmailMessage{
-		Id: m.ID, InvoiceId: m.InvoiceID, To: to, Cc: cc, Subject: m.Subject, Body: m.Body,
+		Id: m.ID, Kind: EmailMessageKind(emailKindOf(m.Kind)), InvoiceId: m.InvoiceID, CustomerId: m.CustomerID, To: to, Cc: cc, Subject: m.Subject, Body: m.Body,
 		Status: EmailStatus(m.Status), Attempts: m.Attempts, SendAt: m.SendAt.UTC(), NextAttemptAt: m.NextAttemptAt.UTC(),
 		LastError: m.LastError, SentAt: timePtr(m.SentAt), CreatedAt: m.CreatedAt.UTC(),
 	}
 }
 
 // ---- schedules ----
+
+func scheduleKindOf(k domain.ScheduleKind) domain.ScheduleKind {
+	if k == "" {
+		return domain.ScheduleInvoice
+	}
+	return k
+}
+
+func emailKindOf(k domain.EmailKind) domain.EmailKind {
+	if k == "" {
+		return domain.EmailKindInvoice
+	}
+	return k
+}
 
 func toAPIRecurrence(r domain.Recurrence) Recurrence {
 	var end *openapi_types.Date
@@ -314,7 +330,8 @@ func toAPISchedule(s *domain.Schedule, currency domain.CurrencyCode, mu minorUni
 		}
 	}
 	return Schedule{
-		Id: s.ID, CustomerId: s.CustomerID, Name: s.Name, Status: ScheduleStatus(s.Status),
+		Id: s.ID, CustomerId: s.CustomerID, Name: s.Name, Kind: ScheduleKind(scheduleKindOf(s.Kind)),
+		EmailScope: ScheduleEmailScope(s.EmailScope), Status: ScheduleStatus(s.Status),
 		Recurrence: toAPIRecurrence(s.Recurrence), Lines: lines, Header: toAPIHeader(s.Header), Notes: s.Notes,
 		VatPercent: ratePtr(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
 		NextRunAt: timePtr(s.NextRunAt), LastRunAt: timePtr(s.LastRunAt), FailureCount: s.FailureCount,
@@ -332,7 +349,8 @@ func fromAPISchedule(id string, s Schedule, currency domain.CurrencyCode, mu min
 		return domain.Schedule{}, err
 	}
 	out := domain.Schedule{
-		ID: id, CustomerID: s.CustomerId, Name: s.Name, Recurrence: rec, Header: fromAPIHeader(s.Header),
+		ID: id, CustomerID: s.CustomerId, Name: s.Name, Kind: domain.ScheduleKind(s.Kind),
+		EmailScope: domain.EmailScope(s.EmailScope), Recurrence: rec, Header: fromAPIHeader(s.Header),
 		Notes: s.Notes, TaxRate: tax, AutoSend: s.AutoSend, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
 		Version: s.Version,
 	}
@@ -345,7 +363,8 @@ func fromAPISchedule(id string, s Schedule, currency domain.CurrencyCode, mu min
 		if err != nil {
 			return domain.Schedule{}, err
 		}
-		sl := domain.ScheduleLine{ProductID: l.ProductId, Description: l.Description, Quantity: q, Discount: disc}
+		// Descriptions come from the product; the read-only field is ignored on input.
+		sl := domain.ScheduleLine{ProductID: l.ProductId, Quantity: q, Discount: disc}
 		if l.UnitPrice != nil {
 			v, err := mu.parse("lines.unitPrice", *l.UnitPrice, currency)
 			if err != nil {

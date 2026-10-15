@@ -122,7 +122,7 @@ func (s *Service) checkSchedule(ctx context.Context, r ports.Repos, sc *domain.S
 	}
 	for _, l := range sc.Lines {
 		if l.ProductID == "" {
-			continue
+			return &domain.ValidationError{Field: "lines.productId", Reason: "choose a product for every line"}
 		}
 		p, ok := products[l.ProductID]
 		if !ok {
@@ -181,8 +181,9 @@ func (s *Service) scheduleTransition(ctx context.Context, op, id string, apply f
 
 // RunResult counts what one runner pass did.
 type RunResult struct {
-	Issued int
-	Failed int
+	Issued  int
+	Emailed int // e-mails queued by e-mail schedules
+	Failed  int
 }
 
 // RunDueSchedules processes up to limit due schedule occurrences (ADR-004). Each
@@ -219,7 +220,10 @@ func (s *Service) RunDueSchedules(ctx context.Context, limit int) (RunResult, er
 
 func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.Schedule, res *RunResult) error {
 	period := sc.Period()
-	invoiceID := s.ids.NewID()
+	invoiceID := ""
+	if sc.Kind != domain.ScheduleEmail {
+		invoiceID = s.ids.NewID()
+	}
 	err := r.Schedules.InsertRun(ctx, domain.ScheduleRun{ScheduleID: sc.ID, Period: period, InvoiceID: invoiceID, At: s.now()})
 	switch {
 	case errors.Is(err, domain.ErrConflict):
@@ -228,6 +232,9 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 		return r.Schedules.Update(ctx, sc)
 	case err != nil:
 		return err
+	}
+	if sc.Kind == domain.ScheduleEmail {
+		return s.runEmailOccurrence(ctx, r, sc, period, res)
 	}
 	c, err := r.Customers.Get(ctx, sc.CustomerID)
 	if err != nil {
@@ -280,6 +287,45 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	}
 	res.Issued++
 	return nil
+}
+
+// runEmailOccurrence queues an e-mail for each of the customer's invoices selected by the
+// schedule's scope (never-e-mailed, or all outstanding). Must run in a tx.
+func (s *Service) runEmailOccurrence(ctx context.Context, r ports.Repos, sc *domain.Schedule, period domain.Date, res *RunResult) error {
+	if sc.EmailScope == domain.EmailStatement {
+		doc, err := s.statementDoc(ctx, r, sc.CustomerID)
+		if err != nil {
+			return err
+		}
+		if doc.Statement.Total > 0 { // nothing owed: no statement
+			key := "schedule:" + sc.ID + ":" + period.String()
+			if _, err := s.enqueueStatement(ctx, r, sc.CustomerID, SendInput{Subject: sc.EmailSubject, Body: sc.EmailBody, IdempotencyKey: key}); err != nil {
+				return err
+			}
+			res.Emailed++
+		}
+		sc.Advance(s.now())
+		return r.Schedules.Update(ctx, sc)
+	}
+	invs, _, err := r.Invoices.List(ctx, ports.InvoiceFilter{CustomerID: sc.CustomerID, Page: ports.Page{Limit: 200}})
+	if err != nil {
+		return err
+	}
+	for i := range invs {
+		if !sc.EmailScope.Selects(&invs[i]) {
+			continue
+		}
+		key := "schedule:" + sc.ID + ":" + period.String() + ":" + invs[i].ID
+		if _, err := r.Emails.GetByIdempotencyKey(ctx, key); err == nil {
+			continue
+		}
+		if _, err := s.enqueue(ctx, r, &invs[i], SendInput{Subject: sc.EmailSubject, Body: sc.EmailBody, IdempotencyKey: key}); err != nil {
+			return err
+		}
+		res.Emailed++
+	}
+	sc.Advance(s.now())
+	return r.Schedules.Update(ctx, sc)
 }
 
 func (s *Service) recordScheduleFailure(ctx context.Context, id string, cause error) error {

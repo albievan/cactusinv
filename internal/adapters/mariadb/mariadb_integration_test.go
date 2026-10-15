@@ -74,6 +74,7 @@ type env struct {
 	mailer   *fakes.Mailer
 	customer domain.Customer
 	product  domain.Product
+	integ    domain.Product
 }
 
 func must[T any](v T, err error) T {
@@ -92,6 +93,7 @@ func setup(t *testing.T) *env {
 	must(e.svc.CreateCurrency(e.ctx, "USD", "US Dollar", "$", 2, true))
 	must(e.svc.CreateBankAccount(e.ctx, domain.BankAccount{Currency: "ZAR", Label: "Capitec", BankName: "Capitecbank", Branch: "Northgate", AccountType: "Savings", AccountNumber: "1234567890", BranchCode: "470010", Active: true}))
 	e.product = must(e.svc.CreateProduct(e.ctx, domain.Product{SKU: "SS-USERS", Name: "Stock system users", Description: "Stock system usage for 14 concurrent users.", Prices: map[domain.CurrencyCode]int64{"ZAR": 19294, "USD": 1100}, Active: true}))
+	e.integ = must(e.svc.CreateProduct(e.ctx, domain.Product{SKU: "INTEG", Name: "Integration", Description: "Alchamex integration - monthly subscription", Prices: map[domain.CurrencyCode]int64{"ZAR": 55000}, Active: true}))
 	e.customer = must(e.svc.CreateCustomer(e.ctx, domain.Customer{
 		Code: "CD", Name: "Acme Commercial Spares (Pty) Limited", Email: "juanita@acme.example",
 		CC: []string{"a@acme.example", "b@acme.example"}, Attention: "Jane",
@@ -106,7 +108,7 @@ func p64(v int64) *int64 { return &v }
 func (e *env) reference() app.InvoiceInput {
 	return app.InvoiceInput{CustomerID: e.customer.ID, Lines: []app.LineInput{
 		{ProductID: e.product.ID, Quantity: 14000},
-		{Description: "Alchamex integration - monthly subscription", Quantity: 1000, UnitPrice: p64(55000)},
+		{ProductID: e.integ.ID, Quantity: 1000},
 	}}
 }
 
@@ -162,7 +164,10 @@ func TestConstraintsMapToDomainErrors(t *testing.T) {
 	e := setup(t)
 	// Second default bank account for ZAR: the app moves the default, and the schema's
 	// unique generated column backs it up if anything bypasses the app.
-	b2 := must(e.svc.CreateBankAccount(e.ctx, domain.BankAccount{Currency: "ZAR", Label: "FNB", BankName: "FNB", AccountNumber: "1", Active: true, IsDefault: true}))
+	b2 := must(e.svc.CreateBankAccount(e.ctx, domain.BankAccount{Currency: "ZAR", Label: "FNB", BankName: "FNB", AccountNumber: "1", Country: "South Africa", SwiftBIC: "FIRNZAJJ", Active: true, IsDefault: true}))
+	if b2.Country != "South Africa" || b2.SwiftBIC != "FIRNZAJJ" {
+		t.Fatalf("bank round trip: %+v", b2)
+	}
 	accts := must(e.svc.ListBankAccounts(e.ctx, "ZAR"))
 	defaults := 0
 	for _, a := range accts {
@@ -305,7 +310,7 @@ func TestScheduleAndOutboxPersistence(t *testing.T) {
 	d := must(e.svc.CreateSchedule(e.ctx, domain.Schedule{
 		CustomerID: e.customer.ID, Name: "Acme",
 		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 21, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1), EndDate: domain.NewDate(2027, 1, 1)},
-		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 14000}, {Description: "Alchamex ({period})", Quantity: 1000, UnitPrice: p64(55000)}},
+		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 14000}, {ProductID: e.integ.ID, Quantity: 1000, UnitPrice: p64(55000)}},
 		Header:     domain.InvoiceHeader{SalesPerson: "Albie"}, AutoSend: true, EmailSubject: "Inv {{invoice_number}}",
 	}))
 	got := must(e.svc.GetSchedule(e.ctx, d.Schedule.ID))
@@ -324,7 +329,7 @@ func TestScheduleAndOutboxPersistence(t *testing.T) {
 		t.Fatalf("header = %+v", invs[0])
 	}
 	full := must(e.svc.GetInvoice(e.ctx, invs[0].ID))
-	if full.Invoice.Lines[1].Description != "Alchamex (September 2026)" {
+	if full.Invoice.Lines[1].Description != "Alchamex integration - monthly subscription" {
 		t.Fatalf("period text: %q", full.Invoice.Lines[1].Description)
 	}
 	runs := must(e.svc.GetSchedule(e.ctx, s.ID)).Runs

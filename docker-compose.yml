@@ -31,7 +31,11 @@ services:
 
   app:
     image: ${CACTUSINV_IMAGE}
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: ${CACTUSINV_VERSION:-dev}
+        BUILD: ${CACTUSINV_BUILD:-0}
     restart: unless-stopped
     depends_on:
       mariadb: { condition: service_healthy }
@@ -54,7 +58,7 @@ services:
       CACTUSINV_SMTP_TLS: ${CACTUSINV_SMTP_TLS}
       CACTUSINV_SMTP_USER: ${CACTUSINV_SMTP_USER}
       CACTUSINV_SMTP_FROM: ${CACTUSINV_SMTP_FROM}
-    secrets: [db_password, smtp_password]
+    secrets: [db_password, smtp_password, app_key]
     volumes:
       - ${INVOICES_DIR}:/data/invoices
     ports:
@@ -93,3 +97,5 @@ secrets:
     file: ${SECRETS_DIR}/db_root_password
   smtp_password:
     file: ${SECRETS_DIR}/smtp_password
+  app_key:
+    file: ${SECRETS_DIR}/app_key

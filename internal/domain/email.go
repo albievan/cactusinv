@@ -37,10 +37,21 @@ func Backoff(attempts int) time.Duration {
 	return min(time.Minute<<(attempts-1), maxBackoff)
 }
 
-// EmailMessage is an invoice e-mail in the transactional outbox.
+// EmailKind says what an outbox message carries.
+type EmailKind string
+
+// E-mail kinds.
+const (
+	EmailKindInvoice   EmailKind = "invoice"   // one invoice PDF
+	EmailKindStatement EmailKind = "statement" // a customer's statement of account PDF
+)
+
+// EmailMessage is an invoice or statement e-mail in the transactional outbox.
 type EmailMessage struct {
 	ID             string
-	InvoiceID      string
+	Kind           EmailKind
+	InvoiceID      string // invoice e-mails
+	CustomerID     string // statement e-mails
 	To             []string
 	CC             []string
 	Subject        string
@@ -84,7 +95,7 @@ func NewEmailMessage(id, invoiceID string, to, cc []string, subject, body string
 		return nil, invalid("sendAt", "must be within one year")
 	}
 	return &EmailMessage{
-		ID: id, InvoiceID: invoiceID, To: to, CC: cc, Subject: subject, Body: body,
+		ID: id, Kind: EmailKindInvoice, InvoiceID: invoiceID, To: to, CC: cc, Subject: subject, Body: body,
 		Status: EmailPending, SendAt: sendAt, NextAttemptAt: sendAt,
 		CreatedAt: now, UpdatedAt: now, IdempotencyKey: key,
 	}, nil

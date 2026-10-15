@@ -42,6 +42,21 @@ type Repos struct {
 	Users       UserRepository
 	Sessions    SessionRepository
 	Idempotency IdempotencyRepository
+	SMTP        SMTPRepository
+}
+
+// SMTPRepository stores the single SMTP settings row; the password is ciphertext.
+type SMTPRepository interface {
+	// Get returns the settings and encrypted password, or ErrNotFound before first save.
+	Get(ctx context.Context) (domain.SMTPSettings, []byte, error)
+	// Save inserts or updates; Version must match.
+	Save(ctx context.Context, s domain.SMTPSettings, passwordEnc []byte) error
+}
+
+// Cipher encrypts small secrets at rest (AES-256-GCM).
+type Cipher interface {
+	Encrypt(plaintext []byte) ([]byte, error)
+	Decrypt(ciphertext []byte) ([]byte, error)
 }
 
 // Page selects a slice of a list.
@@ -203,9 +218,10 @@ type ScheduleRepository interface {
 
 // EmailFilter narrows the outbox list.
 type EmailFilter struct {
-	Status    domain.EmailStatus
-	InvoiceID string
-	Page      Page
+	Status     domain.EmailStatus
+	InvoiceID  string
+	CustomerID string // statement e-mails of a customer
+	Page       Page
 }
 
 // OutboxStats describe the outbox for metrics.
@@ -291,11 +307,23 @@ type InvoiceDocument struct {
 	Invoice  *domain.Invoice
 	Business domain.BusinessProfile
 	Currency domain.Currency
+	// Disclaimer is resolved each time the PDF is rendered (domain.Disclaimer).
+	Disclaimer string
 }
 
-// InvoiceRenderer renders an invoice as a PDF.
+// StatementDocument is everything printed on a customer statement.
+type StatementDocument struct {
+	Statement  domain.Statement
+	Business   domain.BusinessProfile
+	Currency   domain.Currency
+	Bank       domain.BankDetails // the customer's pay-into account (may be empty)
+	Disclaimer string
+}
+
+// InvoiceRenderer renders invoices and statements as PDF.
 type InvoiceRenderer interface {
 	RenderPDF(ctx context.Context, doc InvoiceDocument) ([]byte, error)
+	RenderStatement(ctx context.Context, doc StatementDocument) ([]byte, error)
 }
 
 // InvoiceArchive stores exported invoice PDFs (the invoices volume).

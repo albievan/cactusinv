@@ -21,6 +21,7 @@ type harness struct {
 	mailer   *fakes.Mailer
 	customer domain.Customer
 	usersP   domain.Product
+	integP   domain.Product
 	bank     domain.BankAccount
 }
 
@@ -71,6 +72,10 @@ func (h *harness) seed() *harness {
 		SKU: "SS-USERS", Name: "Stock system users", Description: "Stock system usage for 14 concurrent users.",
 		Prices: map[domain.CurrencyCode]int64{"ZAR": 19294, "USD": 1100}, Active: true,
 	}))
+	h.integP = must(h.svc.CreateProduct(h.ctx, domain.Product{
+		SKU: "INTEG", Name: "Integration subscription", Description: "Alchamex integration - monthly subscription",
+		Prices: map[domain.CurrencyCode]int64{"ZAR": 55000}, Active: true,
+	}))
 	h.customer = must(h.svc.CreateCustomer(h.ctx, domain.Customer{
 		Code: "CD", Name: "Acme Commercial Spares (Pty) Limited", Email: "juanita@acme.example",
 		CC: []string{"accounts@acme.example"}, Attention: "Jane", BillingAddress: "P O BOX 2000,\nGERMISTON,\n1401",
@@ -87,7 +92,7 @@ func (h *harness) referenceInput() app.InvoiceInput {
 		CustomerID: h.customer.ID,
 		Lines: []app.LineInput{
 			{ProductID: h.usersP.ID, Quantity: 14000},
-			{Description: "Alchamex integration - monthly subscription", Quantity: 1000, UnitPrice: p64(55000)},
+			{ProductID: h.integP.ID, Quantity: 1000},
 		},
 	}
 }
@@ -98,7 +103,7 @@ func TestReferenceInvoiceEndToEnd(t *testing.T) {
 	if inv.Status != domain.InvoiceDraft || inv.Totals.Total != 325116 || inv.Currency != "ZAR" {
 		t.Fatalf("draft = %+v", inv)
 	}
-	if inv.IssueDate != domain.NewDate(2026, 8, 21) || inv.Notes != "Disclaimer: third party software." {
+	if inv.IssueDate != domain.NewDate(2026, 8, 21) || inv.Notes != "" {
 		t.Fatalf("defaults: %v %q", inv.IssueDate, inv.Notes)
 	}
 	if inv.Lines[0].Description != "Stock system usage for 14 concurrent users." || inv.Lines[0].UnitPrice != 19294 {
@@ -257,7 +262,7 @@ func TestMonthlyScheduleRunsAndSends(t *testing.T) {
 		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 21, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
 		Lines: []domain.ScheduleLine{
 			{ProductID: h.usersP.ID, Quantity: 14000},
-			{Description: "Alchamex integration - monthly subscription", Quantity: 1000, UnitPrice: p64(55000)},
+			{ProductID: h.integP.ID, Quantity: 1000},
 		},
 		AutoSend: true,
 	}))
@@ -422,7 +427,7 @@ func TestInvoiceEditing(t *testing.T) {
 	in.TaxRate = &vat
 	in.Header = domain.InvoiceHeader{SalesPerson: "Albie", Job: "J1"}
 	in.IssueDate = domain.NewDate(2026, 8, 25)
-	in.Lines = append(in.Lines, app.LineInput{ProductID: h.usersP.ID, Description: "Custom", Quantity: 1000, UnitPrice: p64(100), Discount: 5000})
+	in.Lines = append(in.Lines, app.LineInput{ProductID: h.usersP.ID, Quantity: 1000, UnitPrice: p64(100), Discount: 5000})
 	upd := must(h.svc.UpdateInvoice(h.ctx, inv.ID, inv.Version, in))
 	if upd.Notes != notes || upd.BillTo.Name != "Someone else" || upd.TaxRate != 1500 || upd.Lines[2].Amount() != 50 || upd.Header.Job != "J1" {
 		t.Fatalf("update = %+v", upd)
@@ -462,7 +467,7 @@ func TestInvoiceEditing(t *testing.T) {
 	bad := []app.InvoiceInput{
 		{CustomerID: "nope", Lines: in.Lines},
 		{CustomerID: h.customer.ID, Lines: []app.LineInput{{ProductID: "nope", Quantity: 1000}}},
-		{CustomerID: h.customer.ID, Lines: []app.LineInput{{Description: "no price", Quantity: 1000}}},
+		{CustomerID: h.customer.ID, Lines: []app.LineInput{{Quantity: 1000}}}, // free text is not allowed
 		{CustomerID: h.customer.ID},
 	}
 	for i, b := range bad {
@@ -655,13 +660,13 @@ func TestCustomersAndProducts(t *testing.T) {
 	if _, err := h.svc.UpdateProduct(h.ctx, p); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatal("unknown currency price")
 	}
-	if _, err := h.svc.CreateProduct(h.ctx, domain.Product{SKU: "SS-USERS", Name: "dup", Active: true}); !errors.Is(err, domain.ErrConflict) {
+	if _, err := h.svc.CreateProduct(h.ctx, domain.Product{SKU: "SS-USERS", Name: "dup", Active: true, Prices: map[domain.CurrencyCode]int64{"ZAR": 1}}); !errors.Is(err, domain.ErrConflict) {
 		t.Fatal("dup sku")
 	}
 	if _, err := h.svc.CreateProduct(h.ctx, domain.Product{Name: "no sku"}); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("validation")
 	}
-	if _, err := h.svc.UpdateProduct(h.ctx, domain.Product{ID: "x", SKU: "x", Name: "x"}); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := h.svc.UpdateProduct(h.ctx, domain.Product{ID: "x", SKU: "x", Name: "x", Prices: map[domain.CurrencyCode]int64{"ZAR": 1}}); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatal("missing")
 	}
 	if err := h.svc.DeleteProduct(h.ctx, h.usersP.ID); err != nil {
@@ -821,5 +826,156 @@ func TestEnsureDefaultAdmin(t *testing.T) {
 	}
 	if _, _, err := h.svc.Login(h.ctx, "admin", "admin"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// docRenderer records the documents it renders.
+type docRenderer struct{ docs []ports.InvoiceDocument }
+
+func (r *docRenderer) RenderStatement(context.Context, ports.StatementDocument) ([]byte, error) {
+	return []byte("%PDF"), nil
+}
+
+func (r *docRenderer) RenderPDF(_ context.Context, d ports.InvoiceDocument) ([]byte, error) {
+	r.docs = append(r.docs, d)
+	return []byte("%PDF"), nil
+}
+
+func TestDisclaimerPulledOnEveryPDFAndOverdue(t *testing.T) {
+	h := newHarness(t).seed()
+	rr := &docRenderer{}
+	svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: rr, Hasher: fakes.Hasher{}})
+	inv := must(svc.CreateInvoice(h.ctx, h.referenceInput()))
+	inv = must(svc.IssueInvoice(h.ctx, inv.ID, domain.Date{}))
+	must2(svc.InvoicePDF(h.ctx, inv.ID))
+	if rr.docs[0].Disclaimer != "Disclaimer: third party software." {
+		t.Fatalf("customer disclaimer: %q", rr.docs[0].Disclaimer)
+	}
+	c := must(svc.GetCustomer(h.ctx, h.customer.ID))
+	c.DefaultNotes = ""
+	must(svc.UpdateCustomer(h.ctx, c))
+	b := must(svc.GetBusiness(h.ctx)).Profile
+	b.DefaultNotes = "New business disclaimer"
+	must(svc.UpdateBusiness(h.ctx, b, 0))
+	must2(svc.InvoicePDF(h.ctx, inv.ID))
+	if rr.docs[1].Disclaimer != "New business disclaimer" {
+		t.Fatalf("disclaimer must be re-read for an already issued invoice: %q", rr.docs[1].Disclaimer)
+	}
+
+	over := must(svc.MarkInvoiceOverdue(h.ctx, inv.ID))
+	if over.Status != domain.InvoiceOverdue {
+		t.Fatal("overdue")
+	}
+	if _, err := svc.MarkInvoiceOverdue(h.ctx, inv.ID); !errors.Is(err, domain.ErrInvalidTransition) {
+		t.Fatal("already overdue")
+	}
+	d := must(svc.GetDashboard(h.ctx))
+	if d.Totals[0].OverdueCount != 1 {
+		t.Fatalf("dashboard counts manual overdue: %+v", d.Totals)
+	}
+	if paid := must(svc.MarkInvoicePaid(h.ctx, inv.ID)); paid.Status != domain.InvoicePaid {
+		t.Fatal("overdue → paid")
+	}
+
+	_, err := svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "x",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, StartDate: domain.NewDate(2026, 9, 1)},
+		Lines:      []domain.ScheduleLine{{Description: "free text", Quantity: 1000, UnitPrice: p64(100)}},
+	})
+	if !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("schedules need products too: %v", err)
+	}
+}
+
+func TestCustomerEmailSchedules(t *testing.T) {
+	h := newHarness(t).seed()
+	issued := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	emailed := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	must(h.svc.SendInvoice(h.ctx, emailed.ID, app.SendInput{}))
+	must(h.svc.DispatchEmails(h.ctx, 10))
+	paid := must(h.svc.IssueInvoice(h.ctx, must(h.svc.CreateInvoice(h.ctx, h.referenceInput())).ID, domain.Date{}))
+	must(h.svc.MarkInvoicePaid(h.ctx, paid.ID))
+	must(h.svc.CreateInvoice(h.ctx, h.referenceInput())) // draft: never e-mailed by a schedule
+	sent := h.mailer.Count()
+
+	mk := func(scope domain.EmailScope) string {
+		d := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+			CustomerID: h.customer.ID, Name: "chase " + string(scope), Kind: domain.ScheduleEmail, EmailScope: scope,
+			Recurrence: domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Monday, StartDate: domain.NewDate(2026, 8, 1)},
+		}))
+		must(h.svc.RunScheduleNow(h.ctx, d.Schedule.ID))
+		return d.Schedule.ID
+	}
+	unsentID := mk(domain.EmailUnsent)
+	res := must(h.svc.RunDueSchedules(h.ctx, 10))
+	if res.Emailed != 1 || res.Issued != 0 {
+		t.Fatalf("unsent run = %+v", res)
+	}
+	must(h.svc.DispatchEmails(h.ctx, 10))
+	if h.mailer.Count() != sent+1 || h.mailer.Sent[len(h.mailer.Sent)-1].Attachments[0].Filename != app.PDFFilename(issued) {
+		t.Fatal("the never-e-mailed invoice was sent")
+	}
+	mk(domain.EmailOutstanding)
+	res = must(h.svc.RunDueSchedules(h.ctx, 10))
+	if res.Emailed != 2 {
+		t.Fatalf("outstanding run = %+v (issued + emailed, not paid/draft)", res)
+	}
+	must(h.svc.DispatchEmails(h.ctx, 10))
+	// The unsent schedule's next run finds nothing left to send.
+	must(h.svc.RunScheduleNow(h.ctx, unsentID))
+	if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Emailed != 0 {
+		t.Fatalf("nothing unsent remains: %+v", res)
+	}
+	if invs, _ := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{})); len(invs) != 4 {
+		t.Fatal("e-mail schedules never create invoices")
+	}
+}
+
+func TestSMTPSettings(t *testing.T) {
+	h := newHarness(t).seed()
+	v := must(h.svc.GetSMTPSettings(h.ctx))
+	if v.Settings.Host != "smtp.gmail.com" || v.Settings.Port != 587 || v.Settings.Enabled || v.PasswordSet {
+		t.Fatalf("Gmail preset by default: %+v", v)
+	}
+	st := v.Settings
+	st.Enabled, st.Username = true, "me@gmail.com"
+	if _, err := h.svc.UpdateSMTPSettings(h.ctx, st, nil); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("password required with a username")
+	}
+	pw := "abcd efgh ijkl mnop"
+	if _, err := h.svc.UpdateSMTPSettings(h.ctx, st, &pw); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("no cipher → cannot store a password")
+	}
+	svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}, Cipher: fakes.Cipher{}})
+	v = must(svc.UpdateSMTPSettings(h.ctx, st, &pw))
+	if !v.PasswordSet || v.Settings.From != "me@gmail.com" {
+		t.Fatalf("saved: %+v", v)
+	}
+	got, pass, ok, err := svc.SMTPServer(h.ctx)
+	if err != nil || !ok || pass != pw || got.Host != "smtp.gmail.com" {
+		t.Fatalf("SMTPServer = %+v %q %v %v", got, pass, ok, err)
+	}
+	v.Settings.Port = 465
+	v.Settings.TLS = "tls"
+	v = must(svc.UpdateSMTPSettings(h.ctx, v.Settings, nil))
+	if !v.PasswordSet || v.Settings.Port != 465 {
+		t.Fatal("nil password keeps the stored one")
+	}
+	if _, _, ok, _ := h.svc.SMTPServer(h.ctx); ok {
+		t.Fatal("without the cipher the stored password cannot be used")
+	}
+	v.Settings.Enabled = false
+	must(svc.UpdateSMTPSettings(h.ctx, v.Settings, nil))
+	if _, _, ok, _ := svc.SMTPServer(h.ctx); ok {
+		t.Fatal("disabled → fallback")
+	}
+	if err := svc.SendTestEmail(h.ctx, "me@gmail.com"); err != nil || h.mailer.Count() != 1 {
+		t.Fatal("test e-mail")
+	}
+	if err := svc.SendTestEmail(h.ctx, "nope"); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("bad recipient")
+	}
+	if _, err := svc.UpdateSMTPSettings(h.ctx, domain.SMTPSettings{Enabled: true, Port: 587}, nil); !errors.Is(err, domain.ErrValidation) {
+		t.Fatal("host required")
 	}
 }

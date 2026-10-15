@@ -2,6 +2,7 @@ package mariadb
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
@@ -13,7 +14,7 @@ type emailRepo struct{ q *sqlcgen.Queries }
 
 func toEmail(r sqlcgen.EmailOutbox) *domain.EmailMessage {
 	return &domain.EmailMessage{
-		ID: r.ID, InvoiceID: r.InvoiceID, To: splitList(r.ToAddrs), CC: splitList(r.CcAddrs), Subject: r.Subject,
+		ID: r.ID, Kind: domain.EmailKind(r.Kind), InvoiceID: r.InvoiceID.String, CustomerID: r.CustomerID.String, To: splitList(r.ToAddrs), CC: splitList(r.CcAddrs), Subject: r.Subject,
 		Body: r.Body, Status: domain.EmailStatus(r.Status), Attempts: int(r.Attempts), SendAt: r.SendAt.UTC(),
 		NextAttemptAt: r.NextAttemptAt.UTC(), LastError: r.LastError, SentAt: fromNullTime(r.SentAt),
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), IdempotencyKey: r.IdempotencyKey.String,
@@ -22,7 +23,7 @@ func toEmail(r sqlcgen.EmailOutbox) *domain.EmailMessage {
 
 func (r emailRepo) Create(ctx context.Context, m *domain.EmailMessage) error {
 	return mapErr(r.q.InsertEmail(ctx, sqlcgen.InsertEmailParams{
-		ID: m.ID, InvoiceID: m.InvoiceID, ToAddrs: joinList(m.To), CcAddrs: joinList(m.CC), Subject: m.Subject,
+		ID: m.ID, Kind: string(emailKind(m.Kind)), InvoiceID: nullString(m.InvoiceID), CustomerID: nullString(m.CustomerID), ToAddrs: joinList(m.To), CcAddrs: joinList(m.CC), Subject: m.Subject,
 		Body: m.Body, Status: string(m.Status), Attempts: i32(m.Attempts), SendAt: m.SendAt.UTC(),
 		NextAttemptAt: m.NextAttemptAt.UTC(), LastError: m.LastError, SentAt: nullTime(m.SentAt),
 		IdempotencyKey: nullString(m.IdempotencyKey), CreatedAt: m.CreatedAt.UTC(), UpdatedAt: m.UpdatedAt.UTC(),
@@ -57,12 +58,13 @@ func (r emailRepo) Update(ctx context.Context, m *domain.EmailMessage) error {
 func (r emailRepo) List(ctx context.Context, f ports.EmailFilter) ([]domain.EmailMessage, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListEmails(ctx, sqlcgen.ListEmailsParams{
-		Status: string(f.Status), InvoiceID: f.InvoiceID, Limit: i32(p.Limit), Offset: i32(p.Offset),
+		Status: string(f.Status), InvoiceID: filter(f.InvoiceID), CustomerID: filter(f.CustomerID),
+		Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
-	total, err := r.q.CountEmails(ctx, sqlcgen.CountEmailsParams{Status: string(f.Status), InvoiceID: f.InvoiceID})
+	total, err := r.q.CountEmails(ctx, sqlcgen.CountEmailsParams{Status: string(f.Status), InvoiceID: filter(f.InvoiceID), CustomerID: filter(f.CustomerID)})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
@@ -97,6 +99,17 @@ func (r emailRepo) Stats(ctx context.Context) (ports.OutboxStats, error) {
 		st.OldestPending = t.UTC()
 	}
 	return st, nil
+}
+
+// filter passes an optional filter value; "" means "any" (it must not be NULL, which would
+// make the query's `? = ”` test unknown).
+func filter(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+
+func emailKind(k domain.EmailKind) domain.EmailKind {
+	if k == "" {
+		return domain.EmailKindInvoice
+	}
+	return k
 }
 
 type userRepo struct{ q *sqlcgen.Queries }

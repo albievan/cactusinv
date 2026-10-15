@@ -43,12 +43,12 @@ SELECT * FROM bank_accounts WHERE id = ?;
 
 -- name: InsertBankAccount :exec
 INSERT INTO bank_accounts (id, currency_code, label, bank_name, branch, branch_code, account_name, account_number,
-    account_type, swift_bic, iban, is_default, active, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
+    account_type, swift_bic, iban, country, is_default, active, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
 
 -- name: UpdateBankAccount :execrows
 UPDATE bank_accounts SET label = ?, bank_name = ?, branch = ?, branch_code = ?, account_name = ?, account_number = ?,
-    account_type = ?, swift_bic = ?, iban = ?, is_default = ?, active = ?, version = version + 1
+    account_type = ?, swift_bic = ?, iban = ?, country = ?, is_default = ?, active = ?, version = version + 1
 WHERE id = ? AND version = ?;
 
 -- name: DeleteBankAccount :execrows

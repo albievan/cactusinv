@@ -151,9 +151,6 @@ func (s *Service) draftContent(ctx context.Context, r ports.Repos, c domain.Cust
 		issue = s.today(b)
 	}
 	content := domain.DefaultDraftContent(c, issue)
-	if content.Notes == "" {
-		content.Notes = b.DefaultNotes
-	}
 	content.Header = in.Header
 	content.TaxRate = b.VATRate
 	if in.TaxRate != nil {
@@ -181,28 +178,26 @@ func (s *Service) draftContent(ctx context.Context, r ports.Repos, c domain.Cust
 	if err != nil {
 		return domain.DraftContent{}, err
 	}
+	// Every line comes from the product look-up: no free-text lines. The description is
+	// the product's; the unit price is the product's price in the invoice currency unless
+	// explicitly overridden.
 	for _, l := range in.Lines {
-		line := domain.Line{ProductID: l.ProductID, Description: l.Description, Quantity: l.Quantity, Discount: l.Discount}
+		if l.ProductID == "" {
+			return domain.DraftContent{}, &domain.ValidationError{Field: "lines.productId", Reason: "choose a product for every line"}
+		}
+		p, ok := products[l.ProductID]
+		if !ok {
+			return domain.DraftContent{}, &domain.ValidationError{Field: "lines.productId", Reason: "unknown product"}
+		}
+		line := domain.Line{ProductID: p.ID, Description: p.LineDescription(), Quantity: l.Quantity, Discount: l.Discount}
 		if l.UnitPrice != nil {
 			line.UnitPrice = *l.UnitPrice
-		}
-		if l.ProductID != "" {
-			p, ok := products[l.ProductID]
-			if !ok {
-				return domain.DraftContent{}, &domain.ValidationError{Field: "lines.productId", Reason: "unknown product"}
+		} else {
+			price, err := p.PriceIn(c.Currency)
+			if err != nil {
+				return domain.DraftContent{}, err
 			}
-			if strings.TrimSpace(line.Description) == "" {
-				line.Description = p.LineDescription()
-			}
-			if l.UnitPrice == nil {
-				price, err := p.PriceIn(c.Currency)
-				if err != nil {
-					return domain.DraftContent{}, err
-				}
-				line.UnitPrice = price.Amount
-			}
-		} else if l.UnitPrice == nil {
-			return domain.DraftContent{}, &domain.ValidationError{Field: "lines.unitPrice", Reason: "is required without a product"}
+			line.UnitPrice = price.Amount
 		}
 		content.Lines = append(content.Lines, line)
 	}
@@ -294,6 +289,13 @@ func (s *Service) VoidInvoice(ctx context.Context, id, reason string) (*domain.I
 	})
 }
 
+// MarkInvoiceOverdue flags an open invoice as overdue.
+func (s *Service) MarkInvoiceOverdue(ctx context.Context, id string) (*domain.Invoice, error) {
+	return s.transition(ctx, "app.MarkInvoiceOverdue", id, "overdue", "", func(inv *domain.Invoice) error {
+		return inv.MarkOverdue(s.now())
+	}, nil)
+}
+
 // MarkInvoicePaid records payment.
 func (s *Service) MarkInvoicePaid(ctx context.Context, id string) (*domain.Invoice, error) {
 	return s.transition(ctx, "app.MarkInvoicePaid", id, "paid", "", func(inv *domain.Invoice) error {
@@ -369,7 +371,11 @@ func (s *Service) document(ctx context.Context, r ports.Repos, id string) (ports
 	if err != nil {
 		return ports.InvoiceDocument{}, err
 	}
-	return ports.InvoiceDocument{Invoice: inv, Business: b, Currency: cur}, nil
+	c, err := r.Customers.Get(ctx, inv.CustomerID)
+	if err != nil {
+		return ports.InvoiceDocument{}, err
+	}
+	return ports.InvoiceDocument{Invoice: inv, Business: b, Currency: cur, Disclaimer: domain.Disclaimer(c, b)}, nil
 }
 
 // PDFFilename is "Inv_no_CD_1195_26.pdf" for "CD/1195/26", like the example file.

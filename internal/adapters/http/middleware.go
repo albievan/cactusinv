@@ -133,7 +133,7 @@ func withAPIGuards(svc *app.Service, next http.Handler) http.Handler {
 			writeProblem(w, Problem{Type: problemType("csrf"), Title: "Missing " + csrfHeader + " header", Status: http.StatusForbidden})
 			return
 		}
-		if r.URL.Path == "/api/v1/auth/login" {
+		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/version" {
 			next.ServeHTTP(w, r)
 			return
 		}

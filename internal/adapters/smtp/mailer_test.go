@@ -212,3 +212,31 @@ func TestSendErrors(t *testing.T) {
 		t.Fatal("hello fallback")
 	}
 }
+
+func TestDynamic(t *testing.T) {
+	s := startFake(t)
+	fallback := &recordingMailer{}
+	d := Dynamic{Fallback: fallback, Resolve: func(context.Context) (Config, bool, error) { return Config{}, false, nil }}
+	if err := d.Send(context.Background(), mailFixture()); err != nil || fallback.n != 1 {
+		t.Fatal("fallback used when nothing is configured")
+	}
+	d.Resolve = func(context.Context) (Config, bool, error) {
+		return Config{Host: "127.0.0.1", Port: s.port(), From: "a@b.example", TLS: TLSNone}, true, nil
+	}
+	if err := d.Send(context.Background(), mailFixture()); err != nil || fallback.n != 1 {
+		t.Fatalf("configured server used: %v", err)
+	}
+	d.Resolve = func(context.Context) (Config, bool, error) { return Config{From: "bad"}, true, nil }
+	if err := d.Send(context.Background(), mailFixture()); err == nil {
+		t.Fatal("invalid config")
+	}
+	d.Resolve = func(context.Context) (Config, bool, error) { return Config{}, false, nil }
+	d.Fallback = nil
+	if err := d.Send(context.Background(), mailFixture()); err == nil {
+		t.Fatal("no server at all")
+	}
+}
+
+type recordingMailer struct{ n int }
+
+func (r *recordingMailer) Send(context.Context, ports.Mail) error { r.n++; return nil }

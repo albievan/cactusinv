@@ -14,7 +14,8 @@ type scheduleRepo struct{ q *sqlcgen.Queries }
 
 func toSchedule(r sqlcgen.Schedule) *domain.Schedule {
 	return &domain.Schedule{
-		ID: r.ID, CustomerID: r.CustomerID, Name: r.Name, Status: domain.ScheduleStatus(r.Status),
+		ID: r.ID, CustomerID: r.CustomerID, Name: r.Name, Kind: domain.ScheduleKind(r.Kind),
+		EmailScope: domain.EmailScope(r.EmailScope), Status: domain.ScheduleStatus(r.Status),
 		Recurrence: domain.Recurrence{
 			Frequency: domain.Frequency(r.Frequency), Interval: int(r.IntervalCount), DayOfMonth: int(r.DayOfMonth),
 			Weekday: time.Weekday(r.Weekday), SendHour: int(r.SendHour), SendMinute: int(r.SendMinute),
@@ -102,7 +103,7 @@ func (r scheduleRepo) Get(ctx context.Context, id string) (*domain.Schedule, err
 func (r scheduleRepo) Create(ctx context.Context, s *domain.Schedule) error {
 	rc := s.Recurrence
 	err := r.q.InsertSchedule(ctx, sqlcgen.InsertScheduleParams{
-		ID: s.ID, CustomerID: s.CustomerID, Name: s.Name, Status: string(s.Status), Frequency: string(rc.Frequency),
+		ID: s.ID, CustomerID: s.CustomerID, Name: s.Name, Kind: string(s.Kind), EmailScope: string(s.EmailScope), Status: string(s.Status), Frequency: string(rc.Frequency),
 		IntervalCount: i32(rc.Interval), DayOfMonth: i32(rc.DayOfMonth), Weekday: i32(int(rc.Weekday)),
 		SendHour: i32(rc.SendHour), SendMinute: i32(rc.SendMinute), TimeZone: rc.TimeZone,
 		StartDate: dateValue(rc.StartDate), EndDate: nullDate(rc.EndDate), SalesPerson: s.Header.SalesPerson,
@@ -122,7 +123,7 @@ func (r scheduleRepo) Create(ctx context.Context, s *domain.Schedule) error {
 func (r scheduleRepo) Update(ctx context.Context, s *domain.Schedule) error {
 	rc := s.Recurrence
 	n, err := r.q.UpdateSchedule(ctx, sqlcgen.UpdateScheduleParams{
-		CustomerID: s.CustomerID, Name: s.Name, Status: string(s.Status), Frequency: string(rc.Frequency),
+		CustomerID: s.CustomerID, Name: s.Name, Kind: string(s.Kind), EmailScope: string(s.EmailScope), Status: string(s.Status), Frequency: string(rc.Frequency),
 		IntervalCount: i32(rc.Interval), DayOfMonth: i32(rc.DayOfMonth), Weekday: i32(int(rc.Weekday)),
 		SendHour: i32(rc.SendHour), SendMinute: i32(rc.SendMinute), TimeZone: rc.TimeZone,
 		StartDate: dateValue(rc.StartDate), EndDate: nullDate(rc.EndDate), SalesPerson: s.Header.SalesPerson,

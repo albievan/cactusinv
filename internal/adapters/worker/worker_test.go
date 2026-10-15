@@ -26,11 +26,14 @@ func TestRunnerPasses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	price := int64(100)
+	p, err := svc.CreateProduct(ctx, domain.Product{SKU: "S", Name: "Service", Prices: map[domain.CurrencyCode]int64{"ZAR": 100}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	d, err := svc.CreateSchedule(ctx, domain.Schedule{
 		CustomerID: c.ID, Name: "m", AutoSend: true,
 		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, StartDate: domain.DateOf(clock.Now())},
-		Lines:      []domain.ScheduleLine{{Description: "x", Quantity: 1000, UnitPrice: &price}},
+		Lines:      []domain.ScheduleLine{{ProductID: p.ID, Quantity: 1000}},
 	})
 	if err != nil {
 		t.Fatal(err)

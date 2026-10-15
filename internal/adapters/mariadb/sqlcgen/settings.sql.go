@@ -38,7 +38,7 @@ func (q *Queries) DeleteBankAccount(ctx context.Context, id string) (int64, erro
 }
 
 const getBankAccount = `-- name: GetBankAccount :one
-SELECT id, currency_code, label, bank_name, branch, branch_code, account_name, account_number, account_type, swift_bic, iban, is_default, active, version, default_marker FROM bank_accounts WHERE id = ?
+SELECT id, currency_code, label, bank_name, branch, branch_code, account_name, account_number, account_type, swift_bic, iban, is_default, active, version, default_marker, country FROM bank_accounts WHERE id = ?
 `
 
 func (q *Queries) GetBankAccount(ctx context.Context, id string) (BankAccount, error) {
@@ -60,6 +60,7 @@ func (q *Queries) GetBankAccount(ctx context.Context, id string) (BankAccount, e
 		&i.Active,
 		&i.Version,
 		&i.DefaultMarker,
+		&i.Country,
 	)
 	return i, err
 }
@@ -109,8 +110,8 @@ func (q *Queries) GetCurrency(ctx context.Context, code string) (Currency, error
 
 const insertBankAccount = `-- name: InsertBankAccount :exec
 INSERT INTO bank_accounts (id, currency_code, label, bank_name, branch, branch_code, account_name, account_number,
-    account_type, swift_bic, iban, is_default, active, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    account_type, swift_bic, iban, country, is_default, active, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 `
 
 type InsertBankAccountParams struct {
@@ -125,6 +126,7 @@ type InsertBankAccountParams struct {
 	AccountType   string
 	SwiftBic      string
 	Iban          string
+	Country       string
 	IsDefault     bool
 	Active        bool
 }
@@ -142,6 +144,7 @@ func (q *Queries) InsertBankAccount(ctx context.Context, arg InsertBankAccountPa
 		arg.AccountType,
 		arg.SwiftBic,
 		arg.Iban,
+		arg.Country,
 		arg.IsDefault,
 		arg.Active,
 	)
@@ -211,7 +214,7 @@ func (q *Queries) InsertCurrency(ctx context.Context, arg InsertCurrencyParams) 
 }
 
 const listBankAccounts = `-- name: ListBankAccounts :many
-SELECT id, currency_code, label, bank_name, branch, branch_code, account_name, account_number, account_type, swift_bic, iban, is_default, active, version, default_marker FROM bank_accounts
+SELECT id, currency_code, label, bank_name, branch, branch_code, account_name, account_number, account_type, swift_bic, iban, is_default, active, version, default_marker, country FROM bank_accounts
 WHERE (? = '' OR currency_code = ?)
 ORDER BY currency_code, label, id
 `
@@ -245,6 +248,7 @@ func (q *Queries) ListBankAccounts(ctx context.Context, arg ListBankAccountsPara
 			&i.Active,
 			&i.Version,
 			&i.DefaultMarker,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}
@@ -325,7 +329,7 @@ func (q *Queries) SetSequence(ctx context.Context, nextValue int64) error {
 
 const updateBankAccount = `-- name: UpdateBankAccount :execrows
 UPDATE bank_accounts SET label = ?, bank_name = ?, branch = ?, branch_code = ?, account_name = ?, account_number = ?,
-    account_type = ?, swift_bic = ?, iban = ?, is_default = ?, active = ?, version = version + 1
+    account_type = ?, swift_bic = ?, iban = ?, country = ?, is_default = ?, active = ?, version = version + 1
 WHERE id = ? AND version = ?
 `
 
@@ -339,6 +343,7 @@ type UpdateBankAccountParams struct {
 	AccountType   string
 	SwiftBic      string
 	Iban          string
+	Country       string
 	IsDefault     bool
 	Active        bool
 	ID            string
@@ -356,6 +361,7 @@ func (q *Queries) UpdateBankAccount(ctx context.Context, arg UpdateBankAccountPa
 		arg.AccountType,
 		arg.SwiftBic,
 		arg.Iban,
+		arg.Country,
 		arg.IsDefault,
 		arg.Active,
 		arg.ID,

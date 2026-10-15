@@ -39,6 +39,9 @@ func (s *Service) emailTransition(ctx context.Context, op, id, event string, app
 			return err
 		}
 		out = m
+		if m.InvoiceID == "" {
+			return nil
+		}
 		return s.event(ctx, r, m.InvoiceID, event, "")
 	})
 	return out, wrap(op, err)
@@ -96,6 +99,9 @@ func (s *Service) claimEmail(ctx context.Context) (*domain.EmailMessage, error) 
 }
 
 func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
+	if m.Kind == domain.EmailKindStatement {
+		return s.deliverStatement(ctx, m)
+	}
 	r := s.tx.Repos()
 	doc, err := s.document(ctx, r, m.InvoiceID)
 	if err != nil {
@@ -153,7 +159,7 @@ func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error
 		if err := r.Emails.Update(ctx, m); err != nil {
 			return err
 		}
-		if m.Status == domain.EmailFailed {
+		if m.Status == domain.EmailFailed && m.InvoiceID != "" {
 			return s.event(ctx, r, m.InvoiceID, "email_failed", m.LastError)
 		}
 		return nil

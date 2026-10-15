@@ -17,7 +17,8 @@ RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
-RUN go build -ldflags "-s -w -X main.version=${VERSION}" -o /out/cactusinv ./cmd/cactusinv \
+ARG BUILD=0
+RUN go build -ldflags "-s -w -X main.version=${VERSION} -X main.build=${BUILD}" -o /out/cactusinv ./cmd/cactusinv \
  && mkdir -p /out/data/invoices
 
 FROM gcr.io/distroless/static-debian13:nonroot

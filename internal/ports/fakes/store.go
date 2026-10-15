@@ -69,6 +69,8 @@ type state struct {
 	sessions    map[string]domain.Session
 	idempotency map[string]ports.IdempotencyRecord
 	exported    map[string]int
+	smtp        *domain.SMTPSettings
+	smtpPass    []byte
 }
 
 func newState() *state {
@@ -135,7 +137,7 @@ func (s *Store) Repos() ports.Repos {
 	return ports.Repos{
 		Business: business{s}, Currencies: currencies{s}, Banks: banks{s}, Customers: customers{s},
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
-		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s},
+		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s},
 	}
 }
 
@@ -670,7 +672,7 @@ func (r invoices) Totals(_ context.Context, today domain.Date) ([]ports.Currency
 	err := r.s.do(func(st *state) error {
 		by := map[domain.CurrencyCode]*ports.CurrencyTotals{}
 		for _, inv := range st.invoices {
-			if inv.Status != domain.InvoiceIssued && inv.Status != domain.InvoiceSent {
+			if !inv.IsOpen() {
 				continue
 			}
 			t := by[inv.Currency]
@@ -943,7 +945,8 @@ func (r emails) List(_ context.Context, f ports.EmailFilter) ([]domain.EmailMess
 	err := r.s.do(func(st *state) error {
 		var all []domain.EmailMessage
 		for _, m := range st.emails {
-			if (f.Status == "" || m.Status == f.Status) && (f.InvoiceID == "" || m.InvoiceID == f.InvoiceID) {
+			if (f.Status == "" || m.Status == f.Status) && (f.InvoiceID == "" || m.InvoiceID == f.InvoiceID) &&
+				(f.CustomerID == "" || m.CustomerID == f.CustomerID) {
 				all = append(all, *cloneEmail(m))
 			}
 		}
@@ -1146,6 +1149,38 @@ func (r idempotency) DeleteBefore(_ context.Context, t time.Time) error {
 				delete(st.idempotency, k)
 			}
 		}
+		return nil
+	})
+}
+
+// ---- SMTP settings ----
+
+type smtpStore struct{ s *Store }
+
+func (r smtpStore) Get(_ context.Context) (domain.SMTPSettings, []byte, error) {
+	var out domain.SMTPSettings
+	var pw []byte
+	err := r.s.do(func(st *state) error {
+		if st.smtp == nil {
+			return domain.ErrNotFound
+		}
+		out, pw = *st.smtp, slices.Clone(st.smtpPass)
+		return nil
+	})
+	return out, pw, err
+}
+
+func (r smtpStore) Save(_ context.Context, s domain.SMTPSettings, passwordEnc []byte) error {
+	return r.s.do(func(st *state) error {
+		cur := 0
+		if st.smtp != nil {
+			cur = st.smtp.Version
+		}
+		if cur != s.Version {
+			return domain.ErrConflict
+		}
+		s.Version++
+		st.smtp, st.smtpPass = &s, slices.Clone(passwordEnc)
 		return nil
 	})
 }

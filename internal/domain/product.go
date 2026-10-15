@@ -36,6 +36,9 @@ func (p *Product) Validate() error {
 	if len(p.Unit) > 32 {
 		return invalid("unit", "max 32 characters")
 	}
+	if len(p.Prices) == 0 {
+		return invalid("prices", "add the unit cost in at least one currency")
+	}
 	for c, amt := range p.Prices {
 		if _, err := ParseCurrencyCode(string(c)); err != nil {
 			return err

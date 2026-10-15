@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/logout": {
         parameters: {
             query?: never;
@@ -78,6 +94,38 @@ export interface paths {
         get: operations["getBusiness"];
         put: operations["updateBusiness"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getEmailSettings"];
+        put: operations["updateEmailSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/email/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendTestEmail"];
         delete?: never;
         options?: never;
         head?: never;
@@ -188,6 +236,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customers/{id}/statement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getStatement"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/statement/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getStatementPdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/statement/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sendStatement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/products": {
         parameters: {
             query?: never;
@@ -289,6 +391,24 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["voidInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/mark-overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["markInvoiceOverdue"];
         delete?: never;
         options?: never;
         head?: never;
@@ -548,6 +668,58 @@ export interface components {
             currentPassword: string;
             newPassword: string;
         };
+        Version: {
+            /** @example 1.2.0 */
+            version: string;
+            /** @example 42 */
+            build: string;
+        };
+        EmailSettings: {
+            /** @description Use this server; otherwise the deployment's default server. */
+            enabled: boolean;
+            /** @example smtp.gmail.com */
+            host: string;
+            /** @example 587 */
+            port: number;
+            username: string;
+            /** @description Omit to keep the stored password; "" clears it. Gmail needs an app password. */
+            password?: string;
+            readonly passwordSet: boolean;
+            /** @description Sender */
+            from: string;
+            /** @enum {string} */
+            tls: "starttls" | "tls" | "none";
+            version: number;
+        };
+        TestEmailRequest: {
+            to: string;
+        };
+        StatementLine: {
+            invoiceId: string;
+            number: string;
+            /** Format: date */
+            issueDate: string;
+            /** Format: date */
+            dueDate?: string;
+            amount: components["schemas"]["Decimal"];
+            daysOverdue: number;
+            status: components["schemas"]["InvoiceStatus"];
+        };
+        Statement: {
+            customerId: string;
+            currency: string;
+            /** Format: date */
+            asOf: string;
+            lines: components["schemas"]["StatementLine"][];
+            aging: {
+                current: components["schemas"]["Decimal"];
+                days1to30: components["schemas"]["Decimal"];
+                days31to60: components["schemas"]["Decimal"];
+                days61to90: components["schemas"]["Decimal"];
+                over90: components["schemas"]["Decimal"];
+            };
+            total: components["schemas"]["Decimal"];
+        };
         Me: {
             id: string;
             email: string;
@@ -589,14 +761,18 @@ export interface components {
             readonly id?: string;
             currency: string;
             label: string;
+            /** @description Name of the bank. */
             bankName: string;
+            /** @description Branch name. */
             branch: string;
+            /** @description Sort code / branch code. */
             branchCode: string;
             accountName: string;
             accountNumber: string;
             accountType: string;
             swiftBic: string;
             iban: string;
+            country: string;
             isDefault: boolean;
             active: boolean;
             version: number;
@@ -655,7 +831,12 @@ export interface components {
             total: number;
         };
         /** @enum {string} */
-        InvoiceStatus: "draft" | "issued" | "sent" | "paid" | "void";
+        InvoiceStatus: "draft" | "issued" | "sent" | "overdue" | "paid" | "void";
+        /**
+         * @description Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
+         * @enum {string}
+         */
+        InvoiceStage: "draft" | "issued" | "emailed" | "overdue" | "paid" | "void";
         Party: {
             name: string;
             address: string;
@@ -669,9 +850,9 @@ export interface components {
             /** Format: date */
             deliveryDate?: string;
         };
+        /** @description Every line is a product from the look-up; its description comes from the product. */
         LineInput: {
-            productId?: string;
-            description?: string;
+            productId: string;
             quantity: components["schemas"]["Decimal"];
             /** @description Omit to use the product's price in the invoice currency. */
             unitPrice?: string;
@@ -700,6 +881,7 @@ export interface components {
             accountType?: string;
             swiftBic?: string;
             iban?: string;
+            country?: string;
         };
         InvoiceInput: {
             /** @description Required on create; cannot change. */
@@ -721,6 +903,7 @@ export interface components {
             id: string;
             number?: string;
             status: components["schemas"]["InvoiceStatus"];
+            stage: components["schemas"]["InvoiceStage"];
             customerId: string;
             currency: string;
             /** Format: date */
@@ -744,6 +927,8 @@ export interface components {
             sentAt?: string;
             /** Format: date-time */
             paidAt?: string;
+            /** Format: date-time */
+            overdueAt?: string;
             /** Format: date-time */
             voidedAt?: string;
             voidReason?: string;
@@ -790,7 +975,10 @@ export interface components {
         EmailStatus: "pending" | "sending" | "sent" | "failed" | "cancelled";
         EmailMessage: {
             id: string;
-            invoiceId: string;
+            /** @enum {string} */
+            kind: "invoice" | "statement";
+            invoiceId?: string;
+            customerId?: string;
             to: string[];
             cc: string[];
             subject: string;
@@ -830,10 +1018,10 @@ export interface components {
             /** Format: date */
             endDate?: string;
         };
+        /** @description A product from the look-up. A product description may contain {month}, {year} or {period}. */
         ScheduleLine: {
-            productId?: string;
-            /** @description May contain {month}, {year}, {period}. */
-            description?: string;
+            productId: string;
+            readonly description?: string;
             quantity: components["schemas"]["Decimal"];
             /** @description Omit to use the product's price in the customer's currency at run time. */
             unitPrice?: string;
@@ -843,6 +1031,16 @@ export interface components {
             readonly id?: string;
             customerId: string;
             name: string;
+            /**
+             * @description invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
+             * @enum {string}
+             */
+            kind: "invoice" | "email";
+            /**
+             * @description For email schedules — unsent (issued, never e-mailed), outstanding (every unpaid invoice) or statement (one statement of account).
+             * @enum {string}
+             */
+            emailScope?: "unsent" | "outstanding" | "statement";
             status?: components["schemas"]["ScheduleStatus"];
             recurrence: components["schemas"]["Recurrence"];
             lines: components["schemas"]["ScheduleLine"][];
@@ -945,6 +1143,26 @@ export interface operations {
             };
             401: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application version and build number. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"];
+                };
+            };
         };
     };
     logout: {
@@ -1053,6 +1271,75 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BusinessSettings"];
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getEmailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Outgoing mail server (Gmail preset until configured). The password is never returned. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateEmailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendTestEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Sent. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };
@@ -1371,6 +1658,82 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getStatement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The customer's statement of account (every unpaid invoice) as of today. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Statement"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getStatementPdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statement as a PDF. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendStatement: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SendRequest"];
+            };
+        };
+        responses: {
+            /** @description Statement e-mail queued (the PDF is rendered when it is sent). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMessage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listProducts: {
         parameters: {
             query?: {
@@ -1661,6 +2024,29 @@ export interface operations {
         };
         responses: {
             /** @description Voided; pending e-mails are cancelled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    markInvoiceOverdue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked overdue. */
             200: {
                 headers: {
                     [name: string]: unknown;

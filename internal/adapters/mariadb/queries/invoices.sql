@@ -3,7 +3,7 @@ SELECT * FROM invoices
 WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
-  AND (sqlc.arg(overdue) = FALSE OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)))
+  AND (sqlc.arg(overdue) = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)))
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?;
 
@@ -12,7 +12,7 @@ SELECT COUNT(*) FROM invoices
 WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
-  AND (sqlc.arg(overdue) = FALSE OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)));
+  AND (sqlc.arg(overdue) = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)));
 
 -- name: GetInvoice :one
 SELECT * FROM invoices WHERE id = ?;
@@ -25,10 +25,10 @@ INSERT INTO invoices (id, number, status, customer_id, currency_code, issue_date
     terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address,
     bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor,
     total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type,
-    bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at,
-    updated_at, version)
+    bank_swift_bic, bank_iban, bank_country, schedule_id, issued_at, sent_at, paid_at, overdue_at, voided_at,
+    void_reason, created_at, updated_at, version)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, 1);
+    ?, ?, ?, ?, ?, ?, ?, ?, 1);
 
 -- name: UpdateInvoice :execrows
 UPDATE invoices SET number = ?, status = ?, issue_date = ?, due_date = ?, terms_kind = ?, terms_value = ?,
@@ -36,7 +36,8 @@ UPDATE invoices SET number = ?, status = ?, issue_date = ?, due_date = ?, terms_
     bill_to_name = ?, bill_to_address = ?, bill_to_attention = ?, ship_to_name = ?, ship_to_address = ?, notes = ?,
     tax_rate_bp = ?, subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, bank_name = ?,
     bank_branch = ?, bank_branch_code = ?, bank_account_name = ?, bank_account_number = ?, bank_account_type = ?,
-    bank_swift_bic = ?, bank_iban = ?, issued_at = ?, sent_at = ?, paid_at = ?, voided_at = ?, void_reason = ?,
+    bank_swift_bic = ?, bank_iban = ?, bank_country = ?, issued_at = ?, sent_at = ?, paid_at = ?, overdue_at = ?,
+    voided_at = ?, void_reason = ?,
     updated_at = ?, version = version + 1
 WHERE id = ? AND version = ?;
 
@@ -61,10 +62,10 @@ SELECT * FROM invoice_events WHERE invoice_id = ? ORDER BY at, id;
 SELECT currency_code,
        CAST(COUNT(*) AS SIGNED) AS open_count,
        CAST(SUM(total_minor) AS SIGNED) AS outstanding,
-       CAST(SUM(CASE WHEN due_date < sqlc.arg(today) THEN 1 ELSE 0 END) AS SIGNED) AS overdue_count,
-       CAST(SUM(CASE WHEN due_date < sqlc.arg(today) THEN total_minor ELSE 0 END) AS SIGNED) AS overdue
+       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < sqlc.arg(today) THEN 1 ELSE 0 END) AS SIGNED) AS overdue_count,
+       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < sqlc.arg(today) THEN total_minor ELSE 0 END) AS SIGNED) AS overdue
 FROM invoices
-WHERE status IN ('issued', 'sent')
+WHERE status IN ('issued', 'sent', 'overdue')
 GROUP BY currency_code
 ORDER BY currency_code;
 

@@ -16,6 +16,43 @@ const (
 	ScheduleEnded  ScheduleStatus = "ended"
 )
 
+// ScheduleKind is what a schedule does when it runs.
+type ScheduleKind string
+
+// Schedule kinds.
+const (
+	// ScheduleInvoice issues a new invoice from the line template (and e-mails it if
+	// AutoSend).
+	ScheduleInvoice ScheduleKind = "invoice"
+	// ScheduleEmail e-mails the customer's existing invoices selected by EmailScope.
+	ScheduleEmail ScheduleKind = "email"
+)
+
+// EmailScope selects which of a customer's invoices an e-mail schedule sends.
+type EmailScope string
+
+// E-mail scopes.
+const (
+	// EmailUnsent: issued invoices that have never been e-mailed.
+	EmailUnsent EmailScope = "unsent"
+	// EmailOutstanding: every unpaid invoice (issued, e-mailed or overdue).
+	EmailOutstanding EmailScope = "outstanding"
+	// EmailStatement: one statement of account listing every unpaid invoice.
+	EmailStatement EmailScope = "statement"
+)
+
+// Selects reports whether an e-mail schedule with this scope sends inv.
+func (sc EmailScope) Selects(inv *Invoice) bool {
+	switch sc {
+	case EmailUnsent:
+		return inv.IsOpen() && inv.SentAt.IsZero()
+	case EmailOutstanding:
+		return inv.IsOpen()
+	default:
+		return false
+	}
+}
+
 // MaxScheduleFailures pauses a schedule after this many consecutive failed runs.
 const MaxScheduleFailures = 5
 
@@ -35,6 +72,8 @@ type Schedule struct {
 	ID             string
 	CustomerID     string
 	Name           string
+	Kind           ScheduleKind // "" is treated as ScheduleInvoice
+	EmailScope     EmailScope   // e-mail schedules only
 	Status         ScheduleStatus
 	Recurrence     Recurrence
 	Lines          []ScheduleLine
@@ -66,7 +105,21 @@ func (s *Schedule) Validate() error {
 	if err := s.Recurrence.Validate(); err != nil {
 		return err
 	}
-	if len(s.Lines) == 0 || len(s.Lines) > MaxInvoiceLines {
+	switch s.Kind {
+	case "", ScheduleInvoice:
+		s.Kind = ScheduleInvoice
+		s.EmailScope = ""
+	case ScheduleEmail:
+		if s.EmailScope != EmailUnsent && s.EmailScope != EmailOutstanding && s.EmailScope != EmailStatement {
+			return invalid("emailScope", "must be unsent, outstanding or statement")
+		}
+		s.Lines = nil
+		s.AutoSend = true
+		s.TaxRate = nil
+	default:
+		return invalid("kind", "must be invoice or email")
+	}
+	if s.Kind == ScheduleInvoice && (len(s.Lines) == 0 || len(s.Lines) > MaxInvoiceLines) {
 		return invalid("lines", "between 1 and 200 lines are required")
 	}
 	for i := range s.Lines {

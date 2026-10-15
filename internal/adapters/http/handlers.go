@@ -17,6 +17,8 @@ type handlers struct {
 	svc     *app.Service
 	clock   ports.Clock
 	cookies cookieConfig
+	version string
+	build   string
 }
 
 var _ StrictServerInterface = (*handlers)(nil)
@@ -356,7 +358,7 @@ func invoiceInput(b InvoiceInput, currency domain.CurrencyCode, mu minorUnits) (
 		if err != nil {
 			return app.InvoiceInput{}, err
 		}
-		li := app.LineInput{ProductID: l.ProductId, Description: l.Description, Quantity: q, Discount: disc}
+		li := app.LineInput{ProductID: l.ProductId, Quantity: q, Discount: disc}
 		if l.UnitPrice != nil {
 			v, err := mu.parse("lines.unitPrice", *l.UnitPrice, currency)
 			if err != nil {
@@ -465,6 +467,18 @@ func (h *handlers) VoidInvoice(ctx context.Context, req VoidInvoiceRequestObject
 		return nil, err
 	}
 	return VoidInvoice200JSONResponse(toAPIInvoice(inv, mu, today)), nil
+}
+
+func (h *handlers) MarkInvoiceOverdue(ctx context.Context, req MarkInvoiceOverdueRequestObject) (MarkInvoiceOverdueResponseObject, error) {
+	mu, today, err := h.invoiceView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := h.svc.MarkInvoiceOverdue(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return MarkInvoiceOverdue200JSONResponse(toAPIInvoice(inv, mu, today)), nil
 }
 
 func (h *handlers) MarkInvoicePaid(ctx context.Context, req MarkInvoicePaidRequestObject) (MarkInvoicePaidResponseObject, error) {

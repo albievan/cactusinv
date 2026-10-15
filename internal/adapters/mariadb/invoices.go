@@ -29,9 +29,10 @@ func toInvoice(r sqlcgen.Invoice) *domain.Invoice {
 		Bank: domain.BankDetails{
 			BankName: r.BankName, Branch: r.BankBranch, BranchCode: r.BankBranchCode, AccountName: r.BankAccountName,
 			AccountNumber: r.BankAccountNumber, AccountType: r.BankAccountType, SwiftBIC: r.BankSwiftBic, IBAN: r.BankIban,
+			Country: r.BankCountry,
 		},
 		ScheduleID: r.ScheduleID.String, IssuedAt: fromNullTime(r.IssuedAt), SentAt: fromNullTime(r.SentAt),
-		PaidAt: fromNullTime(r.PaidAt), VoidedAt: fromNullTime(r.VoidedAt), VoidReason: r.VoidReason,
+		PaidAt: fromNullTime(r.PaidAt), OverdueAt: fromNullTime(r.OverdueAt), VoidedAt: fromNullTime(r.VoidedAt), VoidReason: r.VoidReason,
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), Version: int(r.Version),
 	}
 }
@@ -91,8 +92,9 @@ func (r invoiceRepo) Create(ctx context.Context, inv *domain.Invoice) error {
 		TotalMinor: inv.Totals.Total, BankName: inv.Bank.BankName, BankBranch: inv.Bank.Branch,
 		BankBranchCode: inv.Bank.BranchCode, BankAccountName: inv.Bank.AccountName,
 		BankAccountNumber: inv.Bank.AccountNumber, BankAccountType: inv.Bank.AccountType,
-		BankSwiftBic: inv.Bank.SwiftBIC, BankIban: inv.Bank.IBAN, ScheduleID: nullString(inv.ScheduleID),
-		IssuedAt: nullTime(inv.IssuedAt), SentAt: nullTime(inv.SentAt), PaidAt: nullTime(inv.PaidAt),
+		BankSwiftBic: inv.Bank.SwiftBIC, BankIban: inv.Bank.IBAN, BankCountry: inv.Bank.Country,
+		ScheduleID: nullString(inv.ScheduleID),
+		IssuedAt:   nullTime(inv.IssuedAt), SentAt: nullTime(inv.SentAt), PaidAt: nullTime(inv.PaidAt), OverdueAt: nullTime(inv.OverdueAt),
 		VoidedAt: nullTime(inv.VoidedAt), VoidReason: inv.VoidReason, CreatedAt: inv.CreatedAt.UTC(),
 		UpdatedAt: inv.UpdatedAt.UTC(),
 	})
@@ -116,7 +118,7 @@ func (r invoiceRepo) Update(ctx context.Context, inv *domain.Invoice) error {
 		BankName: inv.Bank.BankName, BankBranch: inv.Bank.Branch, BankBranchCode: inv.Bank.BranchCode,
 		BankAccountName: inv.Bank.AccountName, BankAccountNumber: inv.Bank.AccountNumber,
 		BankAccountType: inv.Bank.AccountType, BankSwiftBic: inv.Bank.SwiftBIC, BankIban: inv.Bank.IBAN,
-		IssuedAt: nullTime(inv.IssuedAt), SentAt: nullTime(inv.SentAt), PaidAt: nullTime(inv.PaidAt),
+		BankCountry: inv.Bank.Country, IssuedAt: nullTime(inv.IssuedAt), SentAt: nullTime(inv.SentAt), PaidAt: nullTime(inv.PaidAt), OverdueAt: nullTime(inv.OverdueAt),
 		VoidedAt: nullTime(inv.VoidedAt), VoidReason: inv.VoidReason, UpdatedAt: inv.UpdatedAt.UTC(),
 		ID: inv.ID, Version: i32(inv.Version),
 	})

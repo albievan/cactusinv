@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
+	"github.com/albievan/cactusinv/internal/adapters/aesgcm"
 	"github.com/albievan/cactusinv/internal/adapters/archive"
 	"github.com/albievan/cactusinv/internal/adapters/argon2"
 	"github.com/albievan/cactusinv/internal/adapters/clock"
@@ -36,11 +37,16 @@ import (
 	"github.com/albievan/cactusinv/internal/adapters/smtp"
 	"github.com/albievan/cactusinv/internal/adapters/worker"
 	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/internal/ports"
 	"github.com/albievan/cactusinv/web"
 )
 
-// version is set at build time with -ldflags "-X main.version=...".
-var version = "dev"
+// version and build are set at build time:
+// -ldflags "-X main.version=1.2.0 -X main.build=42".
+var (
+	version = "dev"
+	build   = "0"
+)
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -56,7 +62,7 @@ func run(args []string) error {
 	}
 	switch cmd {
 	case "version":
-		fmt.Println(version)
+		fmt.Println(version + " (build " + build + ")")
 		return nil
 	case "healthcheck":
 		return healthcheck()
@@ -117,6 +123,20 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
 		Hasher: argon2.Hasher{}, Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
 	}
+	// app_key encrypts the SMTP password saved in Settings → E-mail server.
+	if key, err := cfg.optionalSecret(ctx, "app_key"); err != nil {
+		return nil, err
+	} else if key != "" {
+		c, err := aesgcm.New(key)
+		if err != nil {
+			return nil, err
+		}
+		deps.Cipher = c
+	} else {
+		log.Warn("no app_key secret: the SMTP password cannot be saved in the app")
+	}
+	// The deployment's server (.env) is the fallback while none is configured in the app.
+	var fallback ports.Mailer = noMailer{}
 	if cfg.SMTPHost != "" {
 		pw, err := cfg.optionalSecret(ctx, "smtp_password")
 		if err != nil {
@@ -126,17 +146,24 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 		if err != nil {
 			return nil, err
 		}
-		deps.Mailer = m
-	} else {
-		deps.Mailer = noMailer{}
+		fallback = m
 	}
-	return app.New(deps), nil
+	var svc *app.Service
+	deps.Mailer = smtp.Dynamic{Fallback: fallback, Resolve: func(ctx context.Context) (smtp.Config, bool, error) {
+		st, pw, ok, err := svc.SMTPServer(ctx)
+		if err != nil || !ok {
+			return smtp.Config{}, false, err
+		}
+		return smtp.Config{Host: st.Host, Port: st.Port, Username: st.Username, Password: pw, From: st.From, TLS: st.TLS}, true, nil
+	}}
+	svc = app.New(deps)
+	return svc, nil
 }
 
 // noMailer fails deliveries clearly when SMTP is not configured; messages stay queued.
 type noMailer struct{}
 
-func (noMailer) Send(context.Context, portsMail) error {
+func (noMailer) Send(context.Context, ports.Mail) error {
 	return errors.New("SMTP is not configured (set CACTUSINV_SMTP_HOST)")
 }
 
@@ -174,7 +201,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	store := mariadb.NewStore(db)
 	arch := archive.Dir{Root: cfg.InvoicesDir}
 	handler := httpapi.NewHandler(httpapi.Options{
-		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, Registry: reg, Web: web.FS(),
+		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, Registry: reg, Web: web.FS(), Version: version, Build: build,
 		Ready: map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
 	})
 	srv := &http.Server{
@@ -195,7 +222,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.HTTPAddr, "version", version, "workers", cfg.Workers)
+		log.Info("listening", "addr", cfg.HTTPAddr, "version", version, "build", build, "workers", cfg.Workers)
 		errc <- srv.ListenAndServe()
 	}()
 	select {

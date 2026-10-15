@@ -47,6 +47,17 @@ paths:
               schema: { type: string }
         '401': { $ref: '#/components/responses/Problem' }
         default: { $ref: '#/components/responses/Problem' }
+  /version:
+    get:
+      tags: [auth]
+      operationId: getVersion
+      security: []
+      responses:
+        '200':
+          description: Application version and build number.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Version' }
   /auth/logout:
     post:
       tags: [auth]
@@ -107,6 +118,45 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BusinessSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /settings/email:
+    get:
+      tags: [settings]
+      operationId: getEmailSettings
+      responses:
+        '200':
+          description: Outgoing mail server (Gmail preset until configured). The password is never returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [settings]
+      operationId: updateEmailSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+  /settings/email/test:
+    post:
+      tags: [settings]
+      operationId: sendTestEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestEmailRequest' }
+      responses:
+        '204': { description: Sent. }
         default: { $ref: '#/components/responses/Problem' }
 
   /currencies:
@@ -285,6 +335,55 @@ paths:
         '204': { description: Deleted. }
         default: { $ref: '#/components/responses/Problem' }
 
+  /customers/{id}/statement:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [customers]
+      operationId: getStatement
+      responses:
+        '200':
+          description: The customer's statement of account (every unpaid invoice) as of today.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Statement' }
+        default: { $ref: '#/components/responses/Problem' }
+  /customers/{id}/statement/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [customers]
+      operationId: getStatementPdf
+      responses:
+        '200':
+          description: The statement as a PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+  /customers/{id}/statement/send:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [customers]
+      operationId: sendStatement
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRequest' }
+      responses:
+        '202':
+          description: Statement e-mail queued (the PDF is rendered when it is sent).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /products:
     get:
       tags: [products]
@@ -453,6 +552,19 @@ paths:
       responses:
         '200':
           description: Voided; pending e-mails are cancelled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/mark-overdue:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: markInvoiceOverdue
+      responses:
+        '200':
+          description: Marked overdue.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
@@ -745,6 +857,64 @@ components:
       properties:
         currentPassword: { type: string, maxLength: 200 }
         newPassword: { type: string, minLength: 12, maxLength: 200 }
+    Version:
+      type: object
+      required: [version, build]
+      properties:
+        version: { type: string, example: 1.2.0 }
+        build: { type: string, example: '42' }
+    EmailSettings:
+      type: object
+      required: [enabled, host, port, username, from, tls, passwordSet, version]
+      properties:
+        enabled: { type: boolean, description: Use this server; otherwise the deployment's default server. }
+        host: { type: string, maxLength: 255, example: smtp.gmail.com }
+        port: { type: integer, minimum: 0, maximum: 65535, example: 587 }
+        username: { type: string, maxLength: 254 }
+        password:
+          type: string
+          maxLength: 200
+          writeOnly: true
+          description: Omit to keep the stored password; "" clears it. Gmail needs an app password.
+          x-go-type-skip-optional-pointer: false
+        passwordSet: { type: boolean, readOnly: true }
+        from: { type: string, maxLength: 320, description: Sender, e.g. "Example Ltd <billing@example.com>". }
+        tls: { type: string, enum: [starttls, tls, none] }
+        version: { type: integer }
+    TestEmailRequest:
+      type: object
+      required: [to]
+      properties:
+        to: { type: string, maxLength: 254 }
+    StatementLine:
+      type: object
+      required: [invoiceId, number, issueDate, amount, daysOverdue, status]
+      properties:
+        invoiceId: { type: string }
+        number: { type: string }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        daysOverdue: { type: integer }
+        status: { $ref: '#/components/schemas/InvoiceStatus' }
+    Statement:
+      type: object
+      required: [customerId, currency, asOf, lines, aging, total]
+      properties:
+        customerId: { type: string }
+        currency: { type: string }
+        asOf: { type: string, format: date }
+        lines: { type: array, items: { $ref: '#/components/schemas/StatementLine' } }
+        aging:
+          type: object
+          required: [current, days1to30, days31to60, days61to90, over90]
+          properties:
+            current: { $ref: '#/components/schemas/Decimal' }
+            days1to30: { $ref: '#/components/schemas/Decimal' }
+            days31to60: { $ref: '#/components/schemas/Decimal' }
+            days61to90: { $ref: '#/components/schemas/Decimal' }
+            over90: { $ref: '#/components/schemas/Decimal' }
+        total: { $ref: '#/components/schemas/Decimal' }
     Me:
       type: object
       required: [id, email]
@@ -792,19 +962,20 @@ components:
 
     BankAccount:
       type: object
-      required: [currency, label, bankName, accountNumber, branch, branchCode, accountName, accountType, swiftBic, iban, isDefault, active, version]
+      required: [currency, label, bankName, accountNumber, branch, branchCode, accountName, accountType, swiftBic, iban, country, isDefault, active, version]
       properties:
         id: { type: string, readOnly: true }
         currency: { type: string }
         label: { type: string, maxLength: 80 }
-        bankName: { type: string, maxLength: 120 }
-        branch: { type: string, maxLength: 120 }
-        branchCode: { type: string, maxLength: 32 }
+        bankName: { type: string, maxLength: 120, description: Name of the bank. }
+        branch: { type: string, maxLength: 120, description: Branch name. }
+        branchCode: { type: string, maxLength: 32, description: Sort code / branch code. }
         accountName: { type: string, maxLength: 120 }
         accountNumber: { type: string, maxLength: 64 }
         accountType: { type: string, maxLength: 64 }
         swiftBic: { type: string, maxLength: 16 }
         iban: { type: string, maxLength: 40 }
+        country: { type: string, maxLength: 80 }
         isDefault: { type: boolean }
         active: { type: boolean }
         version: { type: integer }
@@ -877,7 +1048,11 @@ components:
 
     InvoiceStatus:
       type: string
-      enum: [draft, issued, sent, paid, void]
+      enum: [draft, issued, sent, overdue, paid, void]
+    InvoiceStage:
+      type: string
+      description: Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
+      enum: [draft, issued, emailed, overdue, paid, void]
     Party:
       type: object
       required: [name, address, attention]
@@ -895,10 +1070,10 @@ components:
         deliveryDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
     LineInput:
       type: object
-      required: [quantity]
+      description: Every line is a product from the look-up; its description comes from the product.
+      required: [productId, quantity]
       properties:
         productId: { type: string }
-        description: { type: string, maxLength: 2000 }
         quantity: { $ref: '#/components/schemas/Decimal' }
         unitPrice:
           type: string
@@ -935,6 +1110,7 @@ components:
         accountType: { type: string }
         swiftBic: { type: string }
         iban: { type: string }
+        country: { type: string }
     InvoiceInput:
       type: object
       required: [lines]
@@ -964,11 +1140,12 @@ components:
         version: { type: integer, description: Required on update. }
     Invoice:
       type: object
-      required: [id, status, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, vatPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
+      required: [id, status, stage, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, vatPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
       properties:
         id: { type: string }
         number: { type: string }
         status: { $ref: '#/components/schemas/InvoiceStatus' }
+        stage: { $ref: '#/components/schemas/InvoiceStage' }
         customerId: { type: string }
         currency: { type: string }
         issueDate: { type: string, format: date }
@@ -987,6 +1164,7 @@ components:
         issuedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         sentAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         paidAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        overdueAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         voidedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         voidReason: { type: string }
         createdAt: { type: string, format: date-time }
@@ -1035,10 +1213,12 @@ components:
       enum: [pending, sending, sent, failed, cancelled]
     EmailMessage:
       type: object
-      required: [id, invoiceId, to, cc, subject, body, status, attempts, sendAt, nextAttemptAt, lastError, createdAt]
+      required: [id, kind, to, cc, subject, body, status, attempts, sendAt, nextAttemptAt, lastError, createdAt]
       properties:
         id: { type: string }
+        kind: { type: string, enum: [invoice, statement] }
         invoiceId: { type: string }
+        customerId: { type: string }
         to: { type: array, items: { type: string } }
         cc: { type: array, items: { type: string } }
         subject: { type: string }
@@ -1074,10 +1254,11 @@ components:
         endDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
     ScheduleLine:
       type: object
-      required: [quantity]
+      description: A product from the look-up. A product description may contain {month}, {year} or {period}.
+      required: [productId, quantity]
       properties:
         productId: { type: string }
-        description: { type: string, maxLength: 2000, description: 'May contain {month}, {year}, {period}.' }
+        description: { type: string, readOnly: true }
         quantity: { $ref: '#/components/schemas/Decimal' }
         unitPrice:
           type: string
@@ -1087,11 +1268,19 @@ components:
         discountPercent: { $ref: '#/components/schemas/Decimal' }
     Schedule:
       type: object
-      required: [customerId, name, recurrence, lines, header, notes, autoSend, emailSubject, emailBody, version]
+      required: [customerId, name, kind, recurrence, lines, header, notes, autoSend, emailSubject, emailBody, version]
       properties:
         id: { type: string, readOnly: true }
         customerId: { type: string }
         name: { type: string, maxLength: 120 }
+        kind:
+          type: string
+          enum: [invoice, email]
+          description: invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
+        emailScope:
+          type: string
+          enum: [unsent, outstanding, statement]
+          description: For email schedules — unsent (issued, never e-mailed), outstanding (every unpaid invoice) or statement (one statement of account).
         status: { $ref: '#/components/schemas/ScheduleStatus' }
         recurrence: { $ref: '#/components/schemas/Recurrence' }
         lines: { type: array, items: { $ref: '#/components/schemas/ScheduleLine' }, maxItems: 200 }

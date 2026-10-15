@@ -138,6 +138,7 @@ func TestProduct(t *testing.T) {
 		func(p *Product) { p.Prices = map[CurrencyCode]int64{"ZAR": -1} },
 		func(p *Product) { p.Prices = map[CurrencyCode]int64{"Z": 1} },
 		func(p *Product) { p.Unit = string(make([]byte, 33)) },
+		func(p *Product) { p.Prices = nil },
 		func(p *Product) { p.Description = string(make([]byte, 1001)) },
 	}
 	for i, m := range bad {

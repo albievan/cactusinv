@@ -103,7 +103,8 @@ func toBank(b sqlcgen.BankAccount) domain.BankAccount {
 	return domain.BankAccount{
 		ID: b.ID, Currency: domain.CurrencyCode(b.CurrencyCode), Label: b.Label, BankName: b.BankName, Branch: b.Branch,
 		BranchCode: b.BranchCode, AccountName: b.AccountName, AccountNumber: b.AccountNumber, AccountType: b.AccountType,
-		SwiftBIC: b.SwiftBic, IBAN: b.Iban, IsDefault: b.IsDefault, Active: b.Active, Version: int(b.Version),
+		SwiftBIC: b.SwiftBic, IBAN: b.Iban, Country: b.Country, IsDefault: b.IsDefault, Active: b.Active,
+		Version: int(b.Version),
 	}
 }
 
@@ -131,7 +132,7 @@ func (r bankRepo) Create(ctx context.Context, b domain.BankAccount) error {
 	return mapErr(r.q.InsertBankAccount(ctx, sqlcgen.InsertBankAccountParams{
 		ID: b.ID, CurrencyCode: string(b.Currency), Label: b.Label, BankName: b.BankName, Branch: b.Branch,
 		BranchCode: b.BranchCode, AccountName: b.AccountName, AccountNumber: b.AccountNumber, AccountType: b.AccountType,
-		SwiftBic: b.SwiftBIC, Iban: b.IBAN, IsDefault: b.IsDefault, Active: b.Active,
+		SwiftBic: b.SwiftBIC, Iban: b.IBAN, Country: b.Country, IsDefault: b.IsDefault, Active: b.Active,
 	}))
 }
 
@@ -139,7 +140,7 @@ func (r bankRepo) Update(ctx context.Context, b domain.BankAccount) error {
 	n, err := r.q.UpdateBankAccount(ctx, sqlcgen.UpdateBankAccountParams{
 		Label: b.Label, BankName: b.BankName, Branch: b.Branch, BranchCode: b.BranchCode, AccountName: b.AccountName,
 		AccountNumber: b.AccountNumber, AccountType: b.AccountType, SwiftBic: b.SwiftBIC, Iban: b.IBAN,
-		IsDefault: b.IsDefault, Active: b.Active, ID: b.ID, Version: i32(b.Version),
+		Country: b.Country, IsDefault: b.IsDefault, Active: b.Active, ID: b.ID, Version: i32(b.Version),
 	})
 	return affected(n, err, domain.ErrConflict)
 }

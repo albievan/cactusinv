@@ -16,7 +16,7 @@ SELECT COUNT(*) FROM invoices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
-  AND (? = FALSE OR (status IN ('issued', 'sent') AND due_date < ?))
+  AND (? = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < ?))
 `
 
 type CountInvoicesParams struct {
@@ -77,7 +77,7 @@ func (q *Queries) DeleteInvoiceLines(ctx context.Context, invoiceID string) erro
 }
 
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version FROM invoices WHERE id = ?
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country FROM invoices WHERE id = ?
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
@@ -128,6 +128,8 @@ func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
 		&i.UpdatedAt,
 		&i.Version,
 		&i.ExportedVersion,
+		&i.OverdueAt,
+		&i.BankCountry,
 	)
 	return i, err
 }
@@ -137,10 +139,10 @@ INSERT INTO invoices (id, number, status, customer_id, currency_code, issue_date
     terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address,
     bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor,
     total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type,
-    bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at,
-    updated_at, version)
+    bank_swift_bic, bank_iban, bank_country, schedule_id, issued_at, sent_at, paid_at, overdue_at, voided_at,
+    void_reason, created_at, updated_at, version)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?, 1)
+    ?, ?, ?, ?, ?, ?, ?, ?, 1)
 `
 
 type InsertInvoiceParams struct {
@@ -178,10 +180,12 @@ type InsertInvoiceParams struct {
 	BankAccountType   string
 	BankSwiftBic      string
 	BankIban          string
+	BankCountry       string
 	ScheduleID        sql.NullString
 	IssuedAt          sql.NullTime
 	SentAt            sql.NullTime
 	PaidAt            sql.NullTime
+	OverdueAt         sql.NullTime
 	VoidedAt          sql.NullTime
 	VoidReason        string
 	CreatedAt         time.Time
@@ -224,10 +228,12 @@ func (q *Queries) InsertInvoice(ctx context.Context, arg InsertInvoiceParams) er
 		arg.BankAccountType,
 		arg.BankSwiftBic,
 		arg.BankIban,
+		arg.BankCountry,
 		arg.ScheduleID,
 		arg.IssuedAt,
 		arg.SentAt,
 		arg.PaidAt,
+		arg.OverdueAt,
 		arg.VoidedAt,
 		arg.VoidReason,
 		arg.CreatedAt,
@@ -294,10 +300,10 @@ const invoiceTotals = `-- name: InvoiceTotals :many
 SELECT currency_code,
        CAST(COUNT(*) AS SIGNED) AS open_count,
        CAST(SUM(total_minor) AS SIGNED) AS outstanding,
-       CAST(SUM(CASE WHEN due_date < ? THEN 1 ELSE 0 END) AS SIGNED) AS overdue_count,
-       CAST(SUM(CASE WHEN due_date < ? THEN total_minor ELSE 0 END) AS SIGNED) AS overdue
+       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < ? THEN 1 ELSE 0 END) AS SIGNED) AS overdue_count,
+       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < ? THEN total_minor ELSE 0 END) AS SIGNED) AS overdue
 FROM invoices
-WHERE status IN ('issued', 'sent')
+WHERE status IN ('issued', 'sent', 'overdue')
 GROUP BY currency_code
 ORDER BY currency_code
 `
@@ -413,11 +419,11 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, invoiceID string) ([]Inv
 }
 
 const listInvoices = `-- name: ListInvoices :many
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version FROM invoices
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country FROM invoices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
-  AND (? = FALSE OR (status IN ('issued', 'sent') AND due_date < ?))
+  AND (? = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < ?))
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?
 `
@@ -498,6 +504,8 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 			&i.UpdatedAt,
 			&i.Version,
 			&i.ExportedVersion,
+			&i.OverdueAt,
+			&i.BankCountry,
 		); err != nil {
 			return nil, err
 		}
@@ -567,7 +575,8 @@ UPDATE invoices SET number = ?, status = ?, issue_date = ?, due_date = ?, terms_
     bill_to_name = ?, bill_to_address = ?, bill_to_attention = ?, ship_to_name = ?, ship_to_address = ?, notes = ?,
     tax_rate_bp = ?, subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, bank_name = ?,
     bank_branch = ?, bank_branch_code = ?, bank_account_name = ?, bank_account_number = ?, bank_account_type = ?,
-    bank_swift_bic = ?, bank_iban = ?, issued_at = ?, sent_at = ?, paid_at = ?, voided_at = ?, void_reason = ?,
+    bank_swift_bic = ?, bank_iban = ?, bank_country = ?, issued_at = ?, sent_at = ?, paid_at = ?, overdue_at = ?,
+    voided_at = ?, void_reason = ?,
     updated_at = ?, version = version + 1
 WHERE id = ? AND version = ?
 `
@@ -604,9 +613,11 @@ type UpdateInvoiceParams struct {
 	BankAccountType   string
 	BankSwiftBic      string
 	BankIban          string
+	BankCountry       string
 	IssuedAt          sql.NullTime
 	SentAt            sql.NullTime
 	PaidAt            sql.NullTime
+	OverdueAt         sql.NullTime
 	VoidedAt          sql.NullTime
 	VoidReason        string
 	UpdatedAt         time.Time
@@ -647,9 +658,11 @@ func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (i
 		arg.BankAccountType,
 		arg.BankSwiftBic,
 		arg.BankIban,
+		arg.BankCountry,
 		arg.IssuedAt,
 		arg.SentAt,
 		arg.PaidAt,
+		arg.OverdueAt,
 		arg.VoidedAt,
 		arg.VoidReason,
 		arg.UpdatedAt,

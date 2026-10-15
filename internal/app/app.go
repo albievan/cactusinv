@@ -22,6 +22,7 @@ type Deps struct {
 	Renderer ports.InvoiceRenderer
 	Hasher   ports.PasswordHasher
 	Archive  ports.InvoiceArchive
+	Cipher   ports.Cipher // encrypts the SMTP password; nil disables storing one
 	Logger   *slog.Logger
 	// SessionTTL is how long a login lasts (default 7 days).
 	SessionTTL time.Duration
@@ -36,6 +37,7 @@ type Service struct {
 	renderer ports.InvoiceRenderer
 	hasher   ports.PasswordHasher
 	archive  ports.InvoiceArchive
+	cipher   ports.Cipher
 	log      *slog.Logger
 	ttl      time.Duration
 }
@@ -50,7 +52,7 @@ func New(d Deps) *Service {
 	}
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
-		hasher: d.Hasher, archive: d.Archive, log: d.Logger, ttl: d.SessionTTL,
+		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
 	}
 }
 

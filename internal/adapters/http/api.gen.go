@@ -19,6 +19,45 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for EmailMessageKind.
+const (
+	EmailMessageKindInvoice   EmailMessageKind = "invoice"
+	EmailMessageKindStatement EmailMessageKind = "statement"
+)
+
+// Valid indicates whether the value is a known member of the EmailMessageKind enum.
+func (e EmailMessageKind) Valid() bool {
+	switch e {
+	case EmailMessageKindInvoice:
+		return true
+	case EmailMessageKindStatement:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EmailSettingsTls.
+const (
+	None     EmailSettingsTls = "none"
+	Starttls EmailSettingsTls = "starttls"
+	Tls      EmailSettingsTls = "tls"
+)
+
+// Valid indicates whether the value is a known member of the EmailSettingsTls enum.
+func (e EmailSettingsTls) Valid() bool {
+	switch e {
+	case None:
+		return true
+	case Starttls:
+		return true
+	case Tls:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EmailStatus.
 const (
 	EmailStatusCancelled EmailStatus = "cancelled"
@@ -46,13 +85,44 @@ func (e EmailStatus) Valid() bool {
 	}
 }
 
+// Defines values for InvoiceStage.
+const (
+	InvoiceStageDraft   InvoiceStage = "draft"
+	InvoiceStageEmailed InvoiceStage = "emailed"
+	InvoiceStageIssued  InvoiceStage = "issued"
+	InvoiceStageOverdue InvoiceStage = "overdue"
+	InvoiceStagePaid    InvoiceStage = "paid"
+	InvoiceStageVoid    InvoiceStage = "void"
+)
+
+// Valid indicates whether the value is a known member of the InvoiceStage enum.
+func (e InvoiceStage) Valid() bool {
+	switch e {
+	case InvoiceStageDraft:
+		return true
+	case InvoiceStageEmailed:
+		return true
+	case InvoiceStageIssued:
+		return true
+	case InvoiceStageOverdue:
+		return true
+	case InvoiceStagePaid:
+		return true
+	case InvoiceStageVoid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvoiceStatus.
 const (
-	InvoiceStatusDraft  InvoiceStatus = "draft"
-	InvoiceStatusIssued InvoiceStatus = "issued"
-	InvoiceStatusPaid   InvoiceStatus = "paid"
-	InvoiceStatusSent   InvoiceStatus = "sent"
-	InvoiceStatusVoid   InvoiceStatus = "void"
+	InvoiceStatusDraft   InvoiceStatus = "draft"
+	InvoiceStatusIssued  InvoiceStatus = "issued"
+	InvoiceStatusOverdue InvoiceStatus = "overdue"
+	InvoiceStatusPaid    InvoiceStatus = "paid"
+	InvoiceStatusSent    InvoiceStatus = "sent"
+	InvoiceStatusVoid    InvoiceStatus = "void"
 )
 
 // Valid indicates whether the value is a known member of the InvoiceStatus enum.
@@ -61,6 +131,8 @@ func (e InvoiceStatus) Valid() bool {
 	case InvoiceStatusDraft:
 		return true
 	case InvoiceStatusIssued:
+		return true
+	case InvoiceStatusOverdue:
 		return true
 	case InvoiceStatusPaid:
 		return true
@@ -121,6 +193,45 @@ func (e RecurrenceFrequency) Valid() bool {
 	}
 }
 
+// Defines values for ScheduleEmailScope.
+const (
+	ScheduleEmailScopeOutstanding ScheduleEmailScope = "outstanding"
+	ScheduleEmailScopeStatement   ScheduleEmailScope = "statement"
+	ScheduleEmailScopeUnsent      ScheduleEmailScope = "unsent"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleEmailScope enum.
+func (e ScheduleEmailScope) Valid() bool {
+	switch e {
+	case ScheduleEmailScopeOutstanding:
+		return true
+	case ScheduleEmailScopeStatement:
+		return true
+	case ScheduleEmailScopeUnsent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleKind.
+const (
+	ScheduleKindEmail   ScheduleKind = "email"
+	ScheduleKindInvoice ScheduleKind = "invoice"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleKind enum.
+func (e ScheduleKind) Valid() bool {
+	switch e {
+	case ScheduleKindEmail:
+		return true
+	case ScheduleKindInvoice:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScheduleStatus.
 const (
 	Active ScheduleStatus = "active"
@@ -148,16 +259,23 @@ type BankAccount struct {
 	AccountNumber string `json:"accountNumber"`
 	AccountType   string `json:"accountType"`
 	Active        bool   `json:"active"`
-	BankName      string `json:"bankName"`
-	Branch        string `json:"branch"`
-	BranchCode    string `json:"branchCode"`
-	Currency      string `json:"currency"`
-	Iban          string `json:"iban"`
-	Id            string `json:"id,omitempty"`
-	IsDefault     bool   `json:"isDefault"`
-	Label         string `json:"label"`
-	SwiftBic      string `json:"swiftBic"`
-	Version       int    `json:"version"`
+
+	// BankName Name of the bank.
+	BankName string `json:"bankName"`
+
+	// Branch Branch name.
+	Branch string `json:"branch"`
+
+	// BranchCode Sort code / branch code.
+	BranchCode string `json:"branchCode"`
+	Country    string `json:"country"`
+	Currency   string `json:"currency"`
+	Iban       string `json:"iban"`
+	Id         string `json:"id,omitempty"`
+	IsDefault  bool   `json:"isDefault"`
+	Label      string `json:"label"`
+	SwiftBic   string `json:"swiftBic"`
+	Version    int    `json:"version"`
 }
 
 // BankAccountList defines model for BankAccountList.
@@ -173,6 +291,7 @@ type BankDetails struct {
 	BankName      string `json:"bankName,omitempty"`
 	Branch        string `json:"branch,omitempty"`
 	BranchCode    string `json:"branchCode,omitempty"`
+	Country       string `json:"country,omitempty"`
 	Iban          string `json:"iban,omitempty"`
 	SwiftBic      string `json:"swiftBic,omitempty"`
 }
@@ -289,20 +408,50 @@ type EmailList struct {
 
 // EmailMessage defines model for EmailMessage.
 type EmailMessage struct {
-	Attempts      int         `json:"attempts"`
-	Body          string      `json:"body"`
-	Cc            []string    `json:"cc"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	Id            string      `json:"id"`
-	InvoiceId     string      `json:"invoiceId"`
-	LastError     string      `json:"lastError"`
-	NextAttemptAt time.Time   `json:"nextAttemptAt"`
-	SendAt        time.Time   `json:"sendAt"`
-	SentAt        *time.Time  `json:"sentAt,omitempty"`
-	Status        EmailStatus `json:"status"`
-	Subject       string      `json:"subject"`
-	To            []string    `json:"to"`
+	Attempts      int              `json:"attempts"`
+	Body          string           `json:"body"`
+	Cc            []string         `json:"cc"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	CustomerId    string           `json:"customerId,omitempty"`
+	Id            string           `json:"id"`
+	InvoiceId     string           `json:"invoiceId,omitempty"`
+	Kind          EmailMessageKind `json:"kind"`
+	LastError     string           `json:"lastError"`
+	NextAttemptAt time.Time        `json:"nextAttemptAt"`
+	SendAt        time.Time        `json:"sendAt"`
+	SentAt        *time.Time       `json:"sentAt,omitempty"`
+	Status        EmailStatus      `json:"status"`
+	Subject       string           `json:"subject"`
+	To            []string         `json:"to"`
 }
+
+// EmailMessageKind defines model for EmailMessage.Kind.
+type EmailMessageKind string
+
+// EmailSettings defines model for EmailSettings.
+type EmailSettings struct {
+	// Enabled Use this server; otherwise the deployment's default server.
+	Enabled bool `json:"enabled"`
+
+	// From Sender
+	From string `json:"from"`
+
+	// Host Example: smtp.gmail.com
+	Host string `json:"host"`
+
+	// Password Omit to keep the stored password; "" clears it. Gmail needs an app password.
+	Password    *string `json:"password,omitempty"`
+	PasswordSet bool    `json:"passwordSet,omitempty"`
+
+	// Port Example: 587
+	Port     int              `json:"port"`
+	Tls      EmailSettingsTls `json:"tls"`
+	Username string           `json:"username"`
+	Version  int              `json:"version"`
+}
+
+// EmailSettingsTls defines model for EmailSettings.Tls.
+type EmailSettingsTls string
 
 // EmailStatus defines model for EmailStatus.
 type EmailStatus string
@@ -323,14 +472,18 @@ type Invoice struct {
 	Notes        string              `json:"notes"`
 	Number       string              `json:"number,omitempty"`
 	Overdue      bool                `json:"overdue"`
+	OverdueAt    *time.Time          `json:"overdueAt,omitempty"`
 	PaidAt       *time.Time          `json:"paidAt,omitempty"`
 	PaymentTerms PaymentTerms        `json:"paymentTerms"`
 	ScheduleId   string              `json:"scheduleId,omitempty"`
 	SentAt       *time.Time          `json:"sentAt,omitempty"`
 	ShipTo       Party               `json:"shipTo"`
-	Status       InvoiceStatus       `json:"status"`
-	Totals       Totals              `json:"totals"`
-	UpdatedAt    time.Time           `json:"updatedAt"`
+
+	// Stage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
+	Stage     InvoiceStage  `json:"stage"`
+	Status    InvoiceStatus `json:"status"`
+	Totals    Totals        `json:"totals"`
+	UpdatedAt time.Time     `json:"updatedAt"`
 
 	// VatPercent Example: 2701.16
 	VatPercent Decimal    `json:"vatPercent"`
@@ -388,6 +541,9 @@ type InvoiceList struct {
 	Total int       `json:"total"`
 }
 
+// InvoiceStage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
+type InvoiceStage string
+
 // InvoiceStatus defines model for InvoiceStatus.
 type InvoiceStatus string
 
@@ -413,13 +569,11 @@ type Line struct {
 	UnitPrice Decimal `json:"unitPrice"`
 }
 
-// LineInput defines model for LineInput.
+// LineInput Every line is a product from the look-up; its description comes from the product.
 type LineInput struct {
-	Description string `json:"description,omitempty"`
-
 	// DiscountPercent Example: 2701.16
 	DiscountPercent Decimal `json:"discountPercent,omitempty"`
-	ProductId       string  `json:"productId,omitempty"`
+	ProductId       string  `json:"productId"`
 
 	// Quantity Example: 2701.16
 	Quantity Decimal `json:"quantity"`
@@ -526,26 +680,38 @@ type RunPreview struct {
 // Schedule defines model for Schedule.
 type Schedule struct {
 	// AutoSend E-mail each invoice automatically. Off unless chosen.
-	AutoSend     bool           `json:"autoSend"`
-	CustomerId   string         `json:"customerId"`
-	EmailBody    string         `json:"emailBody"`
-	EmailSubject string         `json:"emailSubject"`
-	FailureCount int            `json:"failureCount,omitempty"`
-	Header       InvoiceHeader  `json:"header"`
-	Id           string         `json:"id,omitempty"`
-	LastError    string         `json:"lastError,omitempty"`
-	LastRunAt    *time.Time     `json:"lastRunAt,omitempty"`
-	Lines        []ScheduleLine `json:"lines"`
-	Name         string         `json:"name"`
-	NextRunAt    *time.Time     `json:"nextRunAt,omitempty"`
-	Notes        string         `json:"notes"`
-	Recurrence   Recurrence     `json:"recurrence"`
-	Status       ScheduleStatus `json:"status,omitempty"`
+	AutoSend   bool   `json:"autoSend"`
+	CustomerId string `json:"customerId"`
+	EmailBody  string `json:"emailBody"`
+
+	// EmailScope For email schedules — unsent (issued, never e-mailed), outstanding (every unpaid invoice) or statement (one statement of account).
+	EmailScope   ScheduleEmailScope `json:"emailScope,omitempty"`
+	EmailSubject string             `json:"emailSubject"`
+	FailureCount int                `json:"failureCount,omitempty"`
+	Header       InvoiceHeader      `json:"header"`
+	Id           string             `json:"id,omitempty"`
+
+	// Kind invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
+	Kind       ScheduleKind   `json:"kind"`
+	LastError  string         `json:"lastError,omitempty"`
+	LastRunAt  *time.Time     `json:"lastRunAt,omitempty"`
+	Lines      []ScheduleLine `json:"lines"`
+	Name       string         `json:"name"`
+	NextRunAt  *time.Time     `json:"nextRunAt,omitempty"`
+	Notes      string         `json:"notes"`
+	Recurrence Recurrence     `json:"recurrence"`
+	Status     ScheduleStatus `json:"status,omitempty"`
 
 	// VatPercent Omit to use the business default VAT when each invoice is created.
 	VatPercent *string `json:"vatPercent,omitempty"`
 	Version    int     `json:"version"`
 }
+
+// ScheduleEmailScope For email schedules — unsent (issued, never e-mailed), outstanding (every unpaid invoice) or statement (one statement of account).
+type ScheduleEmailScope string
+
+// ScheduleKind invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
+type ScheduleKind string
 
 // ScheduleDetail defines model for ScheduleDetail.
 type ScheduleDetail struct {
@@ -554,14 +720,13 @@ type ScheduleDetail struct {
 	Upcoming []time.Time   `json:"upcoming"`
 }
 
-// ScheduleLine defines model for ScheduleLine.
+// ScheduleLine A product from the look-up. A product description may contain {month}, {year} or {period}.
 type ScheduleLine struct {
-	// Description May contain {month}, {year}, {period}.
 	Description string `json:"description,omitempty"`
 
 	// DiscountPercent Example: 2701.16
 	DiscountPercent Decimal `json:"discountPercent,omitempty"`
-	ProductId       string  `json:"productId,omitempty"`
+	ProductId       string  `json:"productId"`
 
 	// Quantity Example: 2701.16
 	Quantity Decimal `json:"quantity"`
@@ -597,6 +762,50 @@ type SendRequest struct {
 	To      []string   `json:"to,omitempty"`
 }
 
+// Statement defines model for Statement.
+type Statement struct {
+	Aging struct {
+		// Current Example: 2701.16
+		Current Decimal `json:"current"`
+
+		// Days1to30 Example: 2701.16
+		Days1to30 Decimal `json:"days1to30"`
+
+		// Days31to60 Example: 2701.16
+		Days31to60 Decimal `json:"days31to60"`
+
+		// Days61to90 Example: 2701.16
+		Days61to90 Decimal `json:"days61to90"`
+
+		// Over90 Example: 2701.16
+		Over90 Decimal `json:"over90"`
+	} `json:"aging"`
+	AsOf       openapi_types.Date `json:"asOf"`
+	Currency   string             `json:"currency"`
+	CustomerId string             `json:"customerId"`
+	Lines      []StatementLine    `json:"lines"`
+
+	// Total Example: 2701.16
+	Total Decimal `json:"total"`
+}
+
+// StatementLine defines model for StatementLine.
+type StatementLine struct {
+	// Amount Example: 2701.16
+	Amount      Decimal             `json:"amount"`
+	DaysOverdue int                 `json:"daysOverdue"`
+	DueDate     *openapi_types.Date `json:"dueDate,omitempty"`
+	InvoiceId   string              `json:"invoiceId"`
+	IssueDate   openapi_types.Date  `json:"issueDate"`
+	Number      string              `json:"number"`
+	Status      InvoiceStatus       `json:"status"`
+}
+
+// TestEmailRequest defines model for TestEmailRequest.
+type TestEmailRequest struct {
+	To string `json:"to"`
+}
+
 // Totals defines model for Totals.
 type Totals struct {
 	// Discount Example: 2701.16
@@ -610,6 +819,15 @@ type Totals struct {
 
 	// Vat Example: 2701.16
 	Vat Decimal `json:"vat"`
+}
+
+// Version defines model for Version.
+type Version struct {
+	// Build Example: 42
+	Build string `json:"build"`
+
+	// Version Example: 1.2.0
+	Version string `json:"version"`
 }
 
 // VoidRequest defines model for VoidRequest.
@@ -643,6 +861,11 @@ type ListCustomersParams struct {
 	IncludeInactive IncludeInactive `form:"includeInactive,omitempty" json:"includeInactive,omitempty"`
 	Limit           Limit           `form:"limit,omitempty" json:"limit,omitempty"`
 	Offset          Offset          `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// SendStatementParams defines parameters for SendStatement.
+type SendStatementParams struct {
+	IdempotencyKey string `json:"Idempotency-Key,omitempty"`
 }
 
 // ListEmailsParams defines parameters for ListEmails.
@@ -709,6 +932,9 @@ type CreateCustomerJSONRequestBody = Customer
 // UpdateCustomerJSONRequestBody defines body for UpdateCustomer for application/json ContentType.
 type UpdateCustomerJSONRequestBody = Customer
 
+// SendStatementJSONRequestBody defines body for SendStatement for application/json ContentType.
+type SendStatementJSONRequestBody = SendRequest
+
 // CreateInvoiceJSONRequestBody defines body for CreateInvoice for application/json ContentType.
 type CreateInvoiceJSONRequestBody = InvoiceInput
 
@@ -741,6 +967,12 @@ type UpdateScheduleJSONRequestBody = Schedule
 
 // UpdateBusinessJSONRequestBody defines body for UpdateBusiness for application/json ContentType.
 type UpdateBusinessJSONRequestBody = BusinessSettings
+
+// UpdateEmailSettingsJSONRequestBody defines body for UpdateEmailSettings for application/json ContentType.
+type UpdateEmailSettingsJSONRequestBody = EmailSettings
+
+// SendTestEmailJSONRequestBody defines body for SendTestEmail for application/json ContentType.
+type SendTestEmailJSONRequestBody = TestEmailRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -796,6 +1028,15 @@ type ServerInterface interface {
 	// (PUT /customers/{id})
 	UpdateCustomer(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (GET /customers/{id}/statement)
+	GetStatement(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /customers/{id}/statement/pdf)
+	GetStatementPdf(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /customers/{id}/statement/send)
+	SendStatement(w http.ResponseWriter, r *http.Request, id Id, params SendStatementParams)
+
 	// (GET /dashboard)
 	GetDashboard(w http.ResponseWriter, r *http.Request)
 
@@ -825,6 +1066,9 @@ type ServerInterface interface {
 
 	// (POST /invoices/{id}/issue)
 	IssueInvoice(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /invoices/{id}/mark-overdue)
+	MarkInvoiceOverdue(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (POST /invoices/{id}/mark-paid)
 	MarkInvoicePaid(w http.ResponseWriter, r *http.Request, id Id)
@@ -885,6 +1129,18 @@ type ServerInterface interface {
 
 	// (PUT /settings/business)
 	UpdateBusiness(w http.ResponseWriter, r *http.Request)
+
+	// (GET /settings/email)
+	GetEmailSettings(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /settings/email)
+	UpdateEmailSettings(w http.ResponseWriter, r *http.Request)
+
+	// (POST /settings/email/test)
+	SendTestEmail(w http.ResponseWriter, r *http.Request)
+
+	// (GET /version)
+	GetVersion(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1295,6 +1551,108 @@ func (siw *ServerInterfaceWrapper) UpdateCustomer(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetStatement operation middleware
+func (siw *ServerInterfaceWrapper) GetStatement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStatement(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStatementPdf operation middleware
+func (siw *ServerInterfaceWrapper) GetStatementPdf(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStatementPdf(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendStatement operation middleware
+func (siw *ServerInterfaceWrapper) SendStatement(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SendStatementParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendStatement(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetDashboard operation middleware
 func (siw *ServerInterfaceWrapper) GetDashboard(w http.ResponseWriter, r *http.Request) {
 
@@ -1640,6 +1998,32 @@ func (siw *ServerInterfaceWrapper) IssueInvoice(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.IssueInvoice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MarkInvoiceOverdue operation middleware
+func (siw *ServerInterfaceWrapper) MarkInvoiceOverdue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MarkInvoiceOverdue(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2238,6 +2622,62 @@ func (siw *ServerInterfaceWrapper) UpdateBusiness(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetEmailSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetEmailSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEmailSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateEmailSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateEmailSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateEmailSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendTestEmail operation middleware
+func (siw *ServerInterfaceWrapper) SendTestEmail(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendTestEmail(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVersion(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -2359,11 +2799,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/login", wrapper.Login)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/version", wrapper.GetVersion)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/password", wrapper.ChangePassword)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/me", wrapper.Me)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/business", wrapper.GetBusiness)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/business", wrapper.UpdateBusiness)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/currencies", wrapper.CreateCurrency)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/currencies/{code}", wrapper.UpdateCurrency)
@@ -2377,6 +2821,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/customers/{id}", wrapper.DeleteCustomer)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/customers/{id}", wrapper.GetCustomer)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/customers/{id}", wrapper.UpdateCustomer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/customers/{id}/statement", wrapper.GetStatement)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/customers/{id}/statement/pdf", wrapper.GetStatementPdf)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/customers/{id}/statement/send", wrapper.SendStatement)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/products", wrapper.ListProducts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/products", wrapper.CreateProduct)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/products/{id}", wrapper.DeleteProduct)
@@ -2389,6 +2836,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/invoices/{id}", wrapper.UpdateInvoice)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/issue", wrapper.IssueInvoice)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/void", wrapper.VoidInvoice)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/mark-overdue", wrapper.MarkInvoiceOverdue)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/mark-paid", wrapper.MarkInvoicePaid)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/send", wrapper.SendInvoice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invoices/{id}/pdf", wrapper.GetInvoicePdf)
@@ -3072,6 +3520,137 @@ func (response UpdateCustomerdefaultApplicationProblemPlusJSONResponse) VisitUpd
 	return err
 }
 
+type GetStatementRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetStatementResponseObject interface {
+	VisitGetStatementResponse(w http.ResponseWriter) error
+}
+
+type GetStatement200JSONResponse Statement
+
+func (response GetStatement200JSONResponse) VisitGetStatementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStatementdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetStatementdefaultApplicationProblemPlusJSONResponse) VisitGetStatementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStatementPdfRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetStatementPdfResponseObject interface {
+	VisitGetStatementPdfResponse(w http.ResponseWriter) error
+}
+
+type GetStatementPdf200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type GetStatementPdf200ApplicationpdfResponse struct {
+	Body          io.Reader
+	Headers       GetStatementPdf200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetStatementPdf200ApplicationpdfResponse) VisitGetStatementPdfResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetStatementPdfdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetStatementPdfdefaultApplicationProblemPlusJSONResponse) VisitGetStatementPdfResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendStatementRequestObject struct {
+	Id     Id `json:"id"`
+	Params SendStatementParams
+	Body   *SendStatementJSONRequestBody
+}
+
+type SendStatementResponseObject interface {
+	VisitSendStatementResponse(w http.ResponseWriter) error
+}
+
+type SendStatement202JSONResponse EmailMessage
+
+func (response SendStatement202JSONResponse) VisitSendStatementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendStatementdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendStatementdefaultApplicationProblemPlusJSONResponse) VisitSendStatementResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetDashboardRequestObject struct {
 }
 
@@ -3446,6 +4025,45 @@ type IssueInvoicedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response IssueInvoicedefaultApplicationProblemPlusJSONResponse) VisitIssueInvoiceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkInvoiceOverdueRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type MarkInvoiceOverdueResponseObject interface {
+	VisitMarkInvoiceOverdueResponse(w http.ResponseWriter) error
+}
+
+type MarkInvoiceOverdue200JSONResponse Invoice
+
+func (response MarkInvoiceOverdue200JSONResponse) VisitMarkInvoiceOverdueResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkInvoiceOverduedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response MarkInvoiceOverduedefaultApplicationProblemPlusJSONResponse) VisitMarkInvoiceOverdueResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4241,6 +4859,137 @@ func (response UpdateBusinessdefaultApplicationProblemPlusJSONResponse) VisitUpd
 	return err
 }
 
+type GetEmailSettingsRequestObject struct {
+}
+
+type GetEmailSettingsResponseObject interface {
+	VisitGetEmailSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetEmailSettings200JSONResponse EmailSettings
+
+func (response GetEmailSettings200JSONResponse) VisitGetEmailSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEmailSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetEmailSettingsdefaultApplicationProblemPlusJSONResponse) VisitGetEmailSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateEmailSettingsRequestObject struct {
+	Body *UpdateEmailSettingsJSONRequestBody
+}
+
+type UpdateEmailSettingsResponseObject interface {
+	VisitUpdateEmailSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateEmailSettings200JSONResponse EmailSettings
+
+func (response UpdateEmailSettings200JSONResponse) VisitUpdateEmailSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateEmailSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateEmailSettingsdefaultApplicationProblemPlusJSONResponse) VisitUpdateEmailSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendTestEmailRequestObject struct {
+	Body *SendTestEmailJSONRequestBody
+}
+
+type SendTestEmailResponseObject interface {
+	VisitSendTestEmailResponse(w http.ResponseWriter) error
+}
+
+type SendTestEmail204Response struct {
+}
+
+func (response SendTestEmail204Response) VisitSendTestEmailResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SendTestEmaildefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendTestEmaildefaultApplicationProblemPlusJSONResponse) VisitSendTestEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetVersionRequestObject struct {
+}
+
+type GetVersionResponseObject interface {
+	VisitGetVersionResponse(w http.ResponseWriter) error
+}
+
+type GetVersion200JSONResponse Version
+
+func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
@@ -4295,6 +5044,15 @@ type StrictServerInterface interface {
 	// (PUT /customers/{id})
 	UpdateCustomer(ctx context.Context, request UpdateCustomerRequestObject) (UpdateCustomerResponseObject, error)
 
+	// (GET /customers/{id}/statement)
+	GetStatement(ctx context.Context, request GetStatementRequestObject) (GetStatementResponseObject, error)
+
+	// (GET /customers/{id}/statement/pdf)
+	GetStatementPdf(ctx context.Context, request GetStatementPdfRequestObject) (GetStatementPdfResponseObject, error)
+
+	// (POST /customers/{id}/statement/send)
+	SendStatement(ctx context.Context, request SendStatementRequestObject) (SendStatementResponseObject, error)
+
 	// (GET /dashboard)
 	GetDashboard(ctx context.Context, request GetDashboardRequestObject) (GetDashboardResponseObject, error)
 
@@ -4324,6 +5082,9 @@ type StrictServerInterface interface {
 
 	// (POST /invoices/{id}/issue)
 	IssueInvoice(ctx context.Context, request IssueInvoiceRequestObject) (IssueInvoiceResponseObject, error)
+
+	// (POST /invoices/{id}/mark-overdue)
+	MarkInvoiceOverdue(ctx context.Context, request MarkInvoiceOverdueRequestObject) (MarkInvoiceOverdueResponseObject, error)
 
 	// (POST /invoices/{id}/mark-paid)
 	MarkInvoicePaid(ctx context.Context, request MarkInvoicePaidRequestObject) (MarkInvoicePaidResponseObject, error)
@@ -4384,6 +5145,18 @@ type StrictServerInterface interface {
 
 	// (PUT /settings/business)
 	UpdateBusiness(ctx context.Context, request UpdateBusinessRequestObject) (UpdateBusinessResponseObject, error)
+
+	// (GET /settings/email)
+	GetEmailSettings(ctx context.Context, request GetEmailSettingsRequestObject) (GetEmailSettingsResponseObject, error)
+
+	// (PUT /settings/email)
+	UpdateEmailSettings(ctx context.Context, request UpdateEmailSettingsRequestObject) (UpdateEmailSettingsResponseObject, error)
+
+	// (POST /settings/email/test)
+	SendTestEmail(ctx context.Context, request SendTestEmailRequestObject) (SendTestEmailResponseObject, error)
+
+	// (GET /version)
+	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -4907,6 +5680,95 @@ func (sh *strictHandler) UpdateCustomer(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// GetStatement operation middleware
+func (sh *strictHandler) GetStatement(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetStatementRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStatement(ctx, request.(GetStatementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStatement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStatementResponseObject); ok {
+		if err := validResponse.VisitGetStatementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetStatementPdf operation middleware
+func (sh *strictHandler) GetStatementPdf(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetStatementPdfRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStatementPdf(ctx, request.(GetStatementPdfRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStatementPdf")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStatementPdfResponseObject); ok {
+		if err := validResponse.VisitGetStatementPdfResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendStatement operation middleware
+func (sh *strictHandler) SendStatement(w http.ResponseWriter, r *http.Request, id Id, params SendStatementParams) {
+	var request SendStatementRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body SendStatementJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendStatement(ctx, request.(SendStatementRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendStatement")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendStatementResponseObject); ok {
+		if err := validResponse.VisitSendStatementResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetDashboard operation middleware
 func (sh *strictHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	var request GetDashboardRequestObject
@@ -5180,6 +6042,32 @@ func (sh *strictHandler) IssueInvoice(w http.ResponseWriter, r *http.Request, id
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(IssueInvoiceResponseObject); ok {
 		if err := validResponse.VisitIssueInvoiceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MarkInvoiceOverdue operation middleware
+func (sh *strictHandler) MarkInvoiceOverdue(w http.ResponseWriter, r *http.Request, id Id) {
+	var request MarkInvoiceOverdueRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MarkInvoiceOverdue(ctx, request.(MarkInvoiceOverdueRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MarkInvoiceOverdue")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MarkInvoiceOverdueResponseObject); ok {
+		if err := validResponse.VisitMarkInvoiceOverdueResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5750,6 +6638,116 @@ func (sh *strictHandler) UpdateBusiness(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateBusinessResponseObject); ok {
 		if err := validResponse.VisitUpdateBusinessResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetEmailSettings operation middleware
+func (sh *strictHandler) GetEmailSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetEmailSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetEmailSettings(ctx, request.(GetEmailSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetEmailSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetEmailSettingsResponseObject); ok {
+		if err := validResponse.VisitGetEmailSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateEmailSettings operation middleware
+func (sh *strictHandler) UpdateEmailSettings(w http.ResponseWriter, r *http.Request) {
+	var request UpdateEmailSettingsRequestObject
+
+	var body UpdateEmailSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateEmailSettings(ctx, request.(UpdateEmailSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateEmailSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateEmailSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateEmailSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendTestEmail operation middleware
+func (sh *strictHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
+	var request SendTestEmailRequestObject
+
+	var body SendTestEmailJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendTestEmail(ctx, request.(SendTestEmailRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendTestEmail")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendTestEmailResponseObject); ok {
+		if err := validResponse.VisitSendTestEmailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVersion operation middleware
+func (sh *strictHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
+	var request GetVersionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVersion(ctx, request.(GetVersionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVersion")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetVersionResponseObject); ok {
+		if err := validResponse.VisitGetVersionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

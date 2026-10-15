@@ -33,6 +33,8 @@ type Options struct {
 	Registry     *prometheus.Registry
 	// Web is the built web app (nil serves only the API).
 	Web fs.FS
+	// Version and Build identify the release (shown in the app and on the login screen).
+	Version, Build string
 }
 
 // NewHandler builds the complete HTTP handler.
@@ -44,7 +46,7 @@ func NewHandler(o Options) http.Handler {
 		o.Registry = prometheus.NewRegistry()
 	}
 	m := newMetrics(o.Registry)
-	h := &handlers{svc: o.Service, clock: o.Clock, cookies: cookieConfig{secure: o.CookieSecure}}
+	h := &handlers{svc: o.Service, clock: o.Clock, cookies: cookieConfig{secure: o.CookieSecure}, version: o.Version, build: o.Build}
 	strict := NewStrictHandlerWithOptions(h, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestErrorHandler,
 		ResponseErrorHandlerFunc: responseErrorHandler(o.Logger),

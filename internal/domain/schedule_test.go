@@ -354,3 +354,41 @@ func TestTemplates(t *testing.T) {
 		t.Errorf("no symbol → code: %q", d.Total)
 	}
 }
+
+func TestEmailSchedules(t *testing.T) {
+	s := cityDeepSchedule()
+	s.Kind = ScheduleEmail
+	if err := s.Validate(); !errors.Is(err, ErrValidation) {
+		t.Fatal("scope required")
+	}
+	s.EmailScope = EmailUnsent
+	if err := s.Validate(); err != nil || s.Lines != nil || !s.AutoSend {
+		t.Fatalf("email schedule: %v %+v", err, s)
+	}
+	s.Kind = "sms"
+	if err := s.Validate(); !errors.Is(err, ErrValidation) {
+		t.Fatal("bad kind")
+	}
+	inv := &Invoice{Status: InvoiceIssued}
+	if !EmailUnsent.Selects(inv) || !EmailOutstanding.Selects(inv) {
+		t.Fatal("issued, never sent")
+	}
+	inv.Status, inv.SentAt = InvoiceSent, t0
+	if EmailUnsent.Selects(inv) || !EmailOutstanding.Selects(inv) {
+		t.Fatal("sent")
+	}
+	inv.Status = InvoiceOverdue
+	if !EmailOutstanding.Selects(inv) {
+		t.Fatal("overdue is outstanding")
+	}
+	for _, st := range []InvoiceStatus{InvoiceDraft, InvoicePaid, InvoiceVoid} {
+		inv.Status = st
+		if EmailOutstanding.Selects(inv) || EmailUnsent.Selects(inv) || EmailScope("x").Selects(inv) {
+			t.Errorf("%s must not be sent", st)
+		}
+	}
+	plain := cityDeepSchedule()
+	if err := plain.Validate(); err != nil || plain.Kind != ScheduleInvoice {
+		t.Fatal("default kind")
+	}
+}

@@ -16,6 +16,7 @@ type BankAccount struct {
 	AccountType   string
 	SwiftBIC      string
 	IBAN          string
+	Country       string
 	IsDefault     bool
 	Active        bool
 	Version       int
@@ -25,7 +26,7 @@ type BankAccount struct {
 func (b *BankAccount) Validate() error {
 	for _, f := range []*string{
 		&b.Label, &b.BankName, &b.Branch, &b.BranchCode, &b.AccountName,
-		&b.AccountNumber, &b.AccountType, &b.SwiftBIC, &b.IBAN,
+		&b.AccountNumber, &b.AccountType, &b.SwiftBIC, &b.IBAN, &b.Country,
 	} {
 		*f = strings.TrimSpace(*f)
 	}
@@ -41,6 +42,9 @@ func (b *BankAccount) Validate() error {
 	if b.AccountNumber == "" || len(b.AccountNumber) > 64 {
 		return invalid("accountNumber", "is required (max 64 characters)")
 	}
+	if len(b.Country) > 80 {
+		return invalid("country", "max 80 characters")
+	}
 	if b.IsDefault && !b.Active {
 		return invalid("isDefault", "an inactive account cannot be the default")
 	}
@@ -52,7 +56,7 @@ func (b BankAccount) Details() BankDetails {
 	return BankDetails{
 		BankName: b.BankName, Branch: b.Branch, BranchCode: b.BranchCode,
 		AccountName: b.AccountName, AccountNumber: b.AccountNumber, AccountType: b.AccountType,
-		SwiftBIC: b.SwiftBIC, IBAN: b.IBAN,
+		SwiftBIC: b.SwiftBIC, IBAN: b.IBAN, Country: b.Country,
 	}
 }
 
@@ -66,6 +70,7 @@ type BankDetails struct {
 	AccountType   string
 	SwiftBIC      string
 	IBAN          string
+	Country       string
 }
 
 // ResolveBankAccount picks the account an invoice for customer c is paid into: the

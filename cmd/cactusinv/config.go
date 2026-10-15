@@ -14,10 +14,7 @@ import (
 	"github.com/albievan/cactusinv/internal/ports"
 )
 
-type (
-	mariadbDB = sql.DB
-	portsMail = ports.Mail
-)
+type mariadbDB = sql.DB
 
 // config is every setting, read from the environment only (12-factor). Secrets are not
 // here: they come from files (Docker secrets) or Vault.

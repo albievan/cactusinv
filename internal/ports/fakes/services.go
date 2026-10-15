@@ -68,6 +68,14 @@ func (a *Archive) Save(_ context.Context, path string, data []byte) error {
 	return nil
 }
 
+// RenderStatement implements ports.InvoiceRenderer.
+func (r Renderer) RenderStatement(_ context.Context, doc ports.StatementDocument) ([]byte, error) {
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	return []byte("%PDF-statement " + doc.Statement.Customer.Code), nil
+}
+
 // Hasher is a reversible fake password hasher ("hash:" + password).
 type Hasher struct{}
 
@@ -92,4 +100,18 @@ func (s Secrets) Get(_ context.Context, key string) (string, error) {
 		return "", errors.New("secret not found: " + key)
 	}
 	return v, nil
+}
+
+// Cipher is a reversible fake cipher ("enc:" prefix).
+type Cipher struct{}
+
+// Encrypt implements ports.Cipher.
+func (Cipher) Encrypt(p []byte) ([]byte, error) { return append([]byte("enc:"), p...), nil }
+
+// Decrypt implements ports.Cipher.
+func (Cipher) Decrypt(c []byte) ([]byte, error) {
+	if !strings.HasPrefix(string(c), "enc:") {
+		return nil, errors.New("bad ciphertext")
+	}
+	return c[4:], nil
 }

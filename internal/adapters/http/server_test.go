@@ -16,6 +16,7 @@ import (
 
 	httpapi "github.com/albievan/cactusinv/internal/adapters/http"
 	"github.com/albievan/cactusinv/internal/app"
+	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
@@ -173,9 +174,9 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	c.ok(c.do("POST", "/api/v1/bank-accounts", obj{
 		"currency": "ZAR", "label": "Capitec savings", "bankName": "Capitecbank", "branch": "Northgate",
 		"branchCode": "470010", "accountName": "", "accountNumber": "1234567890", "accountType": "Savings",
-		"swiftBic": "", "iban": "", "isDefault": false, "active": true, "version": 0,
+		"swiftBic": "CABLZAJJ", "iban": "", "country": "South Africa", "isDefault": false, "active": true, "version": 0,
 	}, &bank), 201, "bank")
-	if !bank.IsDefault {
+	if !bank.IsDefault || bank.Country != "South Africa" || bank.SwiftBic != "CABLZAJJ" {
 		t.Fatal("first account is default")
 	}
 	c.ok(c.do("GET", "/api/v1/bank-accounts/"+bank.Id, nil, &bank), 200, "get bank")
@@ -193,6 +194,15 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 		"unit": "user", "active": true, "version": 0, "prices": []obj{{"currency": "ZAR", "unitPrice": "192.94"}, {"currency": "JPY", "unitPrice": "2000"}},
 	}, &product), 201, "product")
 	var p httpapi.Problem
+	var integ httpapi.Product
+	c.ok(c.do("POST", "/api/v1/products", obj{
+		"sku": "INTEG", "name": "Integration", "description": "Alchamex integration - monthly subscription",
+		"unit": "month", "active": true, "version": 0, "prices": []obj{{"currency": "ZAR", "unitPrice": "550"}},
+	}, &integ), 201, "product 2")
+	c.ok(c.do("POST", "/api/v1/products", obj{"sku": "NOPRICE", "name": "x", "unit": "", "description": "", "active": true, "version": 0, "prices": []obj{}}, &p), 422, "unit cost required")
+	if p.Field != "prices" {
+		t.Fatalf("problem = %+v", p)
+	}
 	c.ok(c.do("POST", "/api/v1/products", obj{"sku": "X", "name": "x", "prices": []obj{{"currency": "ZAR", "unitPrice": "1.234"}}}, &p), 422, "too many decimals")
 	if p.Field != "prices.unitPrice" {
 		t.Fatalf("problem = %+v", p)
@@ -222,17 +232,18 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 		"customerId": customer.Id,
 		"lines": []obj{
 			{"productId": product.Id, "quantity": "14"},
-			{"description": "Alchamex integration - monthly subscription", "quantity": "1", "unitPrice": "550"},
+			{"productId": integ.Id, "quantity": "1"},
 		},
 	}, &inv), 201, "create invoice")
-	if inv.Totals.Total != "3251.16" || inv.Lines[0].Amount != "2701.16" || inv.Lines[0].UnitPrice != "192.94" || inv.Status != "draft" {
+	if inv.Totals.Total != "3251.16" || inv.Lines[0].Amount != "2701.16" || inv.Lines[0].UnitPrice != "192.94" || inv.Status != "draft" || inv.Stage != "draft" ||
+		inv.Lines[1].Description != "Alchamex integration - monthly subscription" {
 		t.Fatalf("invoice = %+v", inv)
 	}
 	inv.Notes = "Updated"
-	c.ok(c.do("PUT", "/api/v1/invoices/"+inv.Id, obj{"version": inv.Version, "notes": "Updated", "lines": []obj{{"productId": product.Id, "quantity": "14"}, {"description": "Alchamex integration - monthly subscription", "quantity": "1", "unitPrice": "550.00", "discountPercent": "0"}}}, &inv), 200, "update invoice")
-	c.ok(c.do("PUT", "/api/v1/invoices/"+inv.Id, obj{"version": 1, "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "1"}}}, &p), 409, "stale version")
+	c.ok(c.do("PUT", "/api/v1/invoices/"+inv.Id, obj{"version": inv.Version, "notes": "Updated", "lines": []obj{{"productId": product.Id, "quantity": "14"}, {"productId": integ.Id, "quantity": "1", "discountPercent": "0"}}}, &inv), 200, "update invoice")
+	c.ok(c.do("PUT", "/api/v1/invoices/"+inv.Id, obj{"version": 1, "lines": []obj{{"productId": integ.Id, "quantity": "1"}}}, &p), 409, "stale version")
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/issue", obj{}, &inv), 200, "issue")
-	if inv.Number != "CD/1195/26" || inv.DueDate == nil || inv.DueDate.String() != "2026-09-07" || inv.Bank.AccountNumber != "1234567890" {
+	if inv.Stage != "issued" || inv.Number != "CD/1195/26" || inv.DueDate == nil || inv.DueDate.String() != "2026-09-07" || inv.Bank.AccountNumber != "1234567890" {
 		t.Fatalf("issued = %+v", inv)
 	}
 	c.ok(c.do("DELETE", "/api/v1/invoices/"+inv.Id, nil, &p), 409, "delete issued")
@@ -264,7 +275,7 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 
 	var detail httpapi.InvoiceDetail
 	c.ok(c.do("GET", "/api/v1/invoices/"+inv.Id, nil, &detail), 200, "detail")
-	if detail.Invoice.Status != "sent" || len(detail.Events) == 0 || len(detail.Emails) != 2 {
+	if detail.Invoice.Status != "sent" || detail.Invoice.Stage != "emailed" || len(detail.Events) == 0 || len(detail.Emails) != 2 {
 		t.Fatalf("detail = %+v", detail.Invoice.Status)
 	}
 
@@ -285,20 +296,28 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	if list.Total != 1 || len(list.Items[0].Lines) != 0 {
 		t.Fatalf("list = %+v", list)
 	}
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/mark-overdue", nil, &inv), 200, "overdue")
+	if inv.Status != "overdue" || inv.Stage != "overdue" || inv.OverdueAt == nil {
+		t.Fatalf("overdue = %+v", inv)
+	}
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/mark-paid", nil, &inv), 200, "paid")
+	if inv.Stage != "paid" {
+		t.Fatal("stage paid")
+	}
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/void", obj{"reason": "x"}, &p), 409, "void paid")
 
 	// A second invoice, voided.
 	var inv2 httpapi.Invoice
-	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "10"}}}, &inv2), 201, "inv2")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"productId": integ.Id, "quantity": "1"}}}, &inv2), 201, "inv2")
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv2.Id+"/issue", obj{"issueDate": "2026-08-22"}, &inv2), 200, "issue2")
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv2.Id+"/void", obj{"reason": "duplicate"}, &inv2), 200, "void")
 	var inv3 httpapi.Invoice
-	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "10"}}}, &inv3), 201, "inv3")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"productId": integ.Id, "quantity": "1"}}}, &inv3), 201, "inv3")
 	c.ok(c.do("DELETE", "/api/v1/invoices/"+inv3.Id, nil, nil), 204, "delete draft")
 	c.ok(c.do("POST", "/api/v1/invoices", obj{"lines": []obj{}}, &p), 422, "no customer")
-	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"description": "x", "quantity": "abc", "unitPrice": "1"}}}, &p), 422, "bad quantity")
-	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "vatPercent": "200", "lines": []obj{{"description": "x", "quantity": "1", "unitPrice": "1"}}}, &p), 422, "bad tax")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"productId": integ.Id, "quantity": "abc"}}}, &p), 422, "bad quantity")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "vatPercent": "200", "lines": []obj{{"productId": integ.Id, "quantity": "1"}}}, &p), 422, "bad tax")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": customer.Id, "lines": []obj{{"productId": "", "quantity": "1"}}}, &p), 422, "free text rejected")
 
 	// Schedules.
 	var sched httpapi.ScheduleDetail
@@ -306,7 +325,7 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 		"customerId": customer.Id, "name": "Acme monthly", "autoSend": true, "notes": "",
 		"emailSubject": "", "emailBody": "", "version": 0, "header": obj{},
 		"recurrence": obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 21, "weekday": 0, "sendTime": "09:00", "startDate": "2026-09-01"},
-		"lines":      []obj{{"productId": product.Id, "quantity": "14"}, {"description": "Alchamex ({period})", "quantity": "1", "unitPrice": "550"}},
+		"lines":      []obj{{"productId": product.Id, "quantity": "14"}, {"productId": integ.Id, "quantity": "1", "unitPrice": "550"}},
 	}, &sched), 201, "schedule")
 	if len(sched.Upcoming) != 5 || sched.Schedule.Lines[1].UnitPrice == nil || *sched.Schedule.Lines[1].UnitPrice != "550.00" || sched.Schedule.Recurrence.SendTime != "09:00" {
 		t.Fatalf("schedule = %+v", sched)
@@ -395,4 +414,66 @@ func TestReadyzUnavailable(t *testing.T) {
 	if rec.Code != 503 || !strings.Contains(rec.Body.String(), "unavailable") {
 		t.Fatalf("readyz = %d %s", rec.Code, rec.Body)
 	}
+}
+
+func TestVersionSettingsAndStatements(t *testing.T) {
+	c, _, _, svc := newServer(t)
+	var v httpapi.Version
+	c.ok(c.do("GET", "/api/v1/version", nil, &v), 200, "version is public")
+	c.login()
+	var es httpapi.EmailSettings
+	c.ok(c.do("GET", "/api/v1/settings/email", nil, &es), 200, "email settings")
+	if es.Host != "smtp.gmail.com" || es.Port != 587 || es.Enabled {
+		t.Fatalf("Gmail preset: %+v", es)
+	}
+	var p httpapi.Problem
+	es.Enabled, es.Username = true, "me@gmail.com"
+	c.ok(c.do("PUT", "/api/v1/settings/email", es, &p), 422, "password needed (and no cipher in this test)")
+	es.Enabled, es.Username = false, ""
+	c.ok(c.do("PUT", "/api/v1/settings/email", es, &es), 200, "save disabled")
+	c.ok(c.do("POST", "/api/v1/settings/email/test", obj{"to": "me@example.com"}, nil), 204, "test e-mail")
+	c.ok(c.do("POST", "/api/v1/settings/email/test", obj{"to": "nope"}, &p), 422, "bad recipient")
+
+	ctx := context.Background()
+	_, _ = svc.CreateCurrency(ctx, "ZAR", "Rand", "R", 2, true)
+	_, _ = svc.CreateBankAccount(ctx, domainBank())
+	cust, err := svc.CreateCustomer(ctx, domainCustomer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st httpapi.Statement
+	c.ok(c.do("GET", "/api/v1/customers/"+cust.ID+"/statement", nil, &st), 200, "statement")
+	if st.Total != "0.00" || len(st.Lines) != 0 {
+		t.Fatalf("empty statement: %+v", st)
+	}
+	resp, err := c.get("/api/v1/customers/" + cust.ID + "/statement/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), `inline; filename="Statement_CD_`) {
+		t.Fatalf("statement pdf: %d %v", resp.StatusCode, resp.Header)
+	}
+	var m httpapi.EmailMessage
+	c.ok(c.do("POST", "/api/v1/customers/"+cust.ID+"/statement/send", obj{}, &m), 202, "send statement")
+	if m.Kind != "statement" || m.CustomerId != cust.ID || m.InvoiceId != "" {
+		t.Fatalf("statement e-mail: %+v", m)
+	}
+	var sd httpapi.ScheduleDetail
+	c.ok(c.do("POST", "/api/v1/schedules", obj{
+		"customerId": cust.ID, "name": "Monthly statement", "kind": "email", "emailScope": "statement",
+		"autoSend": true, "notes": "", "emailSubject": "", "emailBody": "", "version": 0, "header": obj{}, "lines": []obj{},
+		"recurrence": obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 1, "weekday": 0, "sendTime": "08:00", "startDate": "2026-09-01"},
+	}, &sd), 201, "email schedule")
+	if sd.Schedule.Kind != "email" || sd.Schedule.EmailScope != "statement" {
+		t.Fatalf("schedule kind: %+v", sd.Schedule)
+	}
+}
+
+func domainBank() domain.BankAccount {
+	return domain.BankAccount{Currency: "ZAR", Label: "Main", BankName: "Example Bank", AccountNumber: "1", Active: true}
+}
+
+func domainCustomer() domain.Customer {
+	return domain.Customer{Code: "CD", Name: "Acme", Email: "a@acme.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true}
 }
