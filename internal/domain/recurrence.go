@@ -113,12 +113,28 @@ func (r Recurrence) location() *time.Location {
 }
 
 // At returns the instant the recurrence fires on local date d. A send time that falls in
-// a daylight-saving gap fires just after the gap, never before the requested time.
+// a daylight-saving gap fires after the gap, on the same date.
 func (r Recurrence) At(d Date) time.Time {
 	loc := r.location()
 	at := time.Date(d.Year, d.Month, d.Day, r.SendHour, r.SendMinute, 0, 0, loc)
-	if at.Hour() != r.SendHour || at.Minute() != r.SendMinute {
-		at = time.Date(d.Year, d.Month, d.Day, r.SendHour+1, r.SendMinute, 0, 0, loc)
+	if at.Hour() == r.SendHour && at.Minute() == r.SendMinute {
+		return at
+	}
+	// In a daylight-saving gap: read the requested wall time with the offset in force before
+	// the change, which lands as far past the gap's end as the time was into it (02:30 in a
+	// 02:00–03:00 gap fires at 03:30; 02:15 in Lord Howe's 30-minute gap at 02:45). It never
+	// moves into the next date: a gap that reaches midnight fires at the day's last valid
+	// minute instead.
+	_, before := time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, loc).Zone()
+	shifted := time.Date(d.Year, d.Month, d.Day, r.SendHour, r.SendMinute, 0, 0, time.UTC).Add(-time.Duration(before) * time.Second).In(loc)
+	if shifted.Day() == d.Day {
+		return shifted
+	}
+	for m := r.SendHour*60 + r.SendMinute - 1; m >= 0; m-- {
+		t := time.Date(d.Year, d.Month, d.Day, m/60, m%60, 0, 0, loc)
+		if t.Day() == d.Day && t.Hour()*60+t.Minute() == m {
+			return t
+		}
 	}
 	return at
 }

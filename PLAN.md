@@ -362,6 +362,61 @@ M18: the GitHub repository link on the sign-in page (18.9).
 Evidence (2026-10-16, isolated worktree at 27bf815 + M18): `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.7 %, app 85.5 %, "No vulnerabilities found.", contracts in sync, web 68 tests, build OK); `make test-int` on local Docker: `ok internal/adapters/mariadb 34.9s` (incl. `TestGroupRepository`, `TestAccessGroupsMigrationSeedsOneAdministrator`, `headSchema` 18); screens checked at 1280 px and 390 px with mocked data (users, groups, group editor, sign-in page).
 
 
+### M19 — Bug hunt across the whole codebase (Albie, 2026-10-16) — v1.7.1
+
+> "Read this whole codebase and find real bugs, broken edge cases, and anything that falls
+> over in front of a user. List everything by severity and fix anything until no more bugs
+> exist." Six reviewers (domain, use cases, HTTP/security, MariaDB, web, workers/PDF/deploy)
+> reported verified findings with repros; each was checked against the code and fixed with a
+> test. Severity as found.
+
+| ID | Sev. | Defect → fix | Status | Test |
+|---|---|---|---|---|
+| 19.1 | High | Invoice totals overflowed int64 (10 lines at the limits → a negative or garbage total, 201) → `checkTotalsFit`: subtotal and total ≤ `MaxInvoiceTotal` (1e15 minor units), summed in big.Int, 422 | done | `domain/bugfix_test.go` |
+| 19.2 | High | A user with only `invoices.send` could issue drafts through "Send" → sending a draft needs `invoices.edit` (`Actor.Can`); the "Send later" button follows | done | `app/bugfix_test.go` |
+| 19.3 | High | `dashboard.view` exposed the audit log, outbox, invoices and schedules → the dashboard drops what the user may not open | done | app |
+| 19.4 | High | `statements.view` listed the whole outbox → without `emails.view` only one customer's statement e-mails | done | app |
+| 19.5 | High | Shutdown during an SMTP send left the e-mail "sending" → sent again after restart → the outcome is recorded on a context that survives shutdown (`outcomeContext`); workers stop first; compose `stop_grace_period: 30s` | done | app suite, review |
+| 19.6 | High | An error on QUIT after the server accepted the message made the outbox retry (duplicate) → QUIT errors ignored | done | `smtp/bugfix_test.go` |
+| 19.7 | High | PDF rows taller than the space left, and long notes/disclaimers, were drawn below the page → rows split across pages, notes continue page after page | done | `pdf/bugfix_test.go` |
+| 19.8 | High (web) | Product picker unusable on phones (name column 0 px) → stacked layout below `sm` | done | rendered |
+| 19.9 | High (web) | Decimal comma ("192,94" from comma-region iPhones) refused everywhere → read as a point unless ambiguous ("1,500"), in the web app and `domain.parseFixed` | done | web + domain |
+| 19.10 | Medium | Cancel/void racing the dispatcher could be lost and the e-mail still sent → `Emails.Lock` (FOR UPDATE) in every transition; outcomes only recorded while "sending" | done | `mariadb/bugfix_integration_test.go` |
+| 19.11 | Medium | "Unsent" e-mail schedules re-sent invoices with an e-mail already queued → skipped | done | app |
+| 19.12 | Medium | `schedules.edit` alone could make schedules that invoice or e-mail → invoice schedules need `invoices.edit` (+ `invoices.send` to auto-send), e-mail ones `invoices.send` / `statements.send`; `schedules.view` now implies `customers.view` and `products.view` | done | app |
+| 19.13 | Medium | Send `Idempotency-Key` answered with another invoice's e-mail when reused → refused (409) unless it was this invoice's / customer's | done | app |
+| 19.14 | Medium | Password bodies on PUT routes (groups, user groups, e-mail server) were fingerprinted for idempotency → never stored | done | http |
+| 19.15 | Medium | Rate-limit buckets could be flushed by spraying addresses; IPv6 not grouped → evict only idle buckets; IPv6 keyed by /64 | done | review |
+| 19.16 | Medium | Parser accepted "-", "+", "." as 0 → refused | done | domain |
+| 19.17 | Medium | Customers could have more CCs than any e-mail allows → max 10, duplicates dropped | done | domain |
+| 19.18 | Medium | PDF text outside cp1252 printed as dots → DejaVu Sans Condensed embedded (UTF-8; licence in `internal/adapters/pdf/fonts/LICENSE`) | done | pdf |
+| 19.19 | Medium | Long non-ASCII subjects / many CCs made header lines > 998 bytes → folded | done | smtp |
+| 19.20 | Medium (web) | Statement "Owed to you" summed floats, always 2 decimals (KWD/JPY wrong); dashboard zeros "0.00" → exact minor-unit sums, the currency's decimals | done | web |
+| 19.21 | Medium (web) | One tap deleted drafts, products, customers, bank accounts, schedules; schedule Run now ran at once → confirm sheets (`ConfirmButton`) | done | web |
+| 19.22 | Medium (web) | Statement e-mail could be queued twice by a double tap → busy guard | done | review |
+| 19.23 | Medium (web) | Session timeout replaced the page, losing a half-filled form → sign-in over the page | done | web |
+| 19.24 | Medium | `deploy.sh --restore FILE --ssh-access` could not use a local file or a passphrase → file copied privately; passphrase over stdin | done | `bash -n`, shellcheck |
+| 19.25 | Medium | k3s/k8s re-install from a dirty tree kept the old pods → unique tag per dirty build | done | review |
+| 19.26 | Medium | k8s liveness could kill a pod mid-migration; replicas could migrate at once → `startupProbe` (15 min) and a `GET_LOCK` migration lock | done | integration |
+| 19.27 | Low–Med | Dashboard "paid" months in UTC; top debtors ranked across currencies → business-zone months; top N per currency | done | integration |
+| 19.28 | Low | Schedule runs locked audit head before the invoice sequence (deadlock with manual issue); run counts inflated on retry → sequence locked first; counted after commit | done | app suite |
+| 19.29 | Low | Failing archive exports blocked all others → 15-minute back-off per invoice | done | app |
+| 19.30 | Low | Values longer than their column were 500s → 422 naming the column (MariaDB 1406/1366) | done | integration |
+| 19.31 | Low | Number format could expand past the 64-character column; schedule descriptions past 2000 after placeholders → checked at their longest | done | domain |
+| 19.32 | Low | Daylight-saving gap at midnight moved a run to the next date; 30-minute gaps fired late → pre-change offset, never another date | done | domain |
+| 19.33 | Low | Idempotency keys > 163 chars or non-ASCII were 500s; a panic left a key "in progress" 24 h → max 128 printable ASCII; released on panic | done | http |
+| 19.34 | Low | Oversized JSON was 400 (413 with a key); SPA listed /assets/ and answered missing chunks with index.html; unknown customer 404 → 413; 404; 422 `customerId` | done | http |
+| 19.35 | Low | Failed test e-mail audited as sent; SMTP errors leaked internal errors; "scheduled for" in UTC → audited as failed; only mail-server errors shown; business zone | done | app |
+| 19.36 | Low | Restore preview: empty SMTP password read as "cleared"; restorer not warned when not an administrator in the backup → nil when absent; warning | done | app |
+| 19.37 | Low (web) | Schedule start date in UTC at module load; inactive customer hid a schedule's lines; repricing on currency change; "Send test e-mail" for viewers / tested unsaved settings; Business page spun forever on error; settings-only users saw "no access" at home; product search races and errors; same backup file twice; links to pages without access | done | web suite |
+
+Known limits left as they are (committed migrations are never edited, CLAUDE.md §5): the Down
+steps of 00004 (overdue drafts back to "sent"), 00009 (no-op; re-running Up 9 alone backfills
+twice) and 00017 (fails if two runs share a date under different period keys). Weekly
+schedules can still bill a week twice when their weekday moves (accepted in M17).
+
+Evidence (2026-10-16, worktree at 5afff07 + M19): `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.8 %, app 85.6 %, "No vulnerabilities found.", contracts in sync, web 73 tests, build OK); `make test-int` on local Docker: `ok internal/adapters/mariadb 34.2s` (incl. the new lock, local-month, per-currency, too-long and migration-lock tests); product picker measured at 360 px (name column 213 px, was 0); sample PDFs rendered with the embedded font.
+
 ---
 
 ## Decisions
@@ -482,6 +537,10 @@ Evidence (2026-10-16, isolated worktree at 27bf815 + M18): `make fmt-check lint 
 | 2026-10-16 | Every group and membership change needs the actor's password, takes the Administrators lock and is audited; nobody removes themselves from Administrators (M18) | Albie's answers 5–6; keeps an active administrator without a separate "last administrator" rule |
 | 2026-10-16 | Access is checked per API operation in the session middleware; an operation without a rule is refused; a test checks every contract operation has one; currencies, business profile and bank accounts are readable by every signed-in user (M18) | one place to enforce, fail closed; reference data is printed on every invoice anyway |
 | 2026-10-16 | Settings → Your account (own password) is open to every user (M18) | a user without administration could otherwise not change their password on a desktop |
+| 2026-10-16 | A signed-in actor carries its access into the use cases (`app.Actor.Access`, nil = system/CLI); use cases check what an operation alone cannot: sending a draft (issues it), the dashboard's sections, the outbox list, what a schedule will do (M19) | the operation map cannot see an invoice's state or a schedule's kind |
+| 2026-10-16 | A decimal comma is accepted when it cannot be a thousands separator (one comma, no point, not exactly three digits after it) (M19) | comma-region phones have no "." key; "1,500" stays refused rather than guessed |
+| 2026-10-16 | PDFs embed DejaVu Sans Condensed (UTF-8) instead of the cp1252 core Helvetica (M19) | customer names in other scripts were printed as dots; +2 MB binary |
+| 2026-10-16 | E-mail status changes lock the outbox row; delivery outcomes are recorded on a context that ignores shutdown (15 s) (M19) | a cancel must win or lose cleanly against the dispatcher; an accepted message must never be sent twice |
 
 ## Later
 

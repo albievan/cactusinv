@@ -77,6 +77,9 @@ func (s *Service) CreateInvoice(ctx context.Context, in InvoiceInput) (*domain.I
 	id := s.ids.NewID()
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		c, err := r.Customers.Get(ctx, in.CustomerID)
+		if errors.Is(err, domain.ErrNotFound) { // a field of the request, not the URL's resource
+			return &domain.ValidationError{Field: "customerId", Reason: "unknown customer"}
+		}
 		if err != nil {
 			return err
 		}
@@ -277,11 +280,18 @@ func (s *Service) VoidInvoice(ctx context.Context, id, reason string) (*domain.I
 			return err
 		}
 		for i := range pending {
-			m := pending[i]
+			// Locked and re-read: the dispatcher may have claimed it since the list.
+			m, err := r.Emails.Lock(ctx, pending[i].ID)
+			if err != nil {
+				return err
+			}
+			if m.Status != domain.EmailPending {
+				continue // being sent now; delivery checks for a void invoice
+			}
 			if err := m.Cancel(s.now()); err != nil {
 				return err
 			}
-			if err := r.Emails.Update(ctx, &m); err != nil {
+			if err := r.Emails.Update(ctx, m); err != nil {
 				return err
 			}
 		}
@@ -418,6 +428,11 @@ func (s *Service) SendInvoice(ctx context.Context, id string, in SendInput) (*do
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if in.IdempotencyKey != "" {
 			if m, err := r.Emails.GetByIdempotencyKey(ctx, in.IdempotencyKey); err == nil {
+				// The key names this request only if it was an e-mail of this invoice; reused
+				// for another one it must not silently answer with that e-mail.
+				if m.InvoiceID != id {
+					return domain.ErrConflict
+				}
 				out = m
 				return nil
 			} else if !errors.Is(err, domain.ErrNotFound) {
@@ -429,11 +444,12 @@ func (s *Service) SendInvoice(ctx context.Context, id string, in SendInput) (*do
 			return err
 		}
 		if inv.Status == domain.InvoiceDraft {
-			b, err := business(ctx, r)
-			if err != nil {
-				return err
+			// Sending a draft issues it, which needs the right to issue (ADR-012); it keeps
+			// the draft's own date, as IssueInvoice does.
+			if !ActorFrom(ctx).Can(domain.PermInvoicesEdit) {
+				return domain.ErrNoAccess
 			}
-			if err := s.issue(ctx, r, inv, s.today(b)); err != nil {
+			if err := s.issue(ctx, r, inv, domain.Date{}); err != nil {
 				return err
 			}
 		}
@@ -487,7 +503,12 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	}
 	detail := "queued"
 	if m.SendAt.After(s.now()) {
-		detail = "scheduled for " + m.SendAt.Format("2006-01-02 15:04 MST")
+		// In the business's time zone, as the user chose it.
+		loc := time.UTC
+		if b, err := business(ctx, r); err == nil {
+			loc = b.Location()
+		}
+		detail = "scheduled for " + m.SendAt.In(loc).Format("2006-01-02 15:04 MST")
 	}
 	return m, s.event(ctx, r, inv.ID, "email_queued", detail+" to "+strings.Join(to, ", "))
 }

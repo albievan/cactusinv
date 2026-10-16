@@ -427,3 +427,23 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   `RequireAccess` guards routes (a `NoAccess` page instead); `Can` hides buttons; the start
   page is the dashboard or the first page allowed; Settings → Your account is open to all.
   Settings → Users & groups has Users and Groups tabs (`features/settings/users/`).
+
+## 15. Hardening (M19, v1.7.1)
+
+- **Outbox**: every status change reads the row with `EmailRepository.Lock` (FOR UPDATE), so
+  a cancel or void and the dispatcher's claim (SKIP LOCKED) cannot both act; `Succeeded`
+  and failures apply only while the message is `sending`; outcomes are recorded on
+  `outcomeContext` (not cancelled by shutdown, 15 s), and the process stops the workers
+  first (compose `stop_grace_period: 30s`). SMTP: a QUIT error after the server accepted
+  the data is ignored; long headers are folded.
+- **Schedule runs** lock the invoice sequence before the audit head (the order of every
+  issuing path) and count results only after commit.
+- **Migrations** take `GET_LOCK('cactusinv_migrate')`; the k8s manifest has a startupProbe.
+- **PDF**: DejaVu Sans Condensed embedded (UTF-8); every text run goes through `page.put`
+  (and `Renderer.Trace` for tests); table rows split across pages; notes continue on new
+  pages; header and party text wraps.
+- **HTTP**: password-carrying PUTs are never fingerprinted; Idempotency-Key 1–128 printable
+  ASCII; rate-limit buckets evicted only when idle, IPv6 keyed by /64; MariaDB 1406/1366 →
+  422 naming the column; missing `/assets/*` → 404.
+- **Money input**: a decimal comma is accepted when unambiguous (`domain.parseFixed`,
+  web `normalizeDecimal`); invoice totals are bounded by `MaxInvoiceTotal`.

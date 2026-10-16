@@ -186,7 +186,11 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
             className="sr-only"
             aria-label="Restore from file"
             disabled={busy || !!ov.restoreUnavailable}
-            onChange={(e) => void upload(e.target.files?.[0])}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = '' // the same file can be chosen again after an error
+              void upload(f)
+            }}
           />
         </label>
       </div>

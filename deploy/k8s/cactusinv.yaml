@@ -144,7 +144,10 @@ spec:
             - { name: backups, mountPath: /data/backups }
             - { name: secrets, mountPath: /run/secrets, readOnly: true }
           readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10 }
-          livenessProbe: { httpGet: { path: /healthz, port: http }, initialDelaySeconds: 60, periodSeconds: 20 }
+          # Up to 15 minutes to connect and run migrations before liveness applies: a pod
+          # killed half-way through a (non-transactional) MariaDB migration cannot start again.
+          startupProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 90 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 20 }
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
           # A passphrase backup (age scrypt) needs ~256 MiB for a moment, one at a time.
           resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 768Mi } }

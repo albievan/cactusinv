@@ -42,6 +42,24 @@ export function InvoiceEditor() {
 
   const customer: Customer | undefined = customers.data?.find((c) => c.id === customerId)
   const currency = existing.data?.invoice.currency ?? customer?.currency ?? ''
+  // A different customer may bill in another currency: every chosen product is priced again
+  // in it, and a product with no price there is cleared so the user picks another.
+  const changeCustomer = (next: string) => {
+    const nextCur = customers.data?.find((c) => c.id === next)?.currency ?? ''
+    setCustomerId(next)
+    if (!nextCur || nextCur === currency) return
+    const picked = lines.filter((l) => l.productId)
+    if (picked.length === 0) return
+    void Promise.all(picked.map((l) => unwrap(api.GET('/products/{id}', { params: { path: { id: l.productId } } })).catch(() => null))).then((products) =>
+      setLines((cur) =>
+        cur.map((l) => {
+          if (!l.productId) return l
+          const price = products.find((p) => p?.id === l.productId)?.prices.find((x) => x.currency === nextCur)?.unitPrice
+          return price ? { ...l, unitPrice: price } : { ...l, productId: '', productName: '', description: '', unitPrice: '' }
+        }),
+      ),
+    )
+  }
   const vat = vatPercent ?? business.data?.vatPercent ?? '0'
 
   const submit = async (e: FormEvent) => {
@@ -73,7 +91,7 @@ export function InvoiceEditor() {
         <div className="card grid gap-4 md:grid-cols-3">
           <Field label="Customer" hint={customer ? `Billed in ${customer.currency} · ${customer.paymentTerms.text}` : undefined}>
             {(fid) => (
-              <select id={fid} className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)} disabled={!!id} required>
+              <select id={fid} className="input" value={customerId} onChange={(e) => changeCustomer(e.target.value)} disabled={!!id} required>
                 <option value="">Choose a customer…</option>
                 {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
               </select>

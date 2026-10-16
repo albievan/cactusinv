@@ -83,22 +83,23 @@ WHERE status IN ('issued', 'sent', 'overdue', 'paid') AND issue_date >= sqlc.arg
 GROUP BY currency_code, month
 ORDER BY month, currency_code;
 
--- name: MonthlyPaid :many
-SELECT currency_code, CAST(DATE_FORMAT(paid_at, '%Y-%m') AS CHAR(7)) AS month,
-       CAST(SUM(total_minor) AS SIGNED) AS total, CAST(COUNT(*) AS SIGNED) AS count
+-- MonthlyPaidRows lists paid invoices since an instant; they are bucketed into months in
+-- the business's time zone in Go (paid_at is UTC; the server may lack time-zone tables).
+-- name: MonthlyPaidRows :many
+SELECT currency_code, paid_at, total_minor
 FROM invoices
 WHERE status = 'paid' AND paid_at >= sqlc.arg(since)
-GROUP BY currency_code, month
-ORDER BY month, currency_code;
+ORDER BY paid_at;
 
+-- TopDebtors lists every customer's open balance per currency; Go keeps the top ones of
+-- each currency (amounts in different currencies are never compared).
 -- name: TopDebtors :many
 SELECT i.customer_id, c.name, i.currency_code,
        CAST(SUM(i.total_minor) AS SIGNED) AS outstanding, CAST(COUNT(*) AS SIGNED) AS open_count
 FROM invoices i JOIN customers c ON c.id = i.customer_id
 WHERE i.status IN ('issued', 'sent', 'overdue')
 GROUP BY i.customer_id, c.name, i.currency_code
-ORDER BY outstanding DESC
-LIMIT ?;
+ORDER BY outstanding DESC;
 
 -- name: ResetInvoicesExported :exec
 UPDATE invoices SET exported_version = NULL;

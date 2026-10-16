@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Product } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
 
 export function ProductList() {
@@ -125,7 +125,7 @@ export function ProductEditor() {
         </div>
         <Can need="products.edit">
           <StickyActions>
-            {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
+            {id && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this product?" message="It disappears from the look-up. Invoices already issued keep their lines. If it is still used by a schedule or invoice, it cannot be deleted." confirmLabel="Delete" onConfirm={remove} /></span>}
             <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
             <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
           </StickyActions>

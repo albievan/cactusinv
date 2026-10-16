@@ -4,7 +4,7 @@ import { Link, NavLink } from 'react-router-dom'
 import { api, unwrap, type BankAccount, type BusinessSettings, type Currency, type Schemas } from '../../lib/api/client'
 import { useVersion } from '../../lib/version'
 import { useAsync } from '../../lib/useAsync'
-import { ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
+import { ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
 import { useAuth, useCan } from '../../components/auth'
 import { IconInfo } from '../../components/icons'
 import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
@@ -170,8 +170,11 @@ function EmailServer() {
   const [msgWarns, setMsgWarns] = useState(false)
   const [err, setErr] = useState<Error | null>(null)
   const [guide, setGuide] = useState(false)
-  useEffect(() => { if (data) setE(data) }, [data])
+  // The test uses the SAVED settings, so it waits until the form is saved.
+  const [saved, setSaved] = useState('')
+  useEffect(() => { if (data) { setE(data); setSaved(JSON.stringify(data)) } }, [data])
   if (!e) return error ? <ErrorBanner error={error} /> : <Spinner />
+  const dirty = JSON.stringify(e) !== saved || password !== ''
   const preset = Object.entries(presets).find(([, p]) => p.host === e.host)?.[0] ?? 'Custom'
   const set = (patch: Partial<EmailSettings>) => setE({ ...e, ...patch })
   const save = async (ev: FormEvent) => {
@@ -180,7 +183,9 @@ function EmailServer() {
     setMsg('')
     setMsgWarns(false)
     try {
-      setE(await unwrap(api.PUT('/settings/email', { body: { ...e, password: password === '' ? undefined : password } })))
+      const next = await unwrap(api.PUT('/settings/email', { body: { ...e, password: password === '' ? undefined : password } }))
+      setE(next)
+      setSaved(JSON.stringify(next))
       setPassword('')
       setMsg('Saved.')
     } catch (x) {
@@ -252,7 +257,12 @@ function EmailServer() {
       </div>
       <div className="flex flex-wrap items-end gap-3 border-t border-cream-200 pt-4">
         <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="input md:w-72" value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
-        <button type="button" className="btn-secondary" onClick={test}>Send test e-mail</button>
+        {can('settings.edit') && (
+          <button type="button" className="btn-secondary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
+            Send test e-mail
+          </button>
+        )}
+        {can('settings.edit') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
         <span className="flex-1" />
         {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
         {can('settings.edit') && <button className="btn-primary">Save e-mail server</button>}
@@ -269,7 +279,7 @@ function BusinessForm() {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
   useEffect(() => { if (data) setB(data) }, [data])
-  if (loading || !b) return <Spinner />
+  if (!b) return error && !loading ? <ErrorBanner error={error} /> : <Spinner />
   const set = (patch: Partial<BusinessSettings>) => setB({ ...b, ...patch })
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -418,7 +428,7 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /> Default for {b.currency}</label>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /> Active</label>
       <div className="flex gap-2">
-        <Can need="settings.edit">{b.id && <button type="button" className="btn-danger" onClick={() => onDelete(b)}>Delete</button>}</Can>
+        <Can need="settings.edit">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
         <Can need="settings.edit"><button className="btn-primary flex-1">Save</button></Can>
       </div>
     </form>

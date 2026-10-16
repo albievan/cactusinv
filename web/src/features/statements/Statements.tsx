@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Can } from '../../components/Access'
+import { Can, MaybeLink } from '../../components/Access'
 import { Link, useParams } from 'react-router-dom'
 import { api, unwrap, type Schemas } from '../../lib/api/client'
 import { formatDate, formatDateTime } from '../../lib/format'
-import { groupAmount } from '../../lib/money'
+import { groupAmount, sumAmounts, toMinor } from '../../lib/money'
+import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Page, SearchBox, Sheet, Spinner } from '../../components/ui'
 import { IconCalendar, IconClockAlert, IconFilePdf, IconSend } from '../../components/icons'
@@ -33,6 +34,7 @@ type Filter = 'owing' | 'overdue' | 'all'
 /** Statements lists every customer's statement of account, with bulk e-mailing. */
 export function Statements() {
   const { data, error, loading, reload } = useAsync(() => unwrap(api.GET('/statements')), [])
+  const { minor } = useCurrencies()
   const [filter, setFilter] = useState<Filter>('owing')
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -42,24 +44,27 @@ export function Statements() {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return (data?.items ?? []).filter((s) => {
-      if (filter === 'owing' && Number(s.total) === 0) return false
+      if (filter === 'owing' && toMinor(s.total, 3) === 0n) return false
       if (filter === 'overdue' && s.overdueCount === 0) return false
       return !needle || s.name.toLowerCase().includes(needle) || s.code.toLowerCase().includes(needle)
     })
   }, [data, filter, q])
 
   const totals = useMemo(() => {
-    const by = new Map<string, { owed: number; customers: number; overdue: number }>()
+    // Summed exactly in each currency's minor units (never as floats).
+    const by = new Map<string, { amounts: string[]; customers: number; overdue: number }>()
     for (const s of data?.items ?? []) {
-      if (Number(s.total) === 0) continue
-      const t = by.get(s.currency) ?? { owed: 0, customers: 0, overdue: 0 }
-      t.owed += Number(s.total)
+      if (toMinor(s.total, minor(s.currency)) === 0n) continue
+      const t = by.get(s.currency) ?? { amounts: [], customers: 0, overdue: 0 }
+      t.amounts.push(s.total)
       t.customers++
       if (s.overdueCount > 0) t.overdue++
       by.set(s.currency, t)
     }
-    return [...by.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [data])
+    return [...by.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([cur, t]) => [cur, { ...t, owed: sumAmounts(t.amounts, minor(cur)) }] as const)
+  }, [data, minor])
 
   const toggle = (id: string) => {
     const next = new Set(picked)
@@ -92,7 +97,7 @@ export function Statements() {
               {totals.map(([cur, t]) => (
                 <section key={cur} className="card">
                   <h2 className="text-sm font-semibold text-slate-600">Owed to you · {cur}</h2>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-brand-900">{cur} {groupAmount(t.owed.toFixed(2))}</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-brand-900">{cur} {groupAmount(t.owed)}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     {t.customers} customer{t.customers === 1 ? '' : 's'}
                     {t.overdue > 0 && <span className="font-semibold text-amber-800"> · {t.overdue} overdue</span>}
@@ -284,7 +289,7 @@ export function StatementView() {
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Statement of account</div>
               <div className="mt-1">{c.code} · {c.email}{c.cc.length > 0 && ` · cc ${c.cc.join(', ')}`}</div>
               <div>As of {formatDate(s.asOf)} · {c.paymentTerms.text}</div>
-              <Link to={`/customers/${customerId}`} className="text-brand-700 underline">Customer details</Link>
+              <MaybeLink need="customers.view" to={`/customers/${customerId}`} className="text-brand-700 underline">Customer details</MaybeLink>
             </div>
             <div className="md:text-right">
               <div className="text-sm font-semibold text-slate-600">Balance due</div>
@@ -317,7 +322,7 @@ export function StatementView() {
                 <tbody className="divide-y divide-cream-200">
                   {s.lines.map((l) => (
                     <tr key={l.invoiceId}>
-                      <td className="whitespace-nowrap px-4 py-3 font-semibold"><Link to={`/invoices/${l.invoiceId}`} className="text-brand-800 hover:underline">{l.number}</Link></td>
+                      <td className="whitespace-nowrap px-4 py-3 font-semibold"><MaybeLink need="invoices.view" to={`/invoices/${l.invoiceId}`} className="text-brand-800 hover:underline">{l.number}</MaybeLink></td>
                       <td className="whitespace-nowrap px-4 py-3">{formatDate(l.issueDate)}</td>
                       <td className="whitespace-nowrap px-4 py-3">
                         {formatDate(l.dueDate)}

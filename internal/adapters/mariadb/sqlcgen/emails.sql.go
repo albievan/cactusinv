@@ -279,6 +279,37 @@ func (q *Queries) ListEmails(ctx context.Context, arg ListEmailsParams) ([]Email
 	return items, nil
 }
 
+const lockEmail = `-- name: LockEmail :one
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox WHERE id = ? FOR UPDATE
+`
+
+// LockEmail reads a message FOR UPDATE: every status change locks it first, so a cancel and
+// the dispatcher's claim (FOR UPDATE SKIP LOCKED) can never both act on one message.
+func (q *Queries) LockEmail(ctx context.Context, id string) (EmailOutbox, error) {
+	row := q.db.QueryRowContext(ctx, lockEmail, id)
+	var i EmailOutbox
+	err := row.Scan(
+		&i.ID,
+		&i.ToAddrs,
+		&i.CcAddrs,
+		&i.Subject,
+		&i.Body,
+		&i.Status,
+		&i.Attempts,
+		&i.SendAt,
+		&i.NextAttemptAt,
+		&i.LastError,
+		&i.SentAt,
+		&i.IdempotencyKey,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Kind,
+		&i.CustomerID,
+		&i.InvoiceID,
+	)
+	return i, err
+}
+
 const outboxStats = `-- name: OutboxStats :one
 SELECT CAST(COUNT(*) AS SIGNED) AS pending, MIN(next_attempt_at) AS oldest
 FROM email_outbox WHERE status = 'pending'

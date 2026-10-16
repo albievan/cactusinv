@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { IconDownload, IconPlus, IconSend } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 
@@ -54,7 +54,10 @@ function StatementPanel({ customerId }: { customerId: string }) {
   const { data, error, reload } = useAsync(() => unwrap(api.GET('/customers/{id}/statement', { params: { path: { id: customerId } } })), [customerId])
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
+  const [busy, setBusy] = useState(false)
   const send = async () => {
+    if (busy) return
+    setBusy(true)
     setErr(null)
     setMsg('')
     try {
@@ -63,6 +66,8 @@ function StatementPanel({ customerId }: { customerId: string }) {
       reload()
     } catch (e) {
       setErr(e as Error)
+    } finally {
+      setBusy(false)
     }
   }
   if (!data) return error ? <ErrorBanner error={error} /> : null
@@ -93,7 +98,7 @@ function StatementPanel({ customerId }: { customerId: string }) {
       <ErrorBanner error={err} />
       <div className="flex flex-wrap items-center gap-2">
         <a className="btn-secondary" href={`/api/v1/customers/${customerId}/statement/pdf`} target="_blank" rel="noreferrer"><IconDownload width={16} height={16} /> Statement PDF</a>
-        <Can need="statements.send"><button type="button" className="btn-primary" onClick={send}><IconSend width={16} height={16} /> E-mail statement</button></Can>
+        <Can need="statements.send"><button type="button" className="btn-primary" onClick={send} disabled={busy}><IconSend width={16} height={16} /> {busy ? 'Queuing…' : 'E-mail statement'}</button></Can>
         <Link className="btn-secondary" to={`/statements/${customerId}`}>Open full statement</Link>
         <Can need="schedules.edit"><Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link></Can>
         {msg && <span className="text-sm text-green-700">{msg}</span>}
@@ -240,7 +245,7 @@ export function CustomerEditor() {
         {id && <Can need="statements.view"><StatementPanel customerId={id} /></Can>}
         <Can need="customers.edit">
           <StickyActions>
-            {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
+            {id && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this customer?" message="Its details are deleted. A customer with invoices or schedules cannot be deleted; make them inactive instead." confirmLabel="Delete" onConfirm={remove} /></span>}
             <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
             <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
           </StickyActions>

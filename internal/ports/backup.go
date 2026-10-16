@@ -101,6 +101,8 @@ type StagedRestore struct {
 	SMTPPasswordEnc []byte
 	// UserIDs are the ids of the staged users who are active (can sign in).
 	UserIDs []string
+	// AdminIDs are the ids of the staged active users in Administrators (ADR-012).
+	AdminIDs []string
 }
 
 // RestoreTx is the live database during an applied restore: every live table locked for

@@ -152,6 +152,9 @@ func (s *Service) ScheduleEmailDefaults(ctx context.Context) (domain.ScheduleEma
 
 // CreateSchedule saves a new active schedule for a customer.
 func (s *Service) CreateSchedule(ctx context.Context, sc domain.Schedule) (ScheduleDetail, error) {
+	if err := checkScheduleAccess(ctx, sc); err != nil {
+		return ScheduleDetail{}, wrap("app.CreateSchedule", err)
+	}
 	sc.ID = s.ids.NewID()
 	sc.CreatedAt = s.now()
 	sc.Recurrence.DefaultWeekendRule()
@@ -180,6 +183,12 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 		}
 		if cur.Version != sc.Version {
 			return domain.ErrConflict
+		}
+		if err := checkScheduleAccess(ctx, *cur); err != nil {
+			return err
+		}
+		if err := checkScheduleAccess(ctx, sc); err != nil {
+			return err
 		}
 		if sc.Recurrence.Weekend == "" { // a client that does not know the rule keeps it
 			sc.Recurrence.Weekend = cur.Recurrence.Weekend
@@ -268,13 +277,21 @@ func (s *Service) PauseSchedule(ctx context.Context, id string) (ScheduleDetail,
 
 // ResumeSchedule restarts a paused schedule from the next occurrence after now.
 func (s *Service) ResumeSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.ResumeSchedule", "schedule.resumed", id, func(sc *domain.Schedule) error { return sc.Resume(s.now()) })
+	return s.scheduleTransition(ctx, "app.ResumeSchedule", "schedule.resumed", id, func(sc *domain.Schedule) error {
+		if err := checkScheduleAccess(ctx, *sc); err != nil {
+			return err
+		}
+		return sc.Resume(s.now())
+	})
 }
 
 // RunScheduleNow makes the schedule's pending occurrence due immediately: the next
 // invoice is issued (and sent if auto-send) on the runner's next pass.
 func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleDetail, error) {
 	return s.scheduleTransition(ctx, "app.RunScheduleNow", "schedule.run_now", id, func(sc *domain.Schedule) error {
+		if err := checkScheduleAccess(ctx, *sc); err != nil {
+			return err
+		}
 		if sc.Status != domain.ScheduleActive {
 			return domain.ErrInvalidTransition
 		}
@@ -320,14 +337,20 @@ func (s *Service) RunDueSchedules(ctx context.Context, limit int) (RunResult, er
 			return res, nil
 		}
 		var claimed *domain.Schedule
+		var one RunResult // counted per attempt; added only once the transaction committed
 		err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+			one = RunResult{}
 			due, err := r.Schedules.ClaimDue(ctx, s.now(), 1)
 			if err != nil || len(due) == 0 {
 				return err
 			}
 			claimed = due[0]
-			return s.runOccurrence(ctx, r, claimed, &res)
+			return s.runOccurrence(ctx, r, claimed, &one)
 		})
+		if err == nil {
+			res.Issued += one.Issued
+			res.Emailed += one.Emailed
+		}
 		if claimed == nil {
 			return res, wrap("app.RunDueSchedules", err)
 		}
@@ -395,6 +418,10 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err := r.Invoices.Create(ctx, inv); err != nil {
 		return err
 	}
+	// The invoice number's lock first, then the audit head (s.event), as IssueInvoice does.
+	if err := r.Sequences.Lock(ctx); err != nil {
+		return err
+	}
 	if err := s.event(ctx, r, inv.ID, "created", "schedule "+sc.Name); err != nil {
 		return err
 	}
@@ -445,6 +472,17 @@ func (s *Service) runEmailOccurrence(ctx context.Context, r ports.Repos, sc *dom
 		if _, err := r.Emails.GetByIdempotencyKey(ctx, key); err == nil {
 			continue
 		}
+		// An e-mail of this invoice that is already on its way (queued for later, sending or
+		// retrying) counts as sent: "unsent" must not e-mail it a second time.
+		if sc.EmailScope == domain.EmailUnsent {
+			queued, err := s.emailQueued(ctx, r, invs[i].ID)
+			if err != nil {
+				return err
+			}
+			if queued {
+				continue
+			}
+		}
 		if _, err := s.enqueue(ctx, r, &invs[i], SendInput{Subject: sc.EmailSubject, Body: sc.EmailBody, IdempotencyKey: key}); err != nil {
 			return err
 		}
@@ -466,4 +504,40 @@ func (s *Service) recordScheduleFailure(ctx context.Context, id string, cause er
 		}
 		return s.audit(ctx, r, "schedule.run_failed", "schedule", sc.ID, sc.LastError)
 	})
+}
+
+// checkScheduleAccess refuses a schedule that would do, on its own, what the user may not do
+// directly (ADR-012): raise invoices needs invoices.edit (and invoices.send to e-mail them),
+// e-mailing invoices needs invoices.send, statements statements.send.
+func checkScheduleAccess(ctx context.Context, sc domain.Schedule) error {
+	a := ActorFrom(ctx)
+	var need []domain.Permission
+	switch {
+	case sc.Kind == domain.ScheduleInvoice:
+		need = append(need, domain.PermInvoicesEdit)
+		if sc.AutoSend {
+			need = append(need, domain.PermInvoicesSend)
+		}
+	case sc.EmailScope == domain.EmailStatement:
+		need = append(need, domain.PermStatementsSend)
+	default:
+		need = append(need, domain.PermInvoicesSend)
+	}
+	for _, p := range need {
+		if !a.Can(p) {
+			return domain.ErrNoAccess
+		}
+	}
+	return nil
+}
+
+// emailQueued reports whether an e-mail of the invoice is pending or being sent.
+func (s *Service) emailQueued(ctx context.Context, r ports.Repos, invoiceID string) (bool, error) {
+	for _, st := range []domain.EmailStatus{domain.EmailPending, domain.EmailSending} {
+		_, n, err := r.Emails.List(ctx, ports.EmailFilter{InvoiceID: invoiceID, Status: st, Page: ports.Page{Limit: 1}})
+		if err != nil || n > 0 {
+			return n > 0, err
+		}
+	}
+	return false, nil
 }

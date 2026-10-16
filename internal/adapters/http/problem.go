@@ -132,5 +132,10 @@ func responseErrorHandler(log *slog.Logger) func(http.ResponseWriter, *http.Requ
 
 // requestErrorHandler renders undecodable requests (bad JSON, bad parameters) as 400s.
 func requestErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) { // a body over the limit is 413, as with an Idempotency-Key
+		writeProblem(w, problemFor(tooLarge))
+		return
+	}
 	writeProblem(w, Problem{Type: problemType("bad-request"), Title: "Malformed request", Status: http.StatusBadRequest, Detail: err.Error()})
 }

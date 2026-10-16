@@ -263,11 +263,18 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	case <-ctx.Done():
 	}
 	log.Info("shutting down")
+	// The workers stop claiming new work at once, while the HTTP server drains: both well
+	// inside the container's stop grace period (docker-compose stop_grace_period 30s, the
+	// Kubernetes default 30s), so an e-mail being sent is recorded before the process ends.
+	stopWork()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
-	stopWork()
-	<-workersDone
+	select {
+	case <-workersDone:
+	case <-shutdownCtx.Done():
+		log.Warn("workers did not stop in time")
+	}
 	return err
 }
 

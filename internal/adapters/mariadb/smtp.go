@@ -19,10 +19,14 @@ func (r smtpRepo) Get(ctx context.Context) (domain.SMTPSettings, []byte, error) 
 	if err != nil {
 		return domain.SMTPSettings{}, nil, mapErr(err)
 	}
+	var enc []byte // nil when no password is stored (callers test for nil)
+	if row.PasswordEnc.Valid && row.PasswordEnc.String != "" {
+		enc = []byte(row.PasswordEnc.String)
+	}
 	return domain.SMTPSettings{
 		Enabled: row.Enabled, Host: row.Host, Port: int(row.Port), Username: row.Username, From: row.FromAddress,
 		TLS: row.TlsMode, Version: int(row.Version),
-	}, []byte(row.PasswordEnc.String), nil
+	}, enc, nil
 }
 
 func (r smtpRepo) Save(ctx context.Context, s domain.SMTPSettings, passwordEnc []byte) error {

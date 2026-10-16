@@ -390,7 +390,24 @@ func (s *Stager) Staged(ctx context.Context) (ports.StagedRestore, error) {
 		}
 		out.UserIDs = append(out.UserIDs, id)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return ports.StagedRestore{}, fmt.Errorf("mariadb.Stager.Staged: %w", err)
+	}
+	// The staged database is migrated to this version, so access groups exist.
+	admins, err := s.staging.QueryContext(ctx, `SELECT m.user_id FROM access_group_members m JOIN users u ON u.id = m.user_id
+		WHERE m.group_id = 'administrators' AND u.disabled_at IS NULL ORDER BY m.user_id`)
+	if err != nil {
+		return ports.StagedRestore{}, fmt.Errorf("mariadb.Stager.Staged: %w", err)
+	}
+	defer admins.Close()
+	for admins.Next() {
+		var id string
+		if err := admins.Scan(&id); err != nil {
+			return ports.StagedRestore{}, fmt.Errorf("mariadb.Stager.Staged: %w", err)
+		}
+		out.AdminIDs = append(out.AdminIDs, id)
+	}
+	return out, admins.Err()
 }
 
 // StagedAudit implements ports.RestoreStager.

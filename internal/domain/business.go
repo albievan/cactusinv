@@ -86,6 +86,13 @@ func (b BusinessProfile) Location() *time.Location {
 	return time.UTC
 }
 
+// Length limits of the stored invoice number and customer code (invoices.number,
+// customers.code).
+const (
+	MaxInvoiceNumberLength = 64
+	MaxCustomerCodeLength  = 10
+)
+
 // ValidateNumberFormat checks an invoice number template. It must contain {seq} and may
 // contain {code}, {dd}, {mm}, {yy}, {yyyy} and literal text.
 func ValidateNumberFormat(f string) error {
@@ -98,6 +105,12 @@ func ValidateNumberFormat(f string) error {
 	rest := numberReplacer("X", 1, Date{Year: 2000, Month: 1, Day: 1}).Replace(f)
 	if strings.ContainsAny(rest, "{}") {
 		return invalid("numberFormat", "unknown placeholder; use "+numberPlaceholders)
+	}
+	// The stored number (invoices.number, 64 characters) must fit in the worst case: the
+	// longest customer code and a 9-digit sequence.
+	worst := numberReplacer(strings.Repeat("X", MaxCustomerCodeLength), 999_999_999, Date{Year: 2000, Month: 12, Day: 31}).Replace(f)
+	if len(worst) > MaxInvoiceNumberLength {
+		return invalid("numberFormat", "makes invoice numbers too long (max "+strconv.Itoa(MaxInvoiceNumberLength)+" characters with a 10-character customer code)")
 	}
 	return nil
 }

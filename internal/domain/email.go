@@ -124,12 +124,18 @@ func (m *EmailMessage) Claimable(now time.Time) bool {
 	}
 }
 
-// Succeeded records delivery.
-func (m *EmailMessage) Succeeded(now time.Time) {
+// Succeeded records delivery of a message being sent and reports whether it did: a
+// message that is no longer "sending" (recorded by another dispatcher meanwhile) is left as
+// it is.
+func (m *EmailMessage) Succeeded(now time.Time) bool {
+	if m.Status != EmailSending {
+		return false
+	}
 	m.Status = EmailSent
 	m.SentAt = now
 	m.LastError = ""
 	m.UpdatedAt = now
+	return true
 }
 
 // Failed records a failed attempt: retry later with backoff, or give up.

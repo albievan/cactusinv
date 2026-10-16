@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"math/big"
 	"strings"
 	"time"
 )
@@ -215,7 +216,29 @@ func (inv *Invoice) applyContent(c DraftContent) error {
 	inv.TaxRate = c.TaxRate
 	inv.Terms = terms
 	inv.Lines = lines
+	if err := checkTotalsFit(lines, c.TaxRate); err != nil {
+		return err
+	}
 	inv.Totals = ComputeTotals(lines, c.TaxRate)
+	return nil
+}
+
+// MaxInvoiceTotal bounds an invoice's subtotal and total (10 000 000 000 000.00 in a
+// 2-decimal currency), far below where int64 sums could overflow.
+const MaxInvoiceTotal = 1_000_000_000_000_000
+
+// checkTotalsFit refuses lines whose sums would exceed MaxInvoiceTotal; it adds in big.Int,
+// so many large lines cannot wrap around into a wrong (even positive) total.
+func checkTotalsFit(lines []Line, taxRate BasisPoints) error {
+	sum := new(big.Int)
+	for _, l := range lines {
+		sum.Add(sum, big.NewInt(l.Amount()))
+	}
+	limit := big.NewInt(MaxInvoiceTotal)
+	withTax := new(big.Int).Mul(sum, big.NewInt(10000+int64(taxRate)))
+	if sum.Cmp(limit) > 0 || withTax.Cmp(new(big.Int).Mul(limit, big.NewInt(10000))) > 0 {
+		return invalid("lines", "the invoice total is too large")
+	}
 	return nil
 }
 

@@ -7,6 +7,7 @@ package pdf
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,8 +20,11 @@ import (
 
 // Renderer implements ports.InvoiceRenderer.
 type Renderer struct {
-	// Uncompressed leaves content streams readable (tests grep them).
+	// Uncompressed leaves content streams readable.
 	Uncompressed bool
+	// Trace, when set, is told every text run drawn (page, position, text): with embedded
+	// fonts the PDF stores glyph ids, so tests read the text from here.
+	Trace func(page int, x, y float64, text string)
 }
 
 var _ ports.InvoiceRenderer = Renderer{}
@@ -50,21 +54,45 @@ const (
 )
 
 type page struct {
-	pdf  *fpdf.Fpdf
-	tr   func(string) string
-	cur  domain.Currency
-	biz  domain.BusinessProfile
-	kind string // "INVOICE" | "STATEMENT"
+	trace func(page int, x, y float64, text string)
+	pdf   *fpdf.Fpdf
+	tr    func(string) string
+	cur   domain.Currency
+	biz   domain.BusinessProfile
+	kind  string // "INVOICE" | "STATEMENT"
 }
+
+// The PDFs use DejaVu Sans Condensed (embedded, UTF-8; licence in fonts/LICENSE), so names
+// and addresses in any Latin, Greek or Cyrillic script print as typed — the PDF core fonts
+// only cover cp1252 and turned everything else into dots.
+//
+//go:embed fonts/DejaVuSansCondensed.ttf
+var fontRegular []byte
+
+//go:embed fonts/DejaVuSansCondensed-Bold.ttf
+var fontBold []byte
+
+//go:embed fonts/DejaVuSansCondensed-Oblique.ttf
+var fontItalic []byte
+
+//go:embed fonts/DejaVuSansCondensed-BoldOblique.ttf
+var fontBoldItalic []byte
+
+const fontFamily = "dejavu"
 
 func newPage(r Renderer, title, author, kind string, biz domain.BusinessProfile, cur domain.Currency) *page {
 	f := fpdf.New("P", "mm", "A4", "")
-	p := &page{pdf: f, tr: f.UnicodeTranslatorFromDescriptor(""), cur: cur, biz: biz, kind: kind}
+	f.AddUTF8FontFromBytes(fontFamily, "", fontRegular)
+	f.AddUTF8FontFromBytes(fontFamily, "B", fontBold)
+	f.AddUTF8FontFromBytes(fontFamily, "I", fontItalic)
+	f.AddUTF8FontFromBytes(fontFamily, "BI", fontBoldItalic)
+	// Text is UTF-8 throughout: no translation to a single-byte code page.
+	p := &page{pdf: f, tr: func(s string) string { return s }, cur: cur, biz: biz, kind: kind, trace: r.Trace}
 	f.SetCompression(!r.Uncompressed)
 	f.SetMargins(margin, margin, margin)
 	f.SetAutoPageBreak(false, 0)
-	f.SetTitle(p.tr(title), false)
-	f.SetAuthor(p.tr(author), false)
+	f.SetTitle(title, true)
+	f.SetAuthor(author, true)
 	f.SetCreator("cactusInv", false)
 	f.AliasNbPages("{nb}")
 	f.SetFooterFunc(p.footer)
@@ -86,15 +114,23 @@ func (p *page) color(c rgb) { p.pdf.SetTextColor(c.r, c.g, c.b) }
 func (p *page) fill(c rgb)  { p.pdf.SetFillColor(c.r, c.g, c.b) }
 func (p *page) draw(c rgb)  { p.pdf.SetDrawColor(c.r, c.g, c.b) }
 func (p *page) font(style string, size float64) {
-	p.pdf.SetFont("Helvetica", style, size)
+	p.pdf.SetFont(fontFamily, style, size)
 }
 
-func (p *page) text(x, y float64, s string) { p.pdf.Text(x, y, p.tr(s)) }
+// put draws one text run (every run goes through here, so Trace sees them all).
+func (p *page) put(x, y float64, s string) {
+	if p.trace != nil {
+		p.trace(p.pdf.PageNo(), x, y, s)
+	}
+	p.pdf.Text(x, y, s)
+}
+
+func (p *page) text(x, y float64, s string) { p.put(x, y, p.tr(s)) }
 
 // textRight draws s right-aligned ending at x.
 func (p *page) textRight(x, y float64, s string) {
 	t := p.tr(s)
-	p.pdf.Text(x-p.pdf.GetStringWidth(t), y, t)
+	p.put(x-p.pdf.GetStringWidth(t), y, t)
 }
 
 func (p *page) money(amount int64) string {
@@ -107,8 +143,7 @@ func (p *page) hline(y float64) {
 	p.pdf.Line(margin, y, pageW-margin, y)
 }
 
-// wrap word-wraps UTF-8 text to width w in the current font, returning lines translated to
-// the PDF's cp1252 encoding (fpdf's SplitText panics on characters such as "€").
+// wrap word-wraps UTF-8 text to width w in the current font.
 func (p *page) wrap(s string, w float64) []string {
 	var out []string
 	for _, para := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
@@ -150,7 +185,7 @@ func (p *page) pill(xRight, y float64, label string, c rgb) {
 	p.pdf.SetLineWidth(0.35)
 	p.pdf.RoundedRect(xRight-w, y-4, w, 6, 3, "1234", "D")
 	p.color(c)
-	p.pdf.Text(xRight-w+3, y, label)
+	p.put(xRight-w+3, y, label)
 }
 
 // header draws the accent bar, the business block, the title and the key facts (label/
@@ -163,15 +198,17 @@ func (p *page) header(facts [][2]string, status string, statusColor rgb) float64
 	p.font("B", 15)
 	y := 18.0
 	for _, l := range p.wrap(p.biz.Name, 100) {
-		p.pdf.Text(margin, y, l)
+		p.put(margin, y, l)
 		y += 6.2
 	}
 	p.font("", 8)
 	p.color(muted)
 	y--
-	for _, l := range nonEmpty(append(splitLines(p.biz.AddressLines), phoneLine(p.biz.Phone), p.biz.Email, vatLine(p.biz.TaxNumber))...) {
-		p.text(margin, y, l)
-		y += 3.8
+	for _, raw := range nonEmpty(append(splitLines(p.biz.AddressLines), phoneLine(p.biz.Phone), p.biz.Email, vatLine(p.biz.TaxNumber))...) {
+		for _, l := range p.wrap(raw, 100) { // stays left of the title and key facts
+			p.put(margin, y, l)
+			y += 3.8
+		}
 	}
 	leftBottom := y
 
@@ -223,21 +260,23 @@ func (p *page) parties(top float64, blocks ...partyBlock) float64 {
 		p.font("B", 10)
 		p.color(ink)
 		for _, l := range p.wrap(b.party.Name, colW-8) {
-			p.pdf.Text(x, y, l)
+			p.put(x, y, l)
 			y += 4.6
 		}
 		p.font("", 9)
 		for _, a := range splitLines(b.party.Address) {
 			for _, l := range p.wrap(a, colW-8) {
-				p.pdf.Text(x, y, l)
+				p.put(x, y, l)
 				y += 4.2
 			}
 		}
 		if b.party.Attention != "" {
 			p.color(muted)
-			p.text(x, y, "Attn: "+b.party.Attention)
+			for _, l := range p.wrap("Attn: "+b.party.Attention, colW-8) { // stays in its column
+				p.put(x, y, l)
+				y += 4.2
+			}
 			p.color(ink)
-			y += 4.2
 		}
 		bottom = max(bottom, y)
 	}
@@ -275,7 +314,7 @@ func (p *page) infoStrip(top float64, pairs [][2]string) float64 {
 		p.font("", 8.5)
 		p.color(ink)
 		for j, l := range values[i] {
-			p.pdf.Text(x, top+10+float64(j)*3.9, l)
+			p.put(x, top+10+float64(j)*3.9, l)
 		}
 	}
 	return top + h + 5
@@ -315,9 +354,9 @@ func (p *page) row(top float64, cols []column, cells [][]string) float64 {
 		for j, l := range cells[i] {
 			y := top + 5 + float64(j)*4.3
 			if c.align == "R" {
-				p.pdf.Text(x+c.w-2-p.pdf.GetStringWidth(l), y, l)
+				p.put(x+c.w-2-p.pdf.GetStringWidth(l), y, l)
 			} else {
-				p.pdf.Text(x+2, y, l)
+				p.put(x+2, y, l)
 			}
 		}
 		x += c.w
@@ -399,7 +438,7 @@ func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string
 			p.font("I", 8.5)
 			p.color(muted)
 			for _, l := range r.lines {
-				p.pdf.Text(x+4, y, l)
+				p.put(x+4, y, l)
 				y += lineH
 			}
 			continue
@@ -410,7 +449,7 @@ func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string
 		p.font("B", 8.5)
 		p.color(ink)
 		for _, l := range r.lines {
-			p.pdf.Text(x+4+labelW, y, l)
+			p.put(x+4+labelW, y, l)
 			y += lineH
 		}
 	}
@@ -442,16 +481,22 @@ func (p *page) notes(top float64, notes, disclaimer string) float64 {
 	if len(lines) == 0 {
 		return top
 	}
-	if top+float64(len(lines))*3.6+6 > bodyBottom {
+	// Starts on a new page when even a few lines do not fit; long notes and disclaimers
+	// continue page after page instead of running off the bottom.
+	if top+3*3.6+6 > bodyBottom {
 		p.newPage()
 		top = 20
 	}
 	p.hline(top)
 	y := top + 6
 	for _, l := range lines {
+		if y > bodyBottom {
+			p.newPage()
+			y = 20
+		}
 		p.font(l.style, 7.8)
 		p.color(muted)
-		p.pdf.Text(margin, y, l.text)
+		p.put(margin, y, l.text)
 		y += 3.6
 	}
 	return y
@@ -469,7 +514,13 @@ func (p *page) footer() {
 	p.pdf.Line(margin, footerY-4, pageW-margin, footerY-4)
 	p.font("", 7)
 	p.color(muted)
-	p.text(margin, footerY, p.biz.Name)
+	if names := p.wrap(p.biz.Name, contentW-40); len(names) > 0 { // never into "Page x of y"
+		name := names[0]
+		if len(names) > 1 {
+			name += "…"
+		}
+		p.put(margin, footerY, name)
+	}
 	p.textRight(pageW-margin, footerY, "Page "+strconv.Itoa(p.pdf.PageNo())+" of {nb}")
 }
 
@@ -484,7 +535,7 @@ func (p *page) watermark(mark string, c rgb) {
 	p.pdf.TransformBegin()
 	p.pdf.TransformRotate(35, pageW/2, pageH/2)
 	w := p.pdf.GetStringWidth(mark)
-	p.pdf.Text(pageW/2-w/2, pageH/2+15, mark)
+	p.put(pageW/2-w/2, pageH/2+15, mark)
 	p.pdf.TransformEnd()
 	p.pdf.SetAlpha(1, "Normal")
 }
@@ -526,6 +577,7 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 	cols := invoiceColumns(hasDisc)
 
 	lines := inv.Lines
+	var carry [][]string // the rest of a line too tall for the space left on the last page
 	for first := true; first || len(lines) > 0; first = false {
 		var y float64
 		if first {
@@ -550,8 +602,21 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 		y = p.tableHeader(y, cols)
 		i := 0
 		for ; i < len(lines); i++ {
-			cells := p.invoiceCells(lines[i], cols, hasDisc)
-			if y+float64(maxLines(cells))*4.3+3.6 > bodyBottom-4 && i > 0 {
+			cells := carry
+			if cells == nil {
+				cells = p.invoiceCells(lines[i], cols, hasDisc)
+			}
+			carry = nil
+			room := int((bodyBottom - 4 - y - 3.6) / 4.3) // text lines that still fit here
+			if n := maxLines(cells); n > room {
+				// A row that fits on a fresh page moves there whole; one taller than a page
+				// (or the first on a page) is split, the rest continuing on the next page.
+				if i > 0 && n <= rowLinesPerPage {
+					break
+				}
+				head, tail := splitCells(cells, max(room, 1))
+				y += p.row(y, cols, head)
+				carry = tail
 				break
 			}
 			y += p.row(y, cols, cells)
@@ -583,7 +648,9 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 		if inv.Status == domain.InvoiceVoid && inv.VoidReason != "" {
 			p.font("I", 8)
 			p.color(danger)
-			p.text(margin, bodyBottom+3, "Voided: "+inv.VoidReason)
+			if reason := p.wrap("Voided: "+inv.VoidReason, contentW); len(reason) > 0 {
+				p.put(margin, bodyBottom+3, reason[0]) // one line above the footer rule
+			}
 		}
 	}
 	return p.output()
@@ -607,6 +674,20 @@ func (p *page) invoiceCells(l domain.Line, cols []column, hasDisc bool) [][]stri
 		cells = append(cells, []string{d})
 	}
 	return append(cells, []string{p.money(l.Amount())})
+}
+
+// rowLinesPerPage is how many text lines of one table row fit on a continuation page.
+var rowLinesPerPage = func() int { h := bodyBottom - 4 - 27 - 3.6; return int(h / 4.3) }()
+
+// splitCells cuts a row's wrapped cells after n lines: the head is drawn now, the tail on
+// the next page (cells that are already done there are empty).
+func splitCells(cells [][]string, n int) (head, tail [][]string) {
+	head, tail = make([][]string, len(cells)), make([][]string, len(cells))
+	for i, c := range cells {
+		k := min(n, len(c))
+		head[i], tail[i] = c[:k], c[k:]
+	}
+	return head, tail
 }
 
 func maxLines(cells [][]string) int {

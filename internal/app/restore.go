@@ -38,6 +38,8 @@ type RestorePreview struct {
 	InvoicesSince int
 	// CanSignIn says whether the account staging the restore is an active user in the backup.
 	CanSignIn bool
+	// CanAdminister says whether that account is an active administrator in the backup.
+	CanAdminister bool
 	// SMTPPasswordCleared says the backup's e-mail server password cannot be decrypted here.
 	SMTPPasswordCleared bool
 	// SafetyBackup says the live data will be backed up just before the restore.
@@ -290,6 +292,7 @@ func (s *Service) preview(ctx context.Context) (RestorePreview, error) {
 		Header: st.RestoreHeader, SchemaFrom: st.RestoreHeader.SchemaVersion, SchemaTo: staged.SchemaVersion,
 		Audit: domain.PlanAuditMerge(liveAudit, backupAudit), LiveAuditOK: domain.VerifyAuditChain(liveAudit).OK,
 		InvoicesSince: since, CanSignIn: canSignIn(ActorFrom(ctx), staged.UserIDs),
+		CanAdminister:       canSignIn(ActorFrom(ctx), staged.AdminIDs),
 		SMTPPasswordCleared: staged.SMTPPasswordEnc != nil && !s.canDecrypt(staged.SMTPPasswordEnc),
 		SafetyBackup:        s.safetyBackupPossible(),
 	}
@@ -327,6 +330,8 @@ func restoreWarnings(p RestorePreview) []string {
 	}
 	if !p.CanSignIn {
 		w = append(w, "your account is not an active user in this backup: after the restore you must sign in with an account that is")
+	} else if !p.CanAdminister {
+		w = append(w, "your account is not an administrator in this backup: after the restore it cannot manage users, groups, backups or restore")
 	}
 	if p.SMTPPasswordCleared {
 		w = append(w, "the e-mail server password in this backup cannot be decrypted by this installation; it will be cleared and must be entered again")

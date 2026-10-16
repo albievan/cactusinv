@@ -106,7 +106,9 @@ CACTUSINV_BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
 
 image_tag() {
   local v
-  v="$(git describe --tags --always --dirty 2>/dev/null || date +%Y%m%d%H%M%S)"
+  v="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || date +%Y%m%d%H%M%S)"
+  # A dirty tree gets a new tag on every build, so the pods roll to the new image.
+  [[ "$v" == *-dirty ]] && v="${v}-$(date +%Y%m%d%H%M%S)"
   echo "${CACTUSINV_IMAGE%%:*}:${v}"
 }
 
@@ -507,10 +509,24 @@ remote_docker() {
   ssh_run "mkdir -p '$REMOTE_DIR'"
   tar -C "$ROOT" --exclude=./data --exclude=./secrets --exclude=./.git --exclude=./web/node_modules \
     --exclude=./web/dist --exclude=./.deploy -czf - . | ssh_run "tar -C '$REMOTE_DIR' -xzf -"
-  local args=("--$ACTION" --dockerdesktop)
-  [[ "$ACTION" == restore ]] && args=(--restore "$RESTORE_FILE" --dockerdesktop)
+  local args=("--$ACTION" --dockerdesktop) pre=""
+  if [[ "$ACTION" == restore ]]; then
+    local file="$RESTORE_FILE"
+    if [[ -f "$RESTORE_FILE" ]]; then
+      # A backup file on this machine is copied to a private place on the host first.
+      file="$REMOTE_DIR/.deploy/restore-$(basename "$RESTORE_FILE")"
+      info "copying $(basename "$RESTORE_FILE") to ${SSH_HOST}"
+      ssh_run "mkdir -p '$REMOTE_DIR/.deploy' && chmod 700 '$REMOTE_DIR/.deploy' && cat > $(printf '%q' "$file") && chmod 600 $(printf '%q' "$file")" <"$RESTORE_FILE"
+    fi
+    args=(--restore "$file" --dockerdesktop)
+    if [[ -n "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]]; then
+      # The passphrase goes over stdin into a private file, never on a command line.
+      printf '%s' "$CACTUSINV_BACKUP_PASSPHRASE" | ssh_run "mkdir -p '$REMOTE_DIR/.deploy' && umask 077 && cat > '$REMOTE_DIR/.deploy/passphrase'"
+      pre="CACTUSINV_BACKUP_PASSPHRASE=\"\$(cat .deploy/passphrase)\"; rm -f .deploy/passphrase; export CACTUSINV_BACKUP_PASSPHRASE; "
+    fi
+  fi
   [[ $ASSUME_YES -eq 1 ]] && args+=(--yes)
-  ssh -t "$SSH_HOST" "cd '$REMOTE_DIR' && ./deploy.sh $(printf '%q ' "${args[@]}")"
+  ssh -t "$SSH_HOST" "cd '$REMOTE_DIR' && ${pre}./deploy.sh $(printf '%q ' "${args[@]}")"
 }
 
 # ---------------------------------------------------------------------------------------

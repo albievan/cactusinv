@@ -117,6 +117,8 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
   const [q, setQ] = useState(value)
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<Product[]>([])
+  const [failed, setFailed] = useState(false)
+  const seq = useRef(0)
   const [active, setActive] = useState(0)
   const listId = useId()
   const box = useRef<HTMLDivElement>(null)
@@ -125,12 +127,20 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
   useEffect(() => {
     if (!open) return
     const t = setTimeout(() => {
+      // Only the newest search may fill the list: a slow older answer is dropped.
+      const mine = ++seq.current
       unwrap(api.GET('/products', { params: { query: { q: q || undefined, limit: 25 } } }))
         .then((r) => {
+          if (mine !== seq.current) return
           setItems(r.items)
+          setFailed(false)
           setActive(0)
         })
-        .catch(() => setItems([]))
+        .catch(() => {
+          if (mine !== seq.current) return
+          setItems([])
+          setFailed(true)
+        })
     }, 150)
     return () => clearTimeout(t)
   }, [q, open])
@@ -182,14 +192,16 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
       />
       {open && (
         <div className="absolute z-40 mt-1 w-full min-w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-cream-300">
-          <div className="grid grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] gap-3 px-3 py-2 table-head" aria-hidden="true">
+          <div className="hidden grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] gap-3 px-3 py-2 table-head sm:grid" aria-hidden="true">
             <span>Product</span>
             <span>SKU</span>
             <span>Unit</span>
             <span className="text-right">Unit price</span>
           </div>
           <ul id={listId} role="listbox" aria-label="Products" className="max-h-72 divide-y divide-cream-100 overflow-y-auto">
-            {items.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">No products found. Add one under Products.</li>}
+            {items.length === 0 && (
+              <li className="px-3 py-3 text-sm text-slate-500">{failed ? 'The products could not be loaded. Check your connection and try again.' : 'No products found. Add one under Products.'}</li>
+            )}
             {items.map((p, i) => {
               const price = priced(p)
               return (
@@ -203,14 +215,16 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
                     e.preventDefault()
                     choose(p)
                   }}
-                  className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] items-center gap-3 px-3 py-2.5 text-sm ${i === active ? 'bg-brand-50' : ''} ${price ? '' : 'cursor-not-allowed opacity-50'}`}
+                  className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] ${i === active ? 'bg-brand-50' : ''} ${price ? '' : 'cursor-not-allowed opacity-50'}`}
                 >
                   <span className="min-w-0">
                     <span className="block break-words font-medium text-brand-900">{p.name}</span>
                     {p.description && p.description !== p.name && <span className="block break-words text-xs text-slate-500">{p.description}</span>}
+                    {/* On a phone the SKU and unit sit under the name; the columns need ~22rem. */}
+                    <span className="block break-all text-xs text-slate-500 sm:hidden">{[p.sku, p.unit].filter(Boolean).join(' · ')}</span>
                   </span>
-                  <span className="break-all text-xs text-slate-600">{p.sku}</span>
-                  <span className="break-words text-xs text-slate-600">{p.unit || '—'}</span>
+                  <span className="hidden break-all text-xs text-slate-600 sm:block">{p.sku}</span>
+                  <span className="hidden break-words text-xs text-slate-600 sm:block">{p.unit || '—'}</span>
                   <span className="text-right tabular-nums">{price ? `${currency} ${price.unitPrice}` : <span className="text-xs">No {currency} price</span>}</span>
                 </li>
               )

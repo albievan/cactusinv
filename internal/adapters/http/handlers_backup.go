@@ -49,14 +49,18 @@ func limitsFor(r *http.Request, maxUpload int64) routeLimits {
 
 // skipsIdempotency reports the routes whose bodies must not be buffered or fingerprinted:
 // export and upload (large, never replayable), stage (a passphrase) and every route that
-// carries a password (reauthPath: sign-in, password changes, user management, apply),
+// carries a password (reauthPath: sign-in, password changes, user and group management,
+// apply; and the e-mail server settings, which may hold the SMTP password),
 // which an unsalted hash would expose to guessing.
 func skipsIdempotency(r *http.Request) bool {
-	if r.Method != http.MethodPost {
-		return false
-	}
 	p := r.URL.Path
-	return p == pathExport || p == pathUploads || p == "/api/v1/restores" || reauthPath(r)
+	if r.Method == http.MethodPut && p == "/api/v1/settings/email" { // may carry the SMTP password
+		return true
+	}
+	if reauthPath(r) { // POST and PUT routes with the actor's password
+		return true
+	}
+	return r.Method == http.MethodPost && (p == pathExport || p == pathUploads || p == "/api/v1/restores")
 }
 
 // abortOnError breaks the connection when the streamed body fails after the response

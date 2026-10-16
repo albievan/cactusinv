@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
@@ -202,12 +203,12 @@ func (r invoiceRepo) MarkExported(ctx context.Context, id string, version int) e
 	}))
 }
 
-func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date, loc *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
 	inv, err := r.q.MonthlyInvoiced(ctx, nullDate(since))
 	if err != nil {
 		return nil, nil, mapErr(err)
 	}
-	paid, err := r.q.MonthlyPaid(ctx, nullTime(since.Time(time.UTC)))
+	paid, err := r.q.MonthlyPaidRows(ctx, nullTime(since.Time(loc)))
 	if err != nil {
 		return nil, nil, mapErr(err)
 	}
@@ -215,9 +216,29 @@ func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date) ([]ports.Mo
 	for _, x := range inv {
 		a = append(a, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
 	}
+	// Paid months in the business's zone: a payment at 00:30 on the 1st is that month's.
+	idx := map[string]int{}
 	for _, x := range paid {
-		b = append(b, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
+		if !x.PaidAt.Valid {
+			continue
+		}
+		month := x.PaidAt.Time.In(loc).Format("2006-01")
+		k := x.CurrencyCode + "|" + month
+		i, ok := idx[k]
+		if !ok {
+			i = len(b)
+			idx[k] = i
+			b = append(b, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: month})
+		}
+		b[i].Total += x.TotalMinor
+		b[i].Count++
 	}
+	sort.Slice(b, func(i, j int) bool {
+		if b[i].Month != b[j].Month {
+			return b[i].Month < b[j].Month
+		}
+		return b[i].Currency < b[j].Currency
+	})
 	return a, b, nil
 }
 
@@ -232,14 +253,22 @@ func monthString(v any) string {
 	}
 }
 
+// TopDebtors returns the limit customers owing most in each currency (largest first within
+// a currency; currencies in code order).
 func (r invoiceRepo) TopDebtors(ctx context.Context, limit int) ([]ports.Debtor, error) {
-	rows, err := r.q.TopDebtors(ctx, i32(limit))
+	rows, err := r.q.TopDebtors(ctx)
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	out := make([]ports.Debtor, len(rows))
-	for i, x := range rows {
-		out[i] = ports.Debtor{CustomerID: x.CustomerID, Name: x.Name, Currency: domain.CurrencyCode(x.CurrencyCode), Outstanding: x.Outstanding, OpenCount: int(x.OpenCount)}
+	perCurrency := map[string]int{}
+	out := []ports.Debtor{}
+	for _, x := range rows { // ordered by outstanding, largest first
+		if perCurrency[x.CurrencyCode] >= limit {
+			continue
+		}
+		perCurrency[x.CurrencyCode]++
+		out = append(out, ports.Debtor{CustomerID: x.CustomerID, Name: x.Name, Currency: domain.CurrencyCode(x.CurrencyCode), Outstanding: x.Outstanding, OpenCount: int(x.OpenCount)})
 	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Currency < out[j].Currency })
 	return out, nil
 }

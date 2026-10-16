@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
@@ -45,6 +46,10 @@ type Service struct {
 	backups  BackupDeps
 	// backupSlot admits one backup or restore operation at a time.
 	backupSlot chan struct{}
+	// exportRetry holds invoices whose archive export failed, until when they are skipped,
+	// so a few that always fail cannot block the rest (ExportInvoices).
+	exportMu    sync.Mutex
+	exportRetry map[string]time.Time
 }
 
 // New builds a Service.

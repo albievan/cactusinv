@@ -2,11 +2,11 @@ import { useEffect, useState, type FormEvent, type SVGProps } from 'react'
 import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Schedule, type Schemas } from '../../lib/api/client'
-import { formatDate, formatInZone } from '../../lib/format'
+import { formatDate, formatInZone, todayISO } from '../../lib/format'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
-import { Badge, Empty, ErrorBanner, Field, Page, Sheet, Spinner, StickyActions } from '../../components/ui'
+import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, Sheet, Spinner, StickyActions } from '../../components/ui'
 import { IconBolt, IconEdit, IconPause, IconPlay, IconTrash } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 
@@ -229,8 +229,23 @@ export function ScheduleDetailPage() {
         <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>
         {s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
         {s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
-        {s.status === 'active' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/run-now', path))}>Run now</button>}
-        <button className="btn-danger" onClick={async () => { try { await unwrap(api.DELETE('/schedules/{id}', path)); nav('/schedules') } catch (e) { setActionError(e as Error) } }}>Delete</button>
+        {s.status === 'active' && (
+          <ConfirmButton
+            label="Run now"
+            danger={false}
+            title={`Run ${s.name} now?`}
+            message="It runs for real within a minute: it raises the invoice or e-mails the customer as it would on its next run."
+            confirmLabel="Run now"
+            onConfirm={() => act(api.POST('/schedules/{id}/run-now', path))}
+          />
+        )}
+        <ConfirmButton
+          label="Delete"
+          title={`Delete ${s.name}?`}
+          message="The schedule stops and is deleted. Invoices and e-mails it already made stay. This cannot be undone."
+          confirmLabel="Delete schedule"
+          onConfirm={async () => { try { await unwrap(api.DELETE('/schedules/{id}', path)); nav('/schedules') } catch (e) { setActionError(e as Error) } }}
+        />
       </div>
       </Can>
       <section className="card mb-4 text-sm">
@@ -247,7 +262,8 @@ export function ScheduleDetailPage() {
   )
 }
 
-const blankRecurrence: Schemas['Recurrence'] = { frequency: 'monthly', interval: 1, dayOfMonth: 1, weekday: 1, sendTime: '09:00', startDate: new Date().toISOString().slice(0, 10) }
+// The start date is today in the browser's zone, taken when the form opens (not at load).
+const blankRecurrence = (): Schemas['Recurrence'] => ({ frequency: 'monthly', interval: 1, dayOfMonth: 1, weekday: 1, sendTime: '09:00', startDate: todayISO() })
 
 const purposes: { key: Purpose; title: string; hint: string }[] = [
   { key: 'invoice', title: 'Recurring invoice: raise, then e-mail', hint: 'Raises a predefined invoice from the products below on every run, then e-mails it straight away or a few days later.' },
@@ -280,10 +296,11 @@ export function ScheduleEditor() {
   const [params] = useSearchParams()
   const nav = useNavigate()
   const { minor } = useCurrencies()
-  const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200 } } })).then((r) => r.items), [])
+  // Inactive customers too: an existing schedule may belong to one.
+  const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200, includeInactive: true } } })).then((r) => r.items), [])
   const existing = useAsync(() => (id ? unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
   const [s, setS] = useState<Schedule>({
-    customerId: params.get('customer') ?? '', name: '', kind: 'invoice', recurrence: blankRecurrence, lines: [], header: {}, notes: '',
+    customerId: params.get('customer') ?? '', name: '', kind: 'invoice', recurrence: blankRecurrence(), lines: [], header: {}, notes: '',
     autoSend: false, emailDelayDays: 0, emailSubject: '', emailBody: '', version: 0,
   })
   const [purpose, setPurpose] = useState<Purpose>(params.get('kind') === 'statement' ? 'statement' : params.get('kind') === 'email' ? 'unsent' : 'invoice')

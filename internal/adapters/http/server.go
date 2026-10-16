@@ -118,7 +118,16 @@ func spa(web fs.FS) http.Handler {
 		if p == "" {
 			p = "index.html"
 		}
-		if _, err := fs.Stat(web, p); err != nil {
+		st, err := fs.Stat(web, p)
+		switch {
+		case err == nil && !st.IsDir():
+			// a file: served as is
+		case strings.HasPrefix(p, "assets/") || p == "assets":
+			// A missing or directory asset is a 404, never index.html (a stale page's lazy
+			// chunk must fail clearly) and never a directory listing.
+			http.NotFound(w, r)
+			return
+		default: // a client-side route
 			r = r.Clone(r.Context())
 			r.URL.Path = "/"
 			p = "index.html"

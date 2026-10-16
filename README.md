@@ -64,6 +64,9 @@ Released into the public domain — see [LICENSE](LICENSE).
   disable and enable; create groups, choose what each group may do (view and edit per area)
   and who is in it. Only Administrators manage users, groups, backups and restore. Users are
   never deleted, and a password someone else chose must be changed at the first sign-in.
+- **Typing amounts** — use a point or, on a phone set to a comma region, a comma for decimals
+  ("192,94"); "1,500" is refused as ambiguous. PDFs print names in Latin, Greek and Cyrillic
+  scripts as typed.
 - **Mobile first** — designed for a phone, bottom navigation, large touch targets; scales
   up to a desktop layout. Installable as a home-screen app.
 

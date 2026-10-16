@@ -51,6 +51,11 @@ func (r sequenceRepo) Next(ctx context.Context) (int64, error) {
 	return v, mapErr(r.q.SetSequence(ctx, v+1))
 }
 
+func (r sequenceRepo) Lock(ctx context.Context) error {
+	_, err := r.q.LockSequence(ctx)
+	return mapErr(err)
+}
+
 func (r sequenceRepo) Peek(ctx context.Context) (int64, error) {
 	v, err := r.q.PeekSequence(ctx)
 	return v, mapErr(err)

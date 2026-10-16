@@ -142,7 +142,10 @@ func (m *Mailer) Send(ctx context.Context, msg ports.Mail) error {
 	if err := w.Close(); err != nil {
 		return fmt.Errorf("smtp.Send: end data: %w", err)
 	}
-	return c.Quit()
+	// The server has accepted the message (250 after the data). A failing QUIT must not
+	// turn that into an error, or the outbox would retry and send it again.
+	_ = c.Quit()
+	return nil
 }
 
 func helloName(from string) string {
@@ -165,14 +168,16 @@ func Build(from *mail.Address, msg ports.Mail, now time.Time) ([]byte, error) {
 	mw := multipart.NewWriter(&buf)
 	h := func(k, v string) { fmt.Fprintf(&buf, "%s: %s\r\n", k, v) }
 	h("From", from.String())
-	h("To", strings.Join(msg.To, ", "))
+	// Header lines stay well under RFC 5322's 998-byte limit: address lists fold after each
+	// comma and an encoded subject between its encoded-words.
+	h("To", strings.Join(msg.To, ",\r\n "))
 	if len(msg.CC) > 0 {
-		h("Cc", strings.Join(msg.CC, ", "))
+		h("Cc", strings.Join(msg.CC, ",\r\n "))
 	}
 	if msg.ReplyTo != "" && !strings.ContainsAny(msg.ReplyTo, "\r\n") {
 		h("Reply-To", msg.ReplyTo)
 	}
-	h("Subject", mime.QEncoding.Encode("utf-8", strings.NewReplacer("\r", " ", "\n", " ").Replace(msg.Subject)))
+	h("Subject", strings.ReplaceAll(mime.QEncoding.Encode("utf-8", strings.NewReplacer("\r", " ", "\n", " ").Replace(msg.Subject)), "?= =?", "?=\r\n =?"))
 	h("Date", now.Format(time.RFC1123Z))
 	h("Message-ID", messageID(msg.MessageID, from.Address))
 	h("MIME-Version", "1.0")

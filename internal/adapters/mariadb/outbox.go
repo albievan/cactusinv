@@ -30,6 +30,14 @@ func (r emailRepo) Create(ctx context.Context, m *domain.EmailMessage) error {
 	}))
 }
 
+func (r emailRepo) Lock(ctx context.Context, id string) (*domain.EmailMessage, error) {
+	row, err := r.q.LockEmail(ctx, id)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return toEmail(row), nil
+}
+
 func (r emailRepo) Get(ctx context.Context, id string) (*domain.EmailMessage, error) {
 	row, err := r.q.GetEmail(ctx, id)
 	if err != nil {

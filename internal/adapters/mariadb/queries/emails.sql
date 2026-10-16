@@ -6,6 +6,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 -- name: GetEmail :one
 SELECT * FROM email_outbox WHERE id = ?;
 
+-- LockEmail reads a message FOR UPDATE: every status change locks it first, so a cancel and
+-- the dispatcher's claim (FOR UPDATE SKIP LOCKED) can never both act on one message.
+-- name: LockEmail :one
+SELECT * FROM email_outbox WHERE id = ? FOR UPDATE;
+
 -- name: GetEmailByIdempotencyKey :one
 SELECT * FROM email_outbox WHERE idempotency_key = ?;
 

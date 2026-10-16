@@ -170,7 +170,10 @@ func (s *Schedule) Validate() error {
 		if l.UnitPrice != nil {
 			price = *l.UnitPrice
 		}
-		probe := Line{Description: l.Description, Quantity: l.Quantity, UnitPrice: price, Discount: l.Discount}
+		// The description is checked as it will be printed at its longest ("September 2026"),
+		// so a run can never fail on a description that grew past the limit.
+		longest := strings.NewReplacer("{month}", "September", "{year}", "2026", "{period}", "September 2026").Replace(l.Description)
+		probe := Line{Description: longest, Quantity: l.Quantity, UnitPrice: price, Discount: l.Discount}
 		if probe.Description == "" && l.ProductID != "" {
 			probe.Description = "product"
 		}

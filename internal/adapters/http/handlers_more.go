@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/albievan/cactusinv/internal/app"
@@ -50,16 +51,16 @@ func (h *handlers) UpdateEmailSettings(ctx context.Context, req UpdateEmailSetti
 func (h *handlers) SendTestEmail(ctx context.Context, req SendTestEmailRequestObject) (SendTestEmailResponseObject, error) {
 	warnings, err := h.svc.SendTestEmail(ctx, req.Body.To)
 	if err != nil {
-		if strings.Contains(err.Error(), "validation") || isDomain(err) {
-			return nil, err
+		// Only the mail server's own answer (e.g. Gmail rejecting the password) is shown to
+		// the user; a database or other internal error stays a 500 without details.
+		var me *app.MailError
+		if errors.As(err, &me) {
+			return nil, &domain.ValidationError{Field: "smtp", Reason: "the mail server refused: " + rootCause(me.Err)}
 		}
-		// Surface the mail server's answer (e.g. Gmail rejecting the password) to the user.
-		return nil, &domain.ValidationError{Field: "smtp", Reason: "the mail server refused: " + rootCause(err)}
+		return nil, err
 	}
 	return SendTestEmail200JSONResponse{Warnings: warnings}, nil
 }
-
-func isDomain(err error) bool { return problemFor(err).Status < 500 }
 
 func rootCause(err error) string {
 	msg := err.Error()

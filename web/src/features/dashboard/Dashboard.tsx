@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Can } from '../../components/Access'
+import { Can, MaybeLink } from '../../components/Access'
 import { Link } from 'react-router-dom'
 import { api, unwrap, type Dashboard as DashboardData } from '../../lib/api/client'
 import { formatDateTime, formatInZone } from '../../lib/format'
-import { groupAmount } from '../../lib/money'
+import { groupAmount, zero } from '../../lib/money'
+import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { ColumnChart } from '../../components/charts/ColumnChart'
 import { Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
@@ -33,9 +34,9 @@ export function Dashboard() {
       {data && (
         <div className="space-y-5">
           {data.failedEmailCount > 0 && (
-            <Link to="/emails" className="flex items-center gap-2 rounded-xl border-l-4 border-red-600 bg-white p-3 text-sm font-semibold text-red-800 shadow-sm">
+            <MaybeLink need="emails.view" to="/emails" className="flex items-center gap-2 rounded-xl border-l-4 border-red-600 bg-white p-3 text-sm font-semibold text-red-800 shadow-sm">
               ⚠ {data.failedEmailCount} e-mail(s) failed to send — review the outbox.
-            </Link>
+            </MaybeLink>
           )}
           {currencies.length > 1 && (
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Currency">
@@ -60,6 +61,8 @@ export function Dashboard() {
 }
 
 function CurrencyView({ data, currency }: { data: DashboardData; currency: string }) {
+  const digits = useCurrencies().minor(currency)
+  const none = zero(digits)
   const t = data.totals.find((x) => x.currency === currency)
   const thisMonth = data.months[data.months.length - 1] ?? ''
   const pick = (list: DashboardData['invoiced'], m: string) => list.find((x) => x.currency === currency && x.month === m)
@@ -76,13 +79,13 @@ function CurrencyView({ data, currency }: { data: DashboardData; currency: strin
           <h2 className="text-sm font-semibold text-slate-600">Outstanding</h2>
           <p className="mt-1 text-5xl font-bold tracking-tight text-brand-900">
             <span className="mr-1 text-2xl font-semibold text-slate-500">{currency}</span>
-            {groupAmount(t?.outstanding ?? '0.00')}
+            {groupAmount(t?.outstanding ?? none)}
           </p>
           <p className="mt-1 text-sm text-slate-600">{t?.openCount ?? 0} unpaid invoice{t?.openCount === 1 ? '' : 's'}</p>
         </section>
         <section className="card">
           <h2 className="text-sm font-semibold text-slate-600">Overdue</h2>
-          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(t?.overdue ?? '0.00')}</p>
+          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(t?.overdue ?? none)}</p>
           <p className={`mt-1 flex items-center gap-1 text-sm font-semibold ${t && t.overdueCount > 0 ? 'text-amber-800' : 'text-slate-500'}`}>
             {t && t.overdueCount > 0 && <IconClockAlert width={16} height={16} />}
             {t && t.overdueCount > 0 ? <Link to="/invoices" className="hover:underline">{t.overdueCount} overdue</Link> : 'Nothing overdue'}
@@ -90,19 +93,19 @@ function CurrencyView({ data, currency }: { data: DashboardData; currency: strin
         </section>
         <section className="card">
           <h2 className="text-sm font-semibold text-slate-600">Invoiced this month</h2>
-          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(invoicedNow?.total ?? '0.00')}</p>
+          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(invoicedNow?.total ?? none)}</p>
           <p className="mt-1 text-sm text-slate-600">{invoicedNow?.count ?? 0} invoice{invoicedNow?.count === 1 ? '' : 's'}</p>
         </section>
         <section className="card">
           <h2 className="text-sm font-semibold text-slate-600">Paid this month</h2>
-          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(paidNow?.total ?? '0.00')}</p>
+          <p className="mt-1 text-2xl font-bold text-brand-900">{currency} {groupAmount(paidNow?.total ?? none)}</p>
           <p className="mt-1 text-sm text-slate-600">{paidNow?.count ?? 0} invoice{paidNow?.count === 1 ? '' : 's'}</p>
         </section>
       </div>
       <section className="card">
         <h2 className="mb-1 text-lg font-semibold">Invoiced and paid, last 12 months</h2>
         <p className="mb-3 text-sm text-slate-500">{currency} · invoiced by issue month, paid by payment month</p>
-        <ColumnChart categories={data.months.map(monthLabel)} series={series} unit={currency} />
+        <ColumnChart categories={data.months.map(monthLabel)} series={series} unit={currency} decimals={digits} />
       </section>
     </>
   )
@@ -118,7 +121,7 @@ function TopDebtors({ data }: { data: DashboardData }) {
           {data.topDebtors.map((d) => (
             <li key={d.customerId + d.currency}>
               <div className="flex items-baseline justify-between gap-2 text-sm">
-                <Link to={`/customers/${d.customerId}`} className="truncate font-medium text-brand-800 hover:underline">{d.name}</Link>
+                <MaybeLink need="customers.view" to={`/customers/${d.customerId}`} className="truncate font-medium text-brand-800 hover:underline">{d.name}</MaybeLink>
                 <span className="shrink-0 font-semibold tabular-nums">{d.currency} {groupAmount(d.outstanding)}</span>
               </div>
               <div className="mt-1 h-2 rounded-full bg-cream-200" aria-hidden="true">
@@ -138,7 +141,7 @@ function Upcoming({ data }: { data: DashboardData }) {
     <section className="card space-y-4">
       <div>
         <h2 className="mb-2 text-lg font-semibold">Next scheduled</h2>
-        {data.upcomingRuns.length === 0 ? <p className="text-sm text-slate-500"><Link to="/schedules/new" className="text-brand-700 underline">Create a schedule</Link> to raise invoices automatically.</p> : (
+        {data.upcomingRuns.length === 0 ? <p className="text-sm text-slate-500"><MaybeLink need="schedules.edit" to="/schedules/new" className="text-brand-700 underline">Create a schedule</MaybeLink> to raise invoices automatically.</p> : (
           <ul className="space-y-1.5 text-sm">
             {data.upcomingRuns.map((s) => (
               <li key={s.id} className="flex justify-between gap-2">
@@ -171,7 +174,7 @@ function Activity({ data }: { data: DashboardData }) {
     <section className="card">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Recent activity</h2>
-        <Link to="/audit" className="text-xs font-semibold text-brand-700 hover:underline">Audit log</Link>
+        <MaybeLink need="audit.view" to="/audit" className="text-xs font-semibold text-brand-700 hover:underline">Audit log</MaybeLink>
       </div>
       {data.activity.length === 0 ? <p className="text-sm text-slate-500">No activity yet.</p> : (
         <ol className="space-y-2 text-sm">

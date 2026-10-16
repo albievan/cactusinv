@@ -44,16 +44,40 @@ func reference(t *testing.T) ports.InvoiceDocument {
 	}
 }
 
-func render(t *testing.T, doc ports.InvoiceDocument) []byte {
+// run is one traced text run.
+type run struct {
+	page int
+	x, y float64
+	text string
+}
+
+// tracer collects every text run a render draws (the PDF stores glyph ids, not text).
+func tracer() (Renderer, *[]run) {
+	var runs []run
+	return Renderer{Uncompressed: true, Trace: func(page int, x, y float64, text string) { runs = append(runs, run{page, x, y, text}) }}, &runs
+}
+
+func textOf(runs []run) string {
+	var b strings.Builder
+	for _, r := range runs {
+		b.WriteString(r.text)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// render returns the PDF and the text drawn in it.
+func render(t *testing.T, doc ports.InvoiceDocument) ([]byte, string) {
 	t.Helper()
-	out, err := Renderer{Uncompressed: true}.RenderPDF(context.Background(), doc)
+	r, runs := tracer()
+	out, err := r.RenderPDF(context.Background(), doc)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.HasPrefix(out, []byte("%PDF-")) {
 		t.Fatal("not a PDF")
 	}
-	return out
+	return out, textOf(*runs)
 }
 
 func save(t *testing.T, name string, out []byte) {
@@ -65,20 +89,20 @@ func save(t *testing.T, name string, out []byte) {
 }
 
 func TestRenderReferenceInvoice(t *testing.T) {
-	out := render(t, reference(t))
+	out, txt := render(t, reference(t))
 	for _, want := range []string{
 		"Example Software Consulting", "I N V O I C E", "CD/1195/26", "21 August 2026", "7 September 2026",
-		"Acme Commercial Spares \\(Pty\\) Limited", "Attn: Jane", "SHIP TO", "Payment due before 7th of the next month",
+		"Acme Commercial Spares (Pty) Limited", "Attn: Jane", "SHIP TO", "Payment due before 7th of the next month",
 		"Stock system usage for 14 concurrent users.", "192.94", "2,701.16", "550.00", "Subtotal", "3,251.16", "Total ZAR",
 		"PAYMENT DETAILS", "Capitecbank", "Northgate", "Sort / branch code", "470010", "Savings account", "1234567890",
 		"Disclaimer:", "Page 1 of",
 	} {
-		if !bytes.Contains(out, []byte(want)) {
+		if !strings.Contains(txt, want) {
 			t.Errorf("PDF is missing %q", want)
 		}
 	}
 	for _, absent := range []string{"VAT", "DRAFT", "Discount", "DISC"} {
-		if bytes.Contains(out, []byte(absent)) {
+		if strings.Contains(txt, absent) {
 			t.Errorf("PDF must not contain %q", absent)
 		}
 	}
@@ -90,27 +114,27 @@ func TestRenderVariants(t *testing.T) {
 	inv := *draft.Invoice
 	inv.Status, inv.Number, inv.Bank = domain.InvoiceDraft, "", domain.BankDetails{}
 	draft.Invoice = &inv
-	out := render(t, draft)
+	out, txt := render(t, draft)
 	save(t, "draft.pdf", out)
 	for _, want := range []string{"DRAFT", "Not issued", "Payment details are added when the invoice is issued."} {
-		if !bytes.Contains(out, []byte(want)) {
+		if !strings.Contains(txt, want) {
 			t.Errorf("draft PDF missing %q", want)
 		}
 	}
 
 	voided := reference(t)
 	_ = voided.Invoice.Void("Duplicate", time.Now())
-	if out := render(t, voided); !bytes.Contains(out, []byte("VOID")) || !bytes.Contains(out, []byte("Voided: Duplicate")) {
+	if _, txt := render(t, voided); !strings.Contains(txt, "VOID") || !strings.Contains(txt, "Voided: Duplicate") {
 		t.Error("void")
 	}
 	paid := reference(t)
 	_ = paid.Invoice.MarkPaid(time.Now())
-	if out := render(t, paid); !bytes.Contains(out, []byte("PAID")) {
+	if _, txt := render(t, paid); !strings.Contains(txt, "PAID") {
 		t.Error("paid")
 	}
 	overdue := reference(t)
 	_ = overdue.Invoice.MarkOverdue(time.Now())
-	if out := render(t, overdue); !bytes.Contains(out, []byte("OVERDUE")) {
+	if _, txt := render(t, overdue); !strings.Contains(txt, "OVERDUE") {
 		t.Error("overdue pill")
 	}
 
@@ -128,12 +152,12 @@ func TestRenderVariants(t *testing.T) {
 	inv2.Bank.SwiftBIC, inv2.Bank.IBAN, inv2.Bank.AccountName, inv2.Bank.Country = "CABLZAJJ", "ZA00 0000", "Example", "South Africa"
 	long.Invoice = &inv2
 	long.Business.TaxNumber, long.Business.Email = "4000000000", "billing@example.com"
-	out = render(t, long)
+	out, txt = render(t, long)
 	if n := bytes.Count(out, []byte("/Type /Page\n")); n < 2 {
 		t.Errorf("expected several pages, got %d", n)
 	}
-	for _, want := range []string{"Continued on next page", "\\(continued\\)", "VAT 15%", "10%", "DISC", "Discount", "SWIFT", "CABLZAJJ", "Country", "South Africa", "VAT No: 4000000000", "SALES PERSON", "J-42", "Thank you for your business."} {
-		if !bytes.Contains(out, []byte(want)) {
+	for _, want := range []string{"Continued on next page", "(continued)", "VAT 15%", "10%", "DISC", "Discount", "SWIFT", "CABLZAJJ", "Country", "South Africa", "VAT No: 4000000000", "SALES PERSON", "J-42", "Thank you for your business."} {
+		if !strings.Contains(txt, want) {
 			t.Errorf("long PDF missing %q", want)
 		}
 	}
@@ -150,8 +174,8 @@ func TestRenderVariants(t *testing.T) {
 func TestDisclaimerIsRenderedFromTheDocument(t *testing.T) {
 	doc := reference(t)
 	doc.Disclaimer = "Updated disclaimer: terms changed."
-	out := render(t, doc)
-	if !bytes.Contains(out, []byte("Updated disclaimer: terms changed.")) || bytes.Contains(out, []byte("PrimeSoft")) {
+	_, txt := render(t, doc)
+	if !strings.Contains(txt, "Updated disclaimer: terms changed.") || strings.Contains(txt, "PrimeSoft") {
 		t.Error("the disclaimer comes from the document, not the invoice")
 	}
 }
@@ -168,19 +192,22 @@ func TestRenderStatement(t *testing.T) {
 		mk("CD/1197/26", domain.NewDate(2026, 11, 7), 325116),
 	}, domain.NewDate(2026, 10, 15))
 	doc := ports.StatementDocument{Statement: st, Business: ref.Business, Currency: ref.Currency, Bank: ref.Invoice.Bank, Disclaimer: "Disclaimer: test"}
-	out, err := Renderer{Uncompressed: true}.RenderStatement(context.Background(), doc)
+	sr, runs := tracer()
+	out, err := sr.RenderStatement(context.Background(), doc)
 	if err != nil {
 		t.Fatal(err)
 	}
+	txt := textOf(*runs)
 	for _, want := range []string{"S T A T E M E N T", "Statement date", "15 October 2026", "STATEMENT FOR", "CURRENT", "31-60 DAYS", "CD/1195/26", "38", "Balance due ZAR", "9,753.48", "PAYMENT DETAILS", "Disclaimer: test"} {
-		if !bytes.Contains(out, []byte(want)) {
+		if !strings.Contains(txt, want) {
 			t.Errorf("statement missing %q", want)
 		}
 	}
 	save(t, "statement.pdf", out)
 	empty := doc
 	empty.Statement = domain.NewStatement(c, nil, domain.NewDate(2026, 10, 15))
-	if out, _ := (Renderer{Uncompressed: true}).RenderStatement(context.Background(), empty); !bytes.Contains(out, []byte("Nothing is outstanding")) {
+	er, eruns := tracer()
+	if _, err := er.RenderStatement(context.Background(), empty); err != nil || !strings.Contains(textOf(*eruns), "Nothing is outstanding") {
 		t.Error("empty statement")
 	}
 }

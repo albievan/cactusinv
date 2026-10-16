@@ -574,6 +574,8 @@ func (s *Stager) Staged(context.Context) (ports.StagedRestore, error) {
 		id, _ := r[0].(string)
 		out.UserIDs = append(out.UserIDs, id)
 	}
+	// The fake's tables have no access groups: every staged user counts as an administrator.
+	out.AdminIDs = slices.Clone(out.UserIDs)
 	return out, nil
 }
 

@@ -3,9 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
 )
+
+// exportRetryAfter is how long an invoice whose export failed is left out of the passes.
+const exportRetryAfter = 15 * time.Minute
 
 // ExportResult counts what one export pass did.
 type ExportResult struct {
@@ -22,17 +26,43 @@ func (s *Service) ExportInvoices(ctx context.Context, limit int) (ExportResult, 
 	if s.archive == nil {
 		return res, nil
 	}
-	refs, err := s.tx.Repos().Invoices.ListUnexported(ctx, limit)
+	now := s.now()
+	s.exportMu.Lock()
+	if s.exportRetry == nil {
+		s.exportRetry = map[string]time.Time{}
+	}
+	waiting := 0
+	for id, until := range s.exportRetry {
+		if now.After(until) {
+			delete(s.exportRetry, id)
+		} else {
+			waiting++
+		}
+	}
+	s.exportMu.Unlock()
+	// Ask for enough to fill the pass past the invoices that are waiting out a failure.
+	refs, err := s.tx.Repos().Invoices.ListUnexported(ctx, limit+min(waiting, 1000))
 	if err != nil {
 		return res, wrap("app.ExportInvoices", err)
 	}
+	done := 0
 	for _, ref := range refs {
-		if stopping(ctx) {
+		if stopping(ctx) || done >= limit {
 			return res, nil
 		}
+		s.exportMu.Lock()
+		_, skip := s.exportRetry[ref.ID]
+		s.exportMu.Unlock()
+		if skip {
+			continue
+		}
+		done++
 		if err := s.exportOne(ctx, ref.ID, ref.Version); err != nil {
 			res.Failed++
 			s.log.WarnContext(ctx, "invoice export failed", "invoice_id", ref.ID, "err", err)
+			s.exportMu.Lock()
+			s.exportRetry[ref.ID] = now.Add(exportRetryAfter)
+			s.exportMu.Unlock()
 			continue
 		}
 		res.Exported++

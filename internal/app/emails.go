@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
@@ -12,6 +13,14 @@ import (
 // ListEmails returns a page of outbox messages.
 func (s *Service) ListEmails(ctx context.Context, f ports.EmailFilter) ([]domain.EmailMessage, int, error) {
 	f.Page = f.Page.Normalize()
+	// Without the outbox permission (statements.view only), a user sees just the statements
+	// e-mailed to one customer — the history on a statement page (ADR-012).
+	if !ActorFrom(ctx).Can(domain.PermEmailsView) {
+		if f.CustomerID == "" {
+			return nil, 0, wrap("app.ListEmails", domain.ErrNoAccess)
+		}
+		f.InvoiceID = ""
+	}
 	out, n, err := s.tx.Repos().Emails.List(ctx, f)
 	return out, n, wrap("app.ListEmails", err)
 }
@@ -29,7 +38,7 @@ func (s *Service) RetryEmail(ctx context.Context, id string) (*domain.EmailMessa
 func (s *Service) emailTransition(ctx context.Context, op, id, event string, apply func(*domain.EmailMessage, timeT) error) (*domain.EmailMessage, error) {
 	var out *domain.EmailMessage
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		m, err := r.Emails.Get(ctx, id)
+		m, err := r.Emails.Lock(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -123,12 +132,18 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
 	if err := s.mailer.Send(ctx, mail); err != nil {
 		return err
 	}
+	// The mail server has the message: record that even if the app is shutting down,
+	// or it would be sent again after a restart (outcomeContext).
+	ctx, cancel := outcomeContext(ctx)
+	defer cancel()
 	return s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		cur, err := r.Emails.Get(ctx, m.ID)
+		cur, err := r.Emails.Lock(ctx, m.ID)
 		if err != nil {
 			return err
 		}
-		cur.Succeeded(s.now())
+		if !cur.Succeeded(s.now()) {
+			return nil // no longer ours (see EmailMessage.Succeeded)
+		}
 		if err := r.Emails.Update(ctx, cur); err != nil {
 			return err
 		}
@@ -148,10 +163,15 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
 var errVoided = errors.New("invoice was voided")
 
 func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error) error {
+	ctx, cancel := outcomeContext(ctx)
+	defer cancel()
 	return s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		m, err := r.Emails.Get(ctx, id)
+		m, err := r.Emails.Lock(ctx, id)
 		if err != nil {
 			return err
+		}
+		if m.Status != domain.EmailSending {
+			return nil // cancelled or recorded meanwhile: nothing to retry
 		}
 		if errors.Is(cause, errVoided) {
 			m.Attempts = domain.MaxEmailAttempts
@@ -165,4 +185,11 @@ func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error
 		}
 		return nil
 	})
+}
+
+// outcomeContext is for recording what a send did: it is not cancelled when the app shuts
+// down (a message the server accepted must be recorded as sent, or a restart would send it
+// again after StaleSendingAfter), but it gives up after 15 seconds.
+func outcomeContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 }

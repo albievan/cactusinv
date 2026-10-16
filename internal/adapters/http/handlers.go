@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -393,6 +394,9 @@ func (h *handlers) CreateInvoice(ctx context.Context, req CreateInvoiceRequestOb
 		return nil, &domain.ValidationError{Field: "customerId", Reason: "is required"}
 	}
 	c, err := h.svc.GetCustomer(ctx, req.Body.CustomerId)
+	if errors.Is(err, domain.ErrNotFound) { // a field of the body, not the URL's resource
+		return nil, &domain.ValidationError{Field: "customerId", Reason: "unknown customer"}
+	}
 	if err != nil {
 		return nil, err
 	}

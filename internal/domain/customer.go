@@ -3,10 +3,15 @@ package domain
 import (
 	"net/mail"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 )
 
 var invoiceCodeRe = regexp.MustCompile(`^[A-Z0-9]{1,10}$`)
+
+// MaxCustomerCC is the most CC addresses a customer may have (the API's maxItems).
+const MaxCustomerCC = 10
 
 // Customer is someone the business invoices. A customer is billed in exactly one currency.
 type Customer struct {
@@ -50,13 +55,18 @@ func (c *Customer) Validate() error {
 	cc := c.CC[:0:0]
 	for _, e := range c.CC {
 		e = strings.TrimSpace(e)
-		if e == "" {
+		if e == "" || slices.ContainsFunc(cc, func(x string) bool { return strings.EqualFold(x, e) }) {
 			continue
 		}
 		if err := validEmail("cc", e); err != nil {
 			return err
 		}
 		cc = append(cc, e)
+	}
+	// Every e-mail goes to the customer plus these, and a message allows at most
+	// MaxRecipients (the contract says 10 CCs).
+	if len(cc) > MaxCustomerCC {
+		return invalid("cc", "at most "+strconv.Itoa(MaxCustomerCC)+" addresses")
 	}
 	c.CC = cc
 	if _, err := ParseCurrencyCode(string(c.Currency)); err != nil {

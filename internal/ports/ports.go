@@ -226,7 +226,7 @@ type InvoiceRepository interface {
 	CountForCustomer(ctx context.Context, customerID string) (int, error)
 	// Monthly sums invoiced (by issue month) and paid (by payment month) amounts per
 	// currency since the given date.
-	Monthly(ctx context.Context, since domain.Date) (invoiced, paid []MonthTotal, err error)
+	Monthly(ctx context.Context, since domain.Date, loc *time.Location) (invoiced, paid []MonthTotal, err error)
 	// TopDebtors returns the customers owing the most (per currency), largest first.
 	TopDebtors(ctx context.Context, limit int) ([]Debtor, error)
 	// ListUnexported returns issued invoices whose current version is not yet archived.
@@ -269,6 +269,10 @@ type SequenceRepository interface {
 	Next(ctx context.Context) (int64, error)
 	// Peek returns the next value without allocating it.
 	Peek(ctx context.Context) (int64, error)
+	// Lock locks the sequence (inside WithinTx) without allocating a number, so a
+	// transaction that will issue can take this lock before the audit head, in the same
+	// order as every other issuing path (no deadlock).
+	Lock(ctx context.Context) error
 	// Set changes the next value; it may never go below an already issued number.
 	Set(ctx context.Context, next int64) error
 }
@@ -316,6 +320,8 @@ type EmailRepository interface {
 	// Create inserts m; ErrConflict when its idempotency key exists.
 	Create(ctx context.Context, m *domain.EmailMessage) error
 	Get(ctx context.Context, id string) (*domain.EmailMessage, error)
+	// Lock reads a message FOR UPDATE (inside WithinTx), before changing its status.
+	Lock(ctx context.Context, id string) (*domain.EmailMessage, error)
 	GetByIdempotencyKey(ctx context.Context, key string) (*domain.EmailMessage, error)
 	Update(ctx context.Context, m *domain.EmailMessage) error
 	List(ctx context.Context, f EmailFilter) ([]domain.EmailMessage, int, error)

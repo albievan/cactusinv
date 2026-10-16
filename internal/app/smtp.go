@@ -118,12 +118,20 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) ([]string, error
 	if err != nil {
 		return nil, wrap("app.SendTestEmail", err)
 	}
-	_ = s.auditNow(ctx, "settings.test_email_sent", "settings", "email", "to "+to)
 	if err := s.mailer.Send(ctx, ports.Mail{
 		MessageID: s.ids.NewID(), To: []string{to}, Subject: "cactusInv test e-mail",
 		Body: "This is a test e-mail from " + b.Name + ". Your mail server settings work.",
 	}); err != nil {
-		return nil, wrap("app.SendTestEmail", err)
+		_ = s.auditNow(ctx, "settings.test_email_failed", "settings", "email", "to "+to)
+		return nil, wrap("app.SendTestEmail", &MailError{Err: err})
 	}
+	_ = s.auditNow(ctx, "settings.test_email_sent", "settings", "email", "to "+to)
 	return warnings, nil
 }
+
+// MailError is a failure of the mail server itself (as opposed to a database or input
+// error), so the API can say "the mail server refused" only when it did.
+type MailError struct{ Err error }
+
+func (e *MailError) Error() string { return e.Err.Error() }
+func (e *MailError) Unwrap() error { return e.Err }

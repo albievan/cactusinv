@@ -11,7 +11,13 @@ import (
 type Actor struct {
 	ID   string
 	Name string
+	// Access is a signed-in user's access (ADR-012); nil for the system workers and the
+	// command line, which are not limited by groups.
+	Access *domain.Access
 }
+
+// Can reports whether the actor may do p: always for the system and the command line.
+func (a Actor) Can(p domain.Permission) bool { return a.Access == nil || a.Access.Has(p) }
 
 // System actors used by the background workers.
 var (

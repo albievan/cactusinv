@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -77,8 +78,35 @@ func OpenLazy(cfg Config) (*sql.DB, error) {
 	return db, nil
 }
 
+// migrationLock holds a database-wide named lock while migrations run, so two replicas
+// starting together never apply the same migration at once (MariaDB DDL is not
+// transactional). It waits up to 10 minutes for another process's migrations.
+func migrationLock(ctx context.Context, db *sql.DB) (release func(), err error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var got sql.NullInt64
+	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK('cactusinv_migrate', 600)").Scan(&got); err != nil || got.Int64 != 1 {
+		_ = conn.Close()
+		if err == nil {
+			err = errors.New("another process is still migrating the database")
+		}
+		return nil, err
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "SELECT RELEASE_LOCK('cactusinv_migrate')")
+		_ = conn.Close()
+	}, nil
+}
+
 // Migrate applies (or with down=true, rolls back all) embedded goose migrations.
 func Migrate(ctx context.Context, db *sql.DB, down bool) error {
+	release, err := migrationLock(ctx, db)
+	if err != nil {
+		return fmt.Errorf("mariadb.Migrate: lock: %w", err)
+	}
+	defer release()
 	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
@@ -96,6 +124,11 @@ func Migrate(ctx context.Context, db *sql.DB, down bool) error {
 
 // MigrateTo applies migrations up to and including version (tests and recovery).
 func MigrateTo(ctx context.Context, db *sql.DB, version int64) error {
+	release, err := migrationLock(ctx, db)
+	if err != nil {
+		return fmt.Errorf("mariadb.MigrateTo: lock: %w", err)
+	}
+	defer release()
 	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
 	if err != nil {
 		return fmt.Errorf("mariadb.MigrateTo: %w", err)
@@ -171,7 +204,12 @@ const (
 	errLockWaitTimeout = 1205
 	errDeadlock        = 1213
 	errCheckViolation  = 4025
+	errDataTooLong     = 1406
+	errBadStringValue  = 1366
 )
+
+// tooLongColumn reads the column from "Data too long for column 'x' at row 1".
+var tooLongColumn = regexp.MustCompile(`column '([^']+)'`)
 
 // mapErr translates driver errors into domain sentinels, keeping the original text.
 func mapErr(err error) error {
@@ -190,6 +228,18 @@ func mapErr(err error) error {
 			return fmt.Errorf("%w: %s", domain.ErrNotFound, me.Message)
 		case errCheckViolation:
 			return fmt.Errorf("%w: %s", domain.ErrValidation, me.Message)
+		case errDataTooLong, errBadStringValue:
+			// A value longer than its column (or not storable in it) is the caller's input:
+			// a 422 naming the field, not a 500.
+			field := "input"
+			if m := tooLongColumn.FindStringSubmatch(me.Message); m != nil {
+				field = m[1]
+			}
+			reason := "is too long"
+			if me.Number == errBadStringValue {
+				reason = "contains characters that cannot be stored"
+			}
+			return &domain.ValidationError{Field: field, Reason: reason}
 		}
 	}
 	return err

@@ -1,8 +1,20 @@
 // Display-side helpers. The server computes the real totals (ADR-005); these only
 // preview what the user is typing, using integer minor units to avoid float drift.
 
+/**
+ * normalizeDecimal turns a decimal comma into a point ("192,94" → "192.94"), as an iPhone in
+ * a comma region types it, when it cannot be a thousands separator: one comma, no point, and
+ * not exactly three digits after it ("1,500" stays as typed and is refused as ambiguous).
+ * The server applies the same rule (domain.parseFixed).
+ */
+export function normalizeDecimal(value: string): string {
+  const v = value.trim()
+  const m = /^(-?\d*),(\d*)$/.exec(v)
+  return m && m[2]!.length !== 3 ? `${m[1]}.${m[2]}` : v
+}
+
 export function toMinor(value: string, minorUnits: number): bigint | null {
-  const m = /^\s*(-?)(\d*)(?:\.(\d*))?\s*$/.exec(value)
+  const m = /^\s*(-?)(\d*)(?:\.(\d*))?\s*$/.exec(normalizeDecimal(value))
   if (!m || (m[2] === '' && (m[3] ?? '') === '')) return null
   const frac = (m[3] ?? '').padEnd(minorUnits, '0')
   if (frac.length > minorUnits) return null
@@ -55,3 +67,13 @@ export function groupAmount(amount: string): string {
   const [i = '0', f] = amount.replace('-', '').split('.')
   return (neg ? '-' : '') + i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f !== undefined ? '.' + f : '')
 }
+
+/** sumAmounts adds decimal strings exactly in minor units: ["1.235", "2.001"] (3) → "3.236". */
+export function sumAmounts(amounts: string[], minorUnits: number): string {
+  let total = 0n
+  for (const a of amounts) total += toMinor(a, minorUnits) ?? 0n
+  return fromMinor(total, minorUnits).replace(/,/g, '')
+}
+
+/** zero is "0" in a currency's minor units: "0.00", "0" (JPY), "0.000" (KWD). */
+export const zero = (minorUnits: number) => (minorUnits ? `0.${'0'.repeat(minorUnits)}` : '0')

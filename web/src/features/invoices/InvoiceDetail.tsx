@@ -6,7 +6,7 @@ import { InvoiceActions } from '../../components/InvoiceActions'
 import { formatDate, formatDateTime } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, ErrorBanner, Field, Page, Sheet, Spinner, StageTracker } from '../../components/ui'
+import { Badge, ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner, StageTracker } from '../../components/ui'
 
 export function InvoiceDetail() {
   const { id = '' } = useParams()
@@ -64,12 +64,23 @@ export function InvoiceDetail() {
           <Can need="invoices.edit">
             <Link to={`/invoices/${id}/edit`} className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50">Edit</Link>
             <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} })))}>Issue</button>
-            <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50" disabled={busy} onClick={() => act(async () => { await unwrap(api.DELETE('/invoices/{id}', path)); nav('/invoices') })}>Delete draft</button>
+            <ConfirmButton
+              label="Delete draft"
+              className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"
+              disabled={busy}
+              title="Delete this draft?"
+              message="The draft and its lines are deleted. It has no invoice number yet, so no number is lost. This cannot be undone."
+              confirmLabel="Delete draft"
+              onConfirm={() => act(async () => { await unwrap(api.DELETE('/invoices/{id}', path)); nav('/invoices') })}
+            />
           </Can>
         )}
         {inv.status !== 'void' && (
+          // Sending a draft issues it, which also needs invoices.edit (as "Issue & send").
+          <Can need={inv.status === 'draft' ? 'invoices.edit' : 'invoices.send'}>
           <Can need="invoices.send">
             <button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => setSendOpen(true)}>Send later / other address…</button>
+          </Can>
           </Can>
         )}
       </div>

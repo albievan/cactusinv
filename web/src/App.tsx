@@ -64,7 +64,8 @@ function Home() {
   const first = useNav().find((t) => t.to !== '/settings')
   if (can('dashboard.view')) return <Dashboard />
   if (first) return <Navigate to={first.to} replace />
-  return <NoAccess home={false} />
+  // Settings is always there (Your account, perhaps more): better than an empty start page.
+  return <Navigate to="/settings" replace />
 }
 
 /** SettingsHome opens the first Settings page the user may see. */

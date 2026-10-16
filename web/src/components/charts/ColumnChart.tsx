@@ -18,13 +18,14 @@ function niceTicks(max: number, target = 4): number[] {
 }
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 0 })
-const fmt2 = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtN = (n: number, d: number) => n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d })
 
 /**
  * ColumnChart draws grouped columns (one group per category) on a single y-axis, with
  * a legend, hairline gridlines, per-column hover tooltips and an accessible table view.
  */
-export function ColumnChart({ categories, series, unit, height = 240 }: { categories: string[]; series: Series[]; unit: string; height?: number }) {
+export function ColumnChart({ categories, series, unit, height = 240, decimals = 2 }: { categories: string[]; series: Series[]; unit: string; height?: number; decimals?: number }) {
+  const fmt2 = (n: number) => fmtN(n, decimals)
   const [hover, setHover] = useState<{ c: number; s: number } | null>(null)
   const [table, setTable] = useState(false)
   const max = Math.max(0, ...series.flatMap((s) => s.values))

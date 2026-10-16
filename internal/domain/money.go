@@ -154,7 +154,7 @@ func MulDivRound(a, b, d int64) int64 {
 }
 
 func parseFixed(s string, scale int, field string) (int64, error) {
-	s = strings.TrimSpace(s)
+	s = normalizeDecimalComma(strings.TrimSpace(s))
 	if s == "" {
 		return 0, invalid(field, "is required")
 	}
@@ -164,6 +164,9 @@ func parseFixed(s string, scale int, field string) (int64, error) {
 		s = s[1:]
 	}
 	intPart, frac, _ := strings.Cut(s, ".")
+	if intPart == "" && frac == "" { // "-", "+", "." or "-." are not numbers
+		return 0, invalid(field, "is not a valid number")
+	}
 	if intPart == "" {
 		intPart = "0"
 	}
@@ -217,4 +220,16 @@ func allDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// normalizeDecimalComma reads a decimal comma as a point ("192,94" → "192.94"), as phones in
+// comma regions type it, when it cannot be a thousands separator: exactly one comma, no
+// point, and not exactly three digits after it ("1,500" is left as is and refused as
+// ambiguous). The web app applies the same rule (normalizeDecimal).
+func normalizeDecimalComma(s string) string {
+	i := strings.IndexByte(s, ',')
+	if i < 0 || strings.Count(s, ",") != 1 || strings.Contains(s, ".") || len(s)-i-1 == 3 {
+		return s
+	}
+	return s[:i] + "." + s[i+1:]
 }

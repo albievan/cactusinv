@@ -63,7 +63,7 @@ var Permissions = []PermissionInfo{
 	{PermCustomersEdit, "Customers", "Add, edit and delete customers", []Permission{PermCustomersView}},
 	{PermStatementsView, "Statements", "See statements and their PDFs", []Permission{PermCustomersView}},
 	{PermStatementsSend, "Statements", "E-mail statements", []Permission{PermStatementsView}},
-	{PermSchedulesView, "Schedules", "See schedules", nil},
+	{PermSchedulesView, "Schedules", "See schedules", []Permission{PermCustomersView, PermProductsView}},
 	{PermSchedulesEdit, "Schedules", "Create, edit, pause, resume, run and delete schedules", []Permission{PermSchedulesView, PermCustomersView, PermProductsView}},
 	{PermProductsView, "Products", "See products", nil},
 	{PermProductsEdit, "Products", "Add, edit and delete products", []Permission{PermProductsView}},

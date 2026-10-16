@@ -738,7 +738,7 @@ func (r invoices) MarkExported(_ context.Context, id string, version int) error 
 	})
 }
 
-func (r invoices) Monthly(_ context.Context, since domain.Date) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+func (r invoices) Monthly(_ context.Context, since domain.Date, loc *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
 	var inv, paid []ports.MonthTotal
 	err := r.s.do(func(st *state) error {
 		add := func(list *[]ports.MonthTotal, c domain.CurrencyCode, month string, amt int64) {
@@ -755,8 +755,8 @@ func (r invoices) Monthly(_ context.Context, since domain.Date) ([]ports.MonthTo
 			if x.Status != domain.InvoiceDraft && x.Status != domain.InvoiceVoid && !x.IssueDate.Before(since) {
 				add(&inv, x.Currency, x.IssueDate.Time(time.UTC).Format("2006-01"), x.Totals.Total)
 			}
-			if x.Status == domain.InvoicePaid && !x.PaidAt.Before(since.Time(time.UTC)) {
-				add(&paid, x.Currency, x.PaidAt.UTC().Format("2006-01"), x.Totals.Total)
+			if x.Status == domain.InvoicePaid && !x.PaidAt.Before(since.Time(loc)) {
+				add(&paid, x.Currency, x.PaidAt.In(loc).Format("2006-01"), x.Totals.Total)
 			}
 		}
 		less := func(l []ports.MonthTotal) {
@@ -789,10 +789,21 @@ func (r invoices) TopDebtors(_ context.Context, limit int) ([]ports.Debtor, erro
 		for _, d := range by {
 			out = append(out, *d)
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Outstanding > out[j].Outstanding })
-		if len(out) > limit {
-			out = out[:limit]
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Currency != out[j].Currency {
+				return out[i].Currency < out[j].Currency
+			}
+			return out[i].Outstanding > out[j].Outstanding
+		})
+		kept := out[:0]
+		n := map[domain.CurrencyCode]int{}
+		for _, d := range out {
+			if n[d.Currency] < limit {
+				n[d.Currency]++
+				kept = append(kept, d)
+			}
 		}
+		out = kept
 		return nil
 	})
 	return out, err
@@ -824,6 +835,9 @@ func (r sequences) Next(_ context.Context) (int64, error) {
 	})
 	return v, err
 }
+
+// Lock does nothing in the fake (transactions are serialised).
+func (r sequences) Lock(context.Context) error { return nil }
 
 func (r sequences) Peek(_ context.Context) (int64, error) {
 	var v int64
@@ -984,6 +998,11 @@ func (r emails) Create(_ context.Context, m *domain.EmailMessage) error {
 		st.emails[m.ID] = *cloneEmail(*m)
 		return nil
 	})
+}
+
+// Lock reads the message (the fake serialises transactions).
+func (r emails) Lock(ctx context.Context, id string) (*domain.EmailMessage, error) {
+	return r.Get(ctx, id)
 }
 
 func (r emails) Get(_ context.Context, id string) (*domain.EmailMessage, error) {

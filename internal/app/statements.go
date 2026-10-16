@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -79,8 +80,14 @@ func (s *Service) SendStatement(ctx context.Context, customerID string, in SendI
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if in.IdempotencyKey != "" {
 			if m, err := r.Emails.GetByIdempotencyKey(ctx, in.IdempotencyKey); err == nil {
+				// The key names this request only if it was this customer's statement.
+				if m.CustomerID != customerID || m.InvoiceID != "" {
+					return domain.ErrConflict
+				}
 				out = m
 				return nil
+			} else if !errors.Is(err, domain.ErrNotFound) {
+				return err
 			}
 		}
 		m, err := s.enqueueStatement(ctx, r, customerID, in)
@@ -143,12 +150,16 @@ func (s *Service) deliverStatement(ctx context.Context, m *domain.EmailMessage) 
 	}); err != nil {
 		return err
 	}
+	ctx, cancel := outcomeContext(ctx)
+	defer cancel()
 	return s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		cur, err := r.Emails.Get(ctx, m.ID)
+		cur, err := r.Emails.Lock(ctx, m.ID)
 		if err != nil {
 			return err
 		}
-		cur.Succeeded(s.now())
+		if !cur.Succeeded(s.now()) {
+			return nil // no longer ours (see EmailMessage.Succeeded)
+		}
 		if err := r.Emails.Update(ctx, cur); err != nil {
 			return err
 		}

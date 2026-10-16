@@ -63,7 +63,7 @@ func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 		m := domain.NewDate(first.Year, first.Month+time.Month(i), 1)
 		d.Months = append(d.Months, fmt.Sprintf("%04d-%02d", m.Year, int(m.Month)))
 	}
-	if d.Invoiced, d.Paid, err = r.Invoices.Monthly(ctx, first); err != nil {
+	if d.Invoiced, d.Paid, err = r.Invoices.Monthly(ctx, first, b.Location()); err != nil {
 		return Dashboard{}, wrap("app.GetDashboard", err)
 	}
 	if d.TopDebtors, err = r.Invoices.TopDebtors(ctx, 6); err != nil {
@@ -71,6 +71,20 @@ func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 	}
 	if d.Activity, _, err = r.Audit.List(ctx, ports.AuditFilter{Page: ports.Page{Limit: 12}}); err != nil {
 		return Dashboard{}, wrap("app.GetDashboard", err)
+	}
+	// The dashboard shows only what the user may also open (ADR-012).
+	a := ActorFrom(ctx)
+	if !a.Can(domain.PermEmailsView) {
+		d.UpcomingEmails, d.FailedEmailCount = []domain.EmailMessage{}, 0
+	}
+	if !a.Can(domain.PermSchedulesView) {
+		d.UpcomingRuns = []domain.Schedule{}
+	}
+	if !a.Can(domain.PermInvoicesView) {
+		d.RecentInvoices = []domain.Invoice{}
+	}
+	if !a.Can(domain.PermAuditView) {
+		d.Activity = []domain.AuditEntry{}
 	}
 	return d, nil
 }

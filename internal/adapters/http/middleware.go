@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,7 +179,8 @@ func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, nex
 			defer func() { limiter.finish(key, att.failed.Load()) }()
 		}
 		ctx := context.WithValue(r.Context(), keyUser, u)
-		ctx = app.WithActor(ctx, app.Actor{ID: u.ID, Name: u.Email})
+		access := u.Access
+		ctx = app.WithActor(ctx, app.Actor{ID: u.ID, Name: u.Email, Access: &access})
 		ctx = context.WithValue(ctx, keyToken, c.Value)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -187,6 +189,8 @@ func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, nex
 func isMutation(method string) bool {
 	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
 }
+
+const maxIdempotencyKey = 128
 
 // withIdempotency replays the stored response when a mutating request repeats an
 // Idempotency-Key (24 h retention, housekeeping deletes older keys).
@@ -197,8 +201,10 @@ func withIdempotency(store ports.IdempotencyRepository, clock ports.Clock, next 
 			next.ServeHTTP(w, r)
 			return
 		}
-		if len(key) > 200 {
-			writeProblem(w, Problem{Type: problemType("bad-request"), Title: "Idempotency-Key too long", Status: http.StatusBadRequest})
+		// Stored as "<user id>:<key>" in a 200-byte ASCII column: at most 128 printable
+		// ASCII characters, so a valid key can never fail to store.
+		if len(key) > maxIdempotencyKey || strings.IndexFunc(key, func(c rune) bool { return c < 0x21 || c > 0x7e }) >= 0 {
+			writeProblem(w, Problem{Type: problemType("bad-request"), Title: "Idempotency-Key must be 1–128 printable ASCII characters", Status: http.StatusBadRequest})
 			return
 		}
 		body, err := io.ReadAll(r.Body)
@@ -221,6 +227,13 @@ func withIdempotency(store ports.IdempotencyRepository, clock ports.Clock, next 
 			return
 		}
 		rec := &statusRecorder{ResponseWriter: w, capture: &bytes.Buffer{}}
+		// A handler that panics must not leave the key "in progress" for a day.
+		defer func() {
+			if p := recover(); p != nil {
+				_ = store.Release(context.WithoutCancel(ctx), storeKey)
+				panic(p)
+			}
+		}()
 		next.ServeHTTP(rec, r)
 		// A server error, or a request refused before it ran (signed out, or a password
 		// that must be changed first), is not the operation's answer: the key is freed so
@@ -292,11 +305,7 @@ func (l *loginLimiter) reserve(key string) bool {
 	b := l.buckets[key]
 	if b == nil {
 		if len(l.buckets) >= 10000 { // bound memory under a spray of addresses
-			for k, o := range l.buckets {
-				if o.inflight == 0 {
-					delete(l.buckets, k)
-				}
-			}
+			l.evict(now)
 		}
 		b = &limitBucket{}
 		l.buckets[key] = b
@@ -313,6 +322,44 @@ func (l *loginLimiter) reserve(key string) bool {
 	}
 	b.inflight++
 	return true
+}
+
+// evict frees buckets that hold nothing: no request in flight and no failure inside the
+// window. A spray of new addresses therefore cannot wipe the recent failures of the one being
+// guessed. If every bucket is still busy, the one whose last failure is oldest goes.
+func (l *loginLimiter) evict(now time.Time) {
+	var oldestKey string
+	var oldest time.Time
+	for k, b := range l.buckets {
+		last := time.Time{}
+		if n := len(b.failures); n > 0 {
+			last = b.failures[n-1]
+		}
+		if b.inflight == 0 && now.Sub(last) >= l.window {
+			delete(l.buckets, k)
+			continue
+		}
+		if b.inflight == 0 && (oldestKey == "" || last.Before(oldest)) {
+			oldestKey, oldest = k, last
+		}
+	}
+	if len(l.buckets) >= 10000 && oldestKey != "" {
+		delete(l.buckets, oldestKey)
+	}
+}
+
+// addressKey is the rate-limit identity of a client address: the address itself for IPv4,
+// its /64 network for IPv6 (one host usually has a whole /64 to rotate through).
+func addressKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil || a.Is4() || a.Is4In6() {
+		return ip
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return p.String()
 }
 
 // finish returns key's slot; failed records it as a failed password attempt.
@@ -370,7 +417,7 @@ func (l *loginLimiter) middleware(next http.Handler) http.Handler {
 		if err != nil {
 			ip = r.RemoteAddr
 		}
-		key := "ip:" + ip
+		key := "ip:" + addressKey(ip)
 		if !l.reserve(key) {
 			tooManyAttempts(w)
 			return

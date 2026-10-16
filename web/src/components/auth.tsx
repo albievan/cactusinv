@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { api, ApiError, setUnauthorizedHandler, unwrap } from '../lib/api/client'
 import { useVersion } from '../lib/version'
 import { Wordmark } from './Logo'
@@ -37,12 +37,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Auth['user']>(null)
   const [checked, setChecked] = useState(false)
   const [notice, setNotice] = useState('')
+  // expired: the session timed out while a page was open. The sign-in form is shown over the
+  // page instead of replacing it, so what was being typed survives signing in again.
+  const [expired, setExpired] = useState(false)
+  const userRef = useRef<Auth['user']>(null)
   const load = useCallback(async () => {
     try {
-      setUser(await unwrap(api.GET('/auth/me')))
+      const me = await unwrap(api.GET('/auth/me'))
+      // Someone else signed in over an open page: start clean rather than show its data.
+      if (userRef.current && userRef.current.id !== me.id) window.location.reload()
+      userRef.current = me
+      setUser(me)
+      setExpired(false)
       setNotice('')
     } catch {
+      userRef.current = null
       setUser(null)
+      setExpired(false)
     } finally {
       setChecked(true)
     }
@@ -50,8 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() =>
       setUser((u) => {
-        if (u) setNotice('You were signed out: your session timed out.')
-        return null
+        if (u) {
+          setNotice('Your session timed out. Sign in again to carry on where you were.')
+          setExpired(true)
+        }
+        return u
       }),
     )
     void load()
@@ -59,17 +73,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await api.POST('/auth/logout')
     setNotice('You signed out.')
+    setExpired(false)
+    userRef.current = null
     setUser(null)
   }
   const endSession = (n: string) => {
     setNotice(n)
+    setExpired(false)
+    userRef.current = null
     setUser(null)
   }
   if (!checked) return <Spinner />
   if (!user) return <Login onLogin={load} notice={notice} />
   // The server allows nothing else until the password is changed (ADR-011).
   if (user.mustChangePassword) return <ForcedPasswordChange login={user.email} onChanged={load} onSignOut={logout} />
-  return <AuthContext.Provider value={{ user, logout, refresh: load, endSession }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, logout, refresh: load, endSession }}>
+      {children}
+      {expired && (
+        <div className="fixed inset-0 z-[60] overflow-y-auto" role="dialog" aria-modal="true" aria-label="Sign in again">
+          <Login onLogin={load} notice={notice} />
+        </div>
+      )}
+    </AuthContext.Provider>
+  )
 }
 
 /** The public source repository. */

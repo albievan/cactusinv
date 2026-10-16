@@ -30,3 +30,15 @@ export function Can({ need, children }: { need: string; children: ReactNode }) {
   const can = useCan()
   return can(need) ? <>{children}</> : null
 }
+
+/** MaybeLink is a link for a user whose groups allow `need`, and plain text otherwise. */
+export function MaybeLink({ need, to, className, children }: { need: string; to: string; className?: string; children: ReactNode }) {
+  const can = useCan()
+  return can(need) ? (
+    <Link to={to} className={className}>
+      {children}
+    </Link>
+  ) : (
+    <span className={className?.replace(/\b(hover:underline|underline|text-brand-700)\b/g, '')}>{children}</span>
+  )
+}

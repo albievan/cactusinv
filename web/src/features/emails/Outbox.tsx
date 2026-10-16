@@ -1,6 +1,6 @@
 import { useState } from 'react'
+import { MaybeLink } from '../../components/Access'
 import { useCan } from '../../components/auth'
-import { Link } from 'react-router-dom'
 import { api, unwrap } from '../../lib/api/client'
 import { formatDateTime } from '../../lib/format'
 import { useAsync } from '../../lib/useAsync'
@@ -36,9 +36,9 @@ export function Outbox() {
             <li key={m.id} className="card text-sm">
               <div className="flex items-center justify-between gap-2">
                 {m.kind === 'statement' ? (
-                  <Link to={`/customers/${m.customerId}`} className="truncate font-semibold text-brand-700">{m.subject} <span className="chip ml-1 bg-cream-200 text-brand-800">statement</span></Link>
+                  <MaybeLink need="customers.view" to={`/customers/${m.customerId}`} className="truncate font-semibold text-brand-700">{m.subject} <span className="chip ml-1 bg-cream-200 text-brand-800">statement</span></MaybeLink>
                 ) : (
-                  <Link to={`/invoices/${m.invoiceId}`} className="truncate font-semibold text-brand-700">{m.subject}</Link>
+                  <MaybeLink need="invoices.view" to={`/invoices/${m.invoiceId}`} className="truncate font-semibold text-brand-700">{m.subject}</MaybeLink>
                 )}
                 <Badge status={m.status} />
               </div>

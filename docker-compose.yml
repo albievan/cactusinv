@@ -41,6 +41,8 @@ services:
         VERSION: ${CACTUSINV_VERSION:-dev}
         BUILD: ${CACTUSINV_BUILD:-0}
     restart: unless-stopped
+    # The app needs up to ~20 s to drain requests and record an e-mail being sent.
+    stop_grace_period: 30s
     depends_on:
       mariadb: { condition: service_healthy }
       volume-init: { condition: service_completed_successfully }

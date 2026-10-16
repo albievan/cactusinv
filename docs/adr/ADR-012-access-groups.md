@@ -35,7 +35,8 @@ change their password, and nothing else.
 A permission implies what it needs to be usable, transitively: every edit/send/status
 permission implies its area's view; `invoices.edit` and `schedules.edit` also imply
 `customers.view` and `products.view` (the editors pick them); `statements.view` implies
-`customers.view`. Implied permissions are granted with the group, not stored, and the editor
+`customers.view`; `schedules.view` implies `customers.view` and `products.view` (its pages
+show them; v1.7.1). Implied permissions are granted with the group, not stored, and the editor
 shows them ticked and greyed as "included".
 
 Every signed-in user may read the reference data every page needs: currencies, the
@@ -54,6 +55,16 @@ rule is refused for everybody; an HTTP test checks that every operation in the c
 one. A refusal is `403 no-access`. Access is read from the database on every request, so a
 group change applies at once, without signing anyone out. The web app hides menus, pages
 and buttons the user may not use (`useCan`), but the server is the authority.
+
+**Checks the operation map cannot make** (v1.7.1): the signed-in user's access travels in
+the actor (`app.Actor.Access`; nil for the system workers and the command line). Sending a
+draft issues it, so it also needs `invoices.edit`; the dashboard leaves out upcoming e-mails
+and failures, upcoming runs, recent invoices and the activity feed unless the user may open
+them; without `emails.view` the outbox list answers only one customer's statement e-mails
+(a statement page's history); creating, changing, resuming or running a schedule needs the
+rights of what it does — `invoices.edit` (plus `invoices.send` for auto-send) for invoice
+schedules, `invoices.send` for e-mail schedules of invoices, `statements.send` for statement
+schedules.
 
 **Changes.** Creating, changing and deleting a group, and setting a user's groups (also when
 adding a user), need the actor's current password (the sign-in rate limit applies; the

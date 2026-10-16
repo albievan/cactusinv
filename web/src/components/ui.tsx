@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate } from '../lib/format'
 
@@ -162,5 +162,52 @@ export function StageTracker({ stage, issuedAt, sentAt, paidAt }: { stage: strin
         </li>
       ))}
     </ol>
+  )
+}
+
+/**
+ * ConfirmButton asks before an action that cannot be undone (or that e-mails or invoices for
+ * real): the button opens a sheet with what will happen, and the action runs once from there.
+ */
+export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, className, danger = true, disabled }: {
+  label: ReactNode
+  title: string
+  message: ReactNode
+  confirmLabel: string
+  onConfirm: () => Promise<void> | void
+  className?: string
+  danger?: boolean
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const run = async () => {
+    setBusy(true)
+    try {
+      await onConfirm()
+    } finally {
+      setBusy(false)
+      setOpen(false)
+    }
+  }
+  return (
+    <>
+      <button type="button" className={className ?? (danger ? 'btn-danger' : 'btn-primary')} disabled={disabled || busy} onClick={() => setOpen(true)}>
+        {label}
+      </button>
+      <Sheet title={title} open={open} onClose={() => !busy && setOpen(false)}>
+        <div className="space-y-4">
+          <div className="text-sm text-slate-700">{message}</div>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={() => setOpen(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button type="button" className={danger ? 'btn-danger' : 'btn-primary'} onClick={() => void run()} disabled={busy}>
+              {busy ? 'Working…' : confirmLabel}
+            </button>
+          </div>
+        </div>
+      </Sheet>
+    </>
   )
 }

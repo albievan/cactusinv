@@ -568,37 +568,31 @@ func (q *Queries) MonthlyInvoiced(ctx context.Context, since sql.NullTime) ([]Mo
 	return items, nil
 }
 
-const monthlyPaid = `-- name: MonthlyPaid :many
-SELECT currency_code, CAST(DATE_FORMAT(paid_at, '%Y-%m') AS CHAR(7)) AS month,
-       CAST(SUM(total_minor) AS SIGNED) AS total, CAST(COUNT(*) AS SIGNED) AS count
+const monthlyPaidRows = `-- name: MonthlyPaidRows :many
+SELECT currency_code, paid_at, total_minor
 FROM invoices
 WHERE status = 'paid' AND paid_at >= ?
-GROUP BY currency_code, month
-ORDER BY month, currency_code
+ORDER BY paid_at
 `
 
-type MonthlyPaidRow struct {
+type MonthlyPaidRowsRow struct {
 	CurrencyCode string
-	Month        interface{}
-	Total        int64
-	Count        int64
+	PaidAt       sql.NullTime
+	TotalMinor   int64
 }
 
-func (q *Queries) MonthlyPaid(ctx context.Context, since sql.NullTime) ([]MonthlyPaidRow, error) {
-	rows, err := q.db.QueryContext(ctx, monthlyPaid, since)
+// MonthlyPaidRows lists paid invoices since an instant; they are bucketed into months in
+// the business's time zone in Go (paid_at is UTC; the server may lack time-zone tables).
+func (q *Queries) MonthlyPaidRows(ctx context.Context, since sql.NullTime) ([]MonthlyPaidRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, monthlyPaidRows, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MonthlyPaidRow{}
+	items := []MonthlyPaidRowsRow{}
 	for rows.Next() {
-		var i MonthlyPaidRow
-		if err := rows.Scan(
-			&i.CurrencyCode,
-			&i.Month,
-			&i.Total,
-			&i.Count,
-		); err != nil {
+		var i MonthlyPaidRowsRow
+		if err := rows.Scan(&i.CurrencyCode, &i.PaidAt, &i.TotalMinor); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -628,7 +622,6 @@ FROM invoices i JOIN customers c ON c.id = i.customer_id
 WHERE i.status IN ('issued', 'sent', 'overdue')
 GROUP BY i.customer_id, c.name, i.currency_code
 ORDER BY outstanding DESC
-LIMIT ?
 `
 
 type TopDebtorsRow struct {
@@ -639,8 +632,10 @@ type TopDebtorsRow struct {
 	OpenCount    int64
 }
 
-func (q *Queries) TopDebtors(ctx context.Context, limit int32) ([]TopDebtorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, topDebtors, limit)
+// TopDebtors lists every customer's open balance per currency; Go keeps the top ones of
+// each currency (amounts in different currencies are never compared).
+func (q *Queries) TopDebtors(ctx context.Context) ([]TopDebtorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, topDebtors)
 	if err != nil {
 		return nil, err
 	}
