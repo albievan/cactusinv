@@ -17,7 +17,7 @@ type BusinessSettings struct {
 // GetBusiness returns the business profile (defaults before it is first saved).
 func (s *Service) GetBusiness(ctx context.Context) (BusinessSettings, error) {
 	r := s.tx.Repos()
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return BusinessSettings{}, wrap("app.GetBusiness", err)
 	}
@@ -64,7 +64,7 @@ func (s *Service) UpdateBusiness(ctx context.Context, p domain.BusinessProfile, 
 
 // Today is the current date in the business time zone.
 func (s *Service) Today(ctx context.Context) (domain.Date, error) {
-	b, err := business(ctx, s.tx.Repos())
+	b, err := s.business(ctx, s.tx.Repos())
 	if err != nil {
 		return domain.Date{}, wrap("app.Today", err)
 	}

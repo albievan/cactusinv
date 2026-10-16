@@ -22,35 +22,36 @@ var operationAccess = map[string][]domain.Permission{
 	"getdashboard": {domain.PermDashboardView},
 
 	"listinvoices": {domain.PermInvoicesView}, "getinvoice": {domain.PermInvoicesView}, "getinvoicepdf": {domain.PermInvoicesView},
-	"createinvoice": {domain.PermInvoicesEdit}, "updateinvoice": {domain.PermInvoicesEdit},
-	"deleteinvoice": {domain.PermInvoicesEdit}, "issueinvoice": {domain.PermInvoicesEdit},
+	"createinvoice": {domain.PermInvoicesCreate}, "updateinvoice": {domain.PermInvoicesEdit},
+	"deleteinvoice": {domain.PermInvoicesDelete}, "issueinvoice": {domain.PermInvoicesIssue},
 	"sendinvoice": {domain.PermInvoicesSend},
-	"voidinvoice": {domain.PermInvoicesStatus}, "markinvoiceoverdue": {domain.PermInvoicesStatus}, "markinvoicepaid": {domain.PermInvoicesStatus},
+	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay},
 
 	"listcustomers": {domain.PermCustomersView}, "getcustomer": {domain.PermCustomersView},
-	"createcustomer": {domain.PermCustomersEdit}, "updatecustomer": {domain.PermCustomersEdit}, "deletecustomer": {domain.PermCustomersEdit},
+	"createcustomer": {domain.PermCustomersCreate}, "updatecustomer": {domain.PermCustomersEdit}, "deletecustomer": {domain.PermCustomersDelete},
 
 	"liststatements": {domain.PermStatementsView}, "getstatement": {domain.PermStatementsView}, "getstatementpdf": {domain.PermStatementsView},
 	"sendstatement": {domain.PermStatementsSend}, "sendstatements": {domain.PermStatementsSend},
 
 	"listproducts": {domain.PermProductsView}, "getproduct": {domain.PermProductsView},
-	"createproduct": {domain.PermProductsEdit}, "updateproduct": {domain.PermProductsEdit}, "deleteproduct": {domain.PermProductsEdit},
+	"createproduct": {domain.PermProductsCreate}, "updateproduct": {domain.PermProductsEdit}, "deleteproduct": {domain.PermProductsDelete},
 
 	"listschedules": {domain.PermSchedulesView}, "getschedule": {domain.PermSchedulesView},
 	"previewschedule": {domain.PermSchedulesView}, "getscheduledefaults": {domain.PermSchedulesView},
-	"createschedule": {domain.PermSchedulesEdit}, "updateschedule": {domain.PermSchedulesEdit}, "deleteschedule": {domain.PermSchedulesEdit},
-	"pauseschedule": {domain.PermSchedulesEdit}, "resumeschedule": {domain.PermSchedulesEdit}, "runschedulenow": {domain.PermSchedulesEdit},
+	"createschedule": {domain.PermSchedulesCreate}, "updateschedule": {domain.PermSchedulesEdit}, "deleteschedule": {domain.PermSchedulesDelete},
+	"pauseschedule": {domain.PermSchedulesPause}, "resumeschedule": {domain.PermSchedulesPause}, "runschedulenow": {domain.PermSchedulesRun},
 
 	// A statement page lists the statements e-mailed to its customer.
 	"listemails":  {domain.PermEmailsView, domain.PermStatementsView},
-	"cancelemail": {domain.PermEmailsManage}, "retryemail": {domain.PermEmailsManage},
+	"cancelemail": {domain.PermEmailsCancel}, "retryemail": {domain.PermEmailsRetry},
 
 	"listaudit": {domain.PermAuditView}, "verifyaudit": {domain.PermAuditView},
 
-	"getemailsettings": {domain.PermSettingsView},
-	"updatebusiness":   {domain.PermSettingsEdit}, "updateemailsettings": {domain.PermSettingsEdit}, "sendtestemail": {domain.PermSettingsEdit},
-	"createcurrency": {domain.PermSettingsEdit}, "updatecurrency": {domain.PermSettingsEdit},
-	"createbankaccount": {domain.PermSettingsEdit}, "updatebankaccount": {domain.PermSettingsEdit}, "deletebankaccount": {domain.PermSettingsEdit},
+	"getemailsettings":    {domain.PermSettingsView},
+	"updatebusiness":      {domain.PermSettingsBusiness},
+	"updateemailsettings": {domain.PermSettingsEmail}, "sendtestemail": {domain.PermSettingsEmail},
+	"createcurrency": {domain.PermSettingsCurrencies}, "updatecurrency": {domain.PermSettingsCurrencies},
+	"createbankaccount": {domain.PermSettingsBanks}, "updatebankaccount": {domain.PermSettingsBanks}, "deletebankaccount": {domain.PermSettingsBanks},
 
 	"listbackups": {domain.PermAdminister}, "createbackup": {domain.PermAdminister}, "exportbackup": {domain.PermAdminister},
 	"uploadbackup": {domain.PermAdminister}, "stagerestore": {domain.PermAdminister}, "getcurrentrestore": {domain.PermAdminister},

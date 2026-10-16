@@ -136,7 +136,7 @@ spec:
       containers:
         - name: cactusinv
           image: ${IMAGE}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: ${IMAGE_PULL_POLICY}
           envFrom: [{ configMapRef: { name: cactusinv-config } }]
           ports: [{ containerPort: 8080, name: http }]
           volumeMounts:

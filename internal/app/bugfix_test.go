@@ -29,7 +29,7 @@ func TestSendingADraftNeedsTheRightToIssue(t *testing.T) {
 	if got := must(h.svc.GetInvoice(h.ctx, draft.ID)); got.Invoice.Status != domain.InvoiceDraft {
 		t.Fatal("the draft must stay a draft")
 	}
-	must(h.svc.SendInvoice(as(h.ctx, domain.PermInvoicesSend, domain.PermInvoicesEdit), draft.ID, app.SendInput{}))
+	must(h.svc.SendInvoice(as(h.ctx, domain.PermInvoicesSend, domain.PermInvoicesIssue), draft.ID, app.SendInput{}))
 	got := must(h.svc.GetInvoice(h.ctx, draft.ID)).Invoice
 	if got.Status != domain.InvoiceIssued || got.IssueDate != domain.NewDate(2026, 7, 31) {
 		t.Fatalf("issued as %s on %v; the draft's own date is kept, as Issue does", got.Status, got.IssueDate)
@@ -79,20 +79,20 @@ func TestSchedulesNeedTheRightsOfWhatTheyDo(t *testing.T) {
 		CustomerID: h.customer.ID, Name: "statement", Kind: domain.ScheduleEmail, EmailScope: domain.EmailStatement,
 		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, StartDate: domain.NewDate(2026, 9, 1)},
 	}
-	only := as(h.ctx, domain.PermSchedulesEdit)
+	only := as(h.ctx, domain.PermSchedulesCreate)
 	for _, sc := range []domain.Schedule{invoiceSchedule, statement} {
 		if _, err := h.svc.CreateSchedule(only, sc); !errors.Is(err, domain.ErrNoAccess) {
 			t.Fatalf("%s: schedules.edit alone must not invoice or e-mail: %v", sc.Name, err)
 		}
 	}
-	if _, err := h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesEdit, domain.PermInvoicesEdit), invoiceSchedule); !errors.Is(err, domain.ErrNoAccess) {
+	if _, err := h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesCreate, domain.PermInvoicesCreate, domain.PermInvoicesIssue), invoiceSchedule); !errors.Is(err, domain.ErrNoAccess) {
 		t.Fatalf("auto-send also needs invoices.send: %v", err)
 	}
-	d := must(h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesEdit, domain.PermInvoicesEdit, domain.PermInvoicesSend), invoiceSchedule))
+	d := must(h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesCreate, domain.PermInvoicesCreate, domain.PermInvoicesIssue, domain.PermInvoicesSend), invoiceSchedule))
 	if _, err := h.svc.RunScheduleNow(only, d.Schedule.ID); !errors.Is(err, domain.ErrNoAccess) {
 		t.Fatalf("run now: %v", err)
 	}
-	must(h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesEdit, domain.PermStatementsSend), statement))
+	must(h.svc.CreateSchedule(as(h.ctx, domain.PermSchedulesCreate, domain.PermStatementsSend), statement))
 }
 
 func TestUnsentScheduleSkipsAnInvoiceWithAQueuedEmail(t *testing.T) {

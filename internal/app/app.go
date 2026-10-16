@@ -29,6 +29,10 @@ type Deps struct {
 	SessionTTL time.Duration
 	// Backups configures backups and restores (ADR-010); zero disables them.
 	Backups BackupDeps
+	// TimeZone is the deployment's IANA zone (TZ): the business time zone until the
+	// business profile is first saved, so schedules do not silently run in UTC. Empty or
+	// unknown means UTC.
+	TimeZone string
 }
 
 // Service exposes every use case. It is safe for concurrent use.
@@ -44,6 +48,7 @@ type Service struct {
 	log      *slog.Logger
 	ttl      time.Duration
 	backups  BackupDeps
+	zone     string
 	// backupSlot admits one backup or restore operation at a time.
 	backupSlot chan struct{}
 	// exportRetry holds invoices whose archive export failed, until when they are skipped,
@@ -63,19 +68,23 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
-		backups: d.Backups, backupSlot: make(chan struct{}, 1),
+		backups: d.Backups, zone: d.TimeZone, backupSlot: make(chan struct{}, 1),
 	}
 }
 
 // now is the current UTC time at the database's microsecond precision.
 func (s *Service) now() time.Time { return s.clock.Now().UTC().Truncate(time.Microsecond) }
 
-// business returns the stored profile or sensible defaults before first save.
-func business(ctx context.Context, r ports.Repos) (domain.BusinessProfile, error) {
+// business returns the stored profile or sensible defaults before first save, in the
+// deployment's time zone.
+func (s *Service) business(ctx context.Context, r ports.Repos) (domain.BusinessProfile, error) {
 	b, err := r.Business.Get(ctx)
 	if errors.Is(err, domain.ErrNotFound) {
-		b = domain.BusinessProfile{Name: "My Business"}
-		_ = b.Validate()
+		b = domain.BusinessProfile{Name: "My Business", TimeZone: s.zone}
+		if b.Validate() != nil {
+			b.TimeZone = ""
+			_ = b.Validate()
+		}
 		return b, nil
 	}
 	return b, err

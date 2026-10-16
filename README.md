@@ -46,7 +46,9 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Recurring invoice workflows** — raise a predefined invoice on a schedule, then e-mail it
   straight away or a set number of days later. Lines use the product's current price in the
   customer's currency unless a fixed price is set; run times are shown in the schedule's time
-  zone (the business time zone unless the schedule sets its own), e.g. "Fri 16 Oct 2026, 09:00 UTC".
+  zone, picked from a list in the editor (it starts as the business time zone), e.g. "Fri 16 Oct 2026,
+  08:00 Africa/Johannesburg"; when it differs from your device the editor shows the first run in
+  your device's time too. Until the business profile is saved, the business time zone is `TZ`.
   The Schedules page lists each schedule's type, last run (and whether it failed) and next run,
   with Edit, Pause/Resume, Run now and Delete beside it; Run now and Delete ask first.
   Monthly, quarterly and yearly schedules run on the first day, the last day or a chosen day
@@ -61,8 +63,9 @@ Released into the public domain — see [LICENSE](LICENSE).
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
 - **Users and access groups** — Settings → Users & groups: add users, reset a password,
-  disable and enable; create groups, choose what each group may do (view and edit per area)
-  and who is in it. Only Administrators manage users, groups, backups and restore. Users are
+  disable and enable; create groups, choose what each group may do — each action on its own
+  (e.g. add customers but not edit or delete them; create invoices but not edit, issue or
+  delete them; mark paid but not void) — and who is in it. Only Administrators manage users, groups, backups and restore. Users are
   never deleted, and a password someone else chose must be changed at the first sign-in.
 - **Typing amounts** — use a point or, on a phone set to a comma region, a comma for decimals
   ("192,94"); "1,500" is refused as ambiguous. PDFs print names in Latin, Greek and Cyrillic
@@ -125,6 +128,11 @@ TARGET   --dockerdesktop | --k3s | --k8s
 | `./deploy.sh --restore cactusinv-20261015T000000Z-s14-scheduled.age --dockerdesktop` | restore a stored backup (or a path to an `.age` file) |
 | `./deploy.sh --restore cactusinv-20261001-020000.sql.gz --dockerdesktop` | restore an old plaintext dump (whole database replaced; with a warning) |
 
+On k3s the SSH user must be root or have passwordless `sudo` (`k3s ctr` and `k3s kubectl`
+need root); the image is imported for the node's CPU without attestation manifests, checked
+on the node, and run with `imagePullPolicy: Never`. If a rollout is not ready within five
+minutes the script prints the pods, their events and the last log lines before it stops.
+
 On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Mailpit on
 `K8S_MAILPIT_NODE_PORT` (30025). The app's Service uses `externalTrafficPolicy: Local`, so
 the sign-in rate limit sees each client's own address; the port then answers only on the
@@ -149,7 +157,7 @@ All defaults live in [`.env`](.env) (no secrets in it):
 | `BACKUP_TIMES` / `BACKUP_RETENTION_DAYS` | `02:00` / `14` | daily backup times (in `TZ`) and how long backups are kept (0 = always) |
 | `BACKUP_MAX_UPLOAD_MB` | `256` | largest backup file that can be uploaded for a restore |
 | `K8S_*` | | namespace, NodePorts, storage class and sizes, registry |
-| `TZ` | `Africa/Johannesburg` | time zone for backups; the business time zone is set in the app |
+| `TZ` | `Africa/Johannesburg` | time zone for backups, and the business time zone until it is saved in the app (Settings → Business) |
 
 ## Users
 

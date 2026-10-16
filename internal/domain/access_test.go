@@ -49,7 +49,7 @@ func TestGroupNormalize(t *testing.T) {
 		{"no name", Group{Name: "  "}, "name"},
 		{"long name", Group{Name: strings.Repeat("x", 81)}, "name"},
 		{"long description", Group{Name: "x", Description: strings.Repeat("é", 501)}, "description"},
-		{"unknown permission", Group{Name: "x", Permissions: []Permission{"invoices.delete"}}, "permissions"},
+		{"unknown permission (retired by 00019)", Group{Name: "x", Permissions: []Permission{"invoices.status"}}, "permissions"},
 		{"administer is not grantable", Group{Name: "x", Permissions: []Permission{PermAdminister}}, "permissions"},
 	}
 	for _, tc := range tests {
@@ -91,7 +91,7 @@ func TestAccessFor(t *testing.T) {
 		}
 	}
 	admin := AccessFor([]Group{{ID: AdministratorsGroupID, Builtin: true}})
-	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsEdit) || len(admin.Permissions()) != len(Permissions) {
+	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsBanks) || len(admin.Permissions()) != len(Permissions) {
 		t.Fatalf("administrators must have everything: %+v", admin)
 	}
 	if !slices.IsSorted(admin.Permissions()) {
@@ -116,5 +116,26 @@ func TestGroupHelpers(t *testing.T) {
 	g := Group{ID: AdministratorsGroupID, MemberIDs: []string{"a"}}
 	if !g.IsAdministrators() || !g.HasMember("a") || g.HasMember("b") {
 		t.Fatal("helpers")
+	}
+}
+
+func TestActionPermissionsImplyOnlyWhatTheyNeed(t *testing.T) {
+	create := AccessFor([]Group{{ID: "g", Permissions: []Permission{PermInvoicesCreate, PermCustomersCreate}}})
+	for _, p := range []Permission{PermInvoicesCreate, PermInvoicesView, PermCustomersView, PermProductsView, PermCustomersCreate} {
+		if !create.Has(p) {
+			t.Errorf("creating invoices and customers needs %s", p)
+		}
+	}
+	for _, p := range []Permission{PermInvoicesEdit, PermInvoicesIssue, PermInvoicesDelete, PermInvoicesSend, PermInvoicesVoid, PermCustomersEdit, PermCustomersDelete} {
+		if create.Has(p) {
+			t.Errorf("creating must not give %s", p)
+		}
+	}
+	for _, i := range Permissions {
+		for _, q := range WithImplied([]Permission{i.Key}) {
+			if q != i.Key && !strings.HasSuffix(string(q), ".view") {
+				t.Errorf("%s implies the action %s: only seeing may be implied", i.Key, q)
+			}
+		}
 	}
 }

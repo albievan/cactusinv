@@ -126,7 +126,7 @@ type RunPreview struct {
 // without a weekend rule gets the default, as creating it would.
 func (s *Service) PreviewRecurrence(ctx context.Context, r domain.Recurrence, n int) (RunPreview, error) {
 	if r.TimeZone == "" {
-		b, err := business(ctx, s.tx.Repos())
+		b, err := s.business(ctx, s.tx.Repos())
 		if err != nil {
 			return RunPreview{}, wrap("app.PreviewRecurrence", err)
 		}
@@ -143,7 +143,7 @@ func (s *Service) PreviewRecurrence(ctx context.Context, r domain.Recurrence, n 
 // of each type; the recurring-invoice type uses the business's own invoice e-mail texts
 // when it has set them.
 func (s *Service) ScheduleEmailDefaults(ctx context.Context) (domain.ScheduleEmailDefaults, error) {
-	b, err := business(ctx, s.tx.Repos())
+	b, err := s.business(ctx, s.tx.Repos())
 	if err != nil {
 		return domain.ScheduleEmailDefaults{}, wrap("app.ScheduleEmailDefaults", err)
 	}
@@ -218,7 +218,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 
 func (s *Service) checkSchedule(ctx context.Context, r ports.Repos, sc *domain.Schedule) error {
 	if sc.Recurrence.TimeZone == "" {
-		b, err := business(ctx, r)
+		b, err := s.business(ctx, r)
 		if err != nil {
 			return err
 		}
@@ -401,7 +401,7 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err != nil {
 		return err
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -507,14 +507,15 @@ func (s *Service) recordScheduleFailure(ctx context.Context, id string, cause er
 }
 
 // checkScheduleAccess refuses a schedule that would do, on its own, what the user may not do
-// directly (ADR-012): raise invoices needs invoices.edit (and invoices.send to e-mail them),
-// e-mailing invoices needs invoices.send, statements statements.send.
+// directly (ADR-012): raising invoices creates and issues them, so it needs invoices.create
+// and invoices.issue (and invoices.send to e-mail them); e-mailing invoices needs
+// invoices.send, statements statements.send.
 func checkScheduleAccess(ctx context.Context, sc domain.Schedule) error {
 	a := ActorFrom(ctx)
 	var need []domain.Permission
 	switch {
 	case sc.Kind == domain.ScheduleInvoice:
-		need = append(need, domain.PermInvoicesEdit)
+		need = append(need, domain.PermInvoicesCreate, domain.PermInvoicesIssue)
 		if sc.AutoSend {
 			need = append(need, domain.PermInvoicesSend)
 		}

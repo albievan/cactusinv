@@ -42,7 +42,7 @@ func (s *Service) statementDoc(ctx context.Context, r ports.Repos, customerID st
 	if err != nil {
 		return ports.StatementDocument{}, err
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return ports.StatementDocument{}, err
 	}
@@ -178,7 +178,7 @@ type StatementSummary struct {
 // balance first; customers with nothing owed follow, by name.
 func (s *Service) ListStatements(ctx context.Context) ([]StatementSummary, error) {
 	r := s.tx.Repos()
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return nil, wrap("app.ListStatements", err)
 	}

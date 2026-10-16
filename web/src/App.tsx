@@ -24,17 +24,17 @@ export function AppRoutes() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="invoices" element={need('invoices.view', <InvoiceList />)} />
-        <Route path="invoices/new" element={need('invoices.edit', <InvoiceEditor />)} />
+        <Route path="invoices/new" element={need('invoices.create', <InvoiceEditor />)} />
         <Route path="invoices/:id" element={need('invoices.view', <InvoiceDetail />)} />
         <Route path="invoices/:id/edit" element={need('invoices.edit', <InvoiceEditor />)} />
         <Route path="customers" element={need('customers.view', <CustomerList />)} />
-        <Route path="customers/new" element={need('customers.edit', <CustomerEditor />)} />
+        <Route path="customers/new" element={need('customers.create', <CustomerEditor />)} />
         <Route path="customers/:id" element={need('customers.view', <CustomerEditor />)} />
         <Route path="products" element={need('products.view', <ProductList />)} />
-        <Route path="products/new" element={need('products.edit', <ProductEditor />)} />
+        <Route path="products/new" element={need('products.create', <ProductEditor />)} />
         <Route path="products/:id" element={need('products.view', <ProductEditor />)} />
         <Route path="schedules" element={need('schedules.view', <ScheduleList />)} />
-        <Route path="schedules/new" element={need('schedules.edit', <ScheduleEditor />)} />
+        <Route path="schedules/new" element={need('schedules.create', <ScheduleEditor />)} />
         <Route path="schedules/:id" element={need('schedules.view', <ScheduleDetailPage />)} />
         <Route path="schedules/:id/edit" element={need('schedules.edit', <ScheduleEditor />)} />
         <Route path="emails" element={need('emails.view', <Outbox />)} />

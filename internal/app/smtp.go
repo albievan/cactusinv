@@ -114,7 +114,7 @@ func (s *Service) SendTestEmail(ctx context.Context, to string) ([]string, error
 	case err != nil && !errors.Is(err, domain.ErrNotFound):
 		return nil, wrap("app.SendTestEmail", err)
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return nil, wrap("app.SendTestEmail", err)
 	}

@@ -13,24 +13,49 @@ type Permission string
 // The permissions a group can be given. Administration (users, groups, backups and
 // restore) is not among them: only the Administrators group has it (PermAdminister).
 const (
-	PermDashboardView  Permission = "dashboard.view"
-	PermInvoicesView   Permission = "invoices.view"
-	PermInvoicesEdit   Permission = "invoices.edit"
-	PermInvoicesSend   Permission = "invoices.send"
-	PermInvoicesStatus Permission = "invoices.status"
-	PermCustomersView  Permission = "customers.view"
-	PermCustomersEdit  Permission = "customers.edit"
+	PermDashboardView Permission = "dashboard.view"
+
+	PermInvoicesView    Permission = "invoices.view"
+	PermInvoicesCreate  Permission = "invoices.create"
+	PermInvoicesEdit    Permission = "invoices.edit"
+	PermInvoicesIssue   Permission = "invoices.issue"
+	PermInvoicesDelete  Permission = "invoices.delete"
+	PermInvoicesSend    Permission = "invoices.send"
+	PermInvoicesPay     Permission = "invoices.pay"
+	PermInvoicesOverdue Permission = "invoices.overdue"
+	PermInvoicesVoid    Permission = "invoices.void"
+
+	PermCustomersView   Permission = "customers.view"
+	PermCustomersCreate Permission = "customers.create"
+	PermCustomersEdit   Permission = "customers.edit"
+	PermCustomersDelete Permission = "customers.delete"
+
 	PermStatementsView Permission = "statements.view"
 	PermStatementsSend Permission = "statements.send"
-	PermSchedulesView  Permission = "schedules.view"
-	PermSchedulesEdit  Permission = "schedules.edit"
+
+	PermSchedulesView   Permission = "schedules.view"
+	PermSchedulesCreate Permission = "schedules.create"
+	PermSchedulesEdit   Permission = "schedules.edit"
+	PermSchedulesPause  Permission = "schedules.pause"
+	PermSchedulesRun    Permission = "schedules.run"
+	PermSchedulesDelete Permission = "schedules.delete"
+
 	PermProductsView   Permission = "products.view"
+	PermProductsCreate Permission = "products.create"
 	PermProductsEdit   Permission = "products.edit"
-	PermEmailsView     Permission = "emails.view"
-	PermEmailsManage   Permission = "emails.manage"
-	PermAuditView      Permission = "audit.view"
-	PermSettingsView   Permission = "settings.view"
-	PermSettingsEdit   Permission = "settings.edit"
+	PermProductsDelete Permission = "products.delete"
+
+	PermEmailsView   Permission = "emails.view"
+	PermEmailsCancel Permission = "emails.cancel"
+	PermEmailsRetry  Permission = "emails.retry"
+
+	PermAuditView Permission = "audit.view"
+
+	PermSettingsView       Permission = "settings.view"
+	PermSettingsBusiness   Permission = "settings.business"
+	PermSettingsEmail      Permission = "settings.email"
+	PermSettingsCurrencies Permission = "settings.currencies"
+	PermSettingsBanks      Permission = "settings.banks"
 
 	// PermAdminister is users, groups, backups and restore. It cannot be granted: a user
 	// has it only as a member of the Administrators group.
@@ -55,24 +80,53 @@ type PermissionInfo struct {
 // them (grouped by area).
 var Permissions = []PermissionInfo{
 	{PermDashboardView, "Dashboard", "See the dashboard", nil},
+
 	{PermInvoicesView, "Invoices", "See invoices and their PDFs", nil},
-	{PermInvoicesEdit, "Invoices", "Create, edit, issue and delete draft invoices", []Permission{PermInvoicesView, PermCustomersView, PermProductsView}},
+	{PermInvoicesCreate, "Invoices", "Create draft invoices", pick},
+	{PermInvoicesEdit, "Invoices", "Edit draft invoices", pick},
+	{PermInvoicesIssue, "Invoices", "Issue draft invoices (gives them their number)", []Permission{PermInvoicesView}},
+	{PermInvoicesDelete, "Invoices", "Delete draft invoices", []Permission{PermInvoicesView}},
 	{PermInvoicesSend, "Invoices", "E-mail invoices", []Permission{PermInvoicesView}},
-	{PermInvoicesStatus, "Invoices", "Mark invoices paid or overdue, and void them", []Permission{PermInvoicesView}},
+	{PermInvoicesPay, "Invoices", "Mark invoices paid", []Permission{PermInvoicesView}},
+	{PermInvoicesOverdue, "Invoices", "Mark invoices overdue", []Permission{PermInvoicesView}},
+	{PermInvoicesVoid, "Invoices", "Void invoices", []Permission{PermInvoicesView}},
+
 	{PermCustomersView, "Customers", "See customers", nil},
-	{PermCustomersEdit, "Customers", "Add, edit and delete customers", []Permission{PermCustomersView}},
+	{PermCustomersCreate, "Customers", "Add customers", []Permission{PermCustomersView}},
+	{PermCustomersEdit, "Customers", "Edit customers", []Permission{PermCustomersView}},
+	{PermCustomersDelete, "Customers", "Delete customers", []Permission{PermCustomersView}},
+
 	{PermStatementsView, "Statements", "See statements and their PDFs", []Permission{PermCustomersView}},
 	{PermStatementsSend, "Statements", "E-mail statements", []Permission{PermStatementsView}},
+
 	{PermSchedulesView, "Schedules", "See schedules", []Permission{PermCustomersView, PermProductsView}},
-	{PermSchedulesEdit, "Schedules", "Create, edit, pause, resume, run and delete schedules", []Permission{PermSchedulesView, PermCustomersView, PermProductsView}},
+	{PermSchedulesCreate, "Schedules", "Create schedules", []Permission{PermSchedulesView}},
+	{PermSchedulesEdit, "Schedules", "Edit schedules", []Permission{PermSchedulesView}},
+	{PermSchedulesPause, "Schedules", "Pause and resume schedules", []Permission{PermSchedulesView}},
+	{PermSchedulesRun, "Schedules", "Run schedules now", []Permission{PermSchedulesView}},
+	{PermSchedulesDelete, "Schedules", "Delete schedules", []Permission{PermSchedulesView}},
+
 	{PermProductsView, "Products", "See products", nil},
-	{PermProductsEdit, "Products", "Add, edit and delete products", []Permission{PermProductsView}},
+	{PermProductsCreate, "Products", "Add products", []Permission{PermProductsView}},
+	{PermProductsEdit, "Products", "Edit products", []Permission{PermProductsView}},
+	{PermProductsDelete, "Products", "Delete products", []Permission{PermProductsView}},
+
 	{PermEmailsView, "Outbox", "See the e-mail outbox", nil},
-	{PermEmailsManage, "Outbox", "Cancel and retry e-mails", []Permission{PermEmailsView}},
+	{PermEmailsCancel, "Outbox", "Cancel e-mails", []Permission{PermEmailsView}},
+	{PermEmailsRetry, "Outbox", "Retry e-mails", []Permission{PermEmailsView}},
+
 	{PermAuditView, "Audit log", "See and verify the audit log", nil},
+
 	{PermSettingsView, "Settings", "See the business, e-mail server and currency settings", nil},
-	{PermSettingsEdit, "Settings", "Change the business, e-mail server, currencies and bank accounts", []Permission{PermSettingsView}},
+	{PermSettingsBusiness, "Settings", "Change the business details", []Permission{PermSettingsView}},
+	{PermSettingsEmail, "Settings", "Change the e-mail server and send test e-mails", []Permission{PermSettingsView}},
+	{PermSettingsCurrencies, "Settings", "Add and change currencies", []Permission{PermSettingsView}},
+	{PermSettingsBanks, "Settings", "Add, change and delete bank accounts", []Permission{PermSettingsView}},
 }
+
+// pick is what writing an invoice needs: to see invoices, and to pick customers and
+// products.
+var pick = []Permission{PermInvoicesView, PermCustomersView, PermProductsView}
 
 // Known reports whether p is a grantable permission.
 func (p Permission) Known() bool {

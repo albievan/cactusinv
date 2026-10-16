@@ -29,7 +29,7 @@ export function Dashboard() {
 
   if (loading && !data) return <Spinner />
   return (
-    <Page title="Dashboard" actions={<Can need="invoices.edit"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
+    <Page title="Dashboard" actions={<Can need="invoices.create"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
       <ErrorBanner error={error} />
       {data && (
         <div className="space-y-5">
@@ -141,7 +141,7 @@ function Upcoming({ data }: { data: DashboardData }) {
     <section className="card space-y-4">
       <div>
         <h2 className="mb-2 text-lg font-semibold">Next scheduled</h2>
-        {data.upcomingRuns.length === 0 ? <p className="text-sm text-slate-500"><MaybeLink need="schedules.edit" to="/schedules/new" className="text-brand-700 underline">Create a schedule</MaybeLink> to raise invoices automatically.</p> : (
+        {data.upcomingRuns.length === 0 ? <p className="text-sm text-slate-500"><MaybeLink need="schedules.create" to="/schedules/new" className="text-brand-700 underline">Create a schedule</MaybeLink> to raise invoices automatically.</p> : (
           <ul className="space-y-1.5 text-sm">
             {data.upcomingRuns.map((s) => (
               <li key={s.id} className="flex justify-between gap-2">

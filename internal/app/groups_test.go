@@ -53,18 +53,18 @@ func TestGroupLifecycle(t *testing.T) {
 	// The clerk's access follows the group at once.
 	must0(t, h.svc.ChangePassword(h.ctx, clerk.ID, "", "a first password!", "the clerk's own one"))
 	tok := h.login("clerk@example.com", "the clerk's own one")
-	if u := must(h.svc.Authenticate(h.ctx, tok)); !u.Access.Has(domain.PermInvoicesView) || u.Access.Has(domain.PermInvoicesStatus) || !slices.Equal(u.GroupIDs, []string{g.ID}) {
+	if u := must(h.svc.Authenticate(h.ctx, tok)); !u.Access.Has(domain.PermInvoicesView) || u.Access.Has(domain.PermInvoicesVoid) || !slices.Equal(u.GroupIDs, []string{g.ID}) {
 		t.Fatalf("access = %+v", u.Access)
 	}
 
 	// Add access, remove access, a member.
-	in = app.GroupInput{Name: "Accounts", Permissions: []domain.Permission{domain.PermInvoicesStatus, domain.PermAuditView}, MemberIDs: []string{clerk.ID, other.ID}}
+	in = app.GroupInput{Name: "Accounts", Permissions: []domain.Permission{domain.PermInvoicesVoid, domain.PermAuditView}, MemberIDs: []string{clerk.ID, other.ID}}
 	g = must(h.svc.UpdateGroup(ctx, g.ID, in, adminPW))
-	want := "Accounts; description changed; access added: audit.view, invoices.status; access removed: invoices.send; members added: other@example.com"
+	want := "Accounts; description changed; access added: audit.view, invoices.void; access removed: invoices.send; members added: other@example.com"
 	if s := h.audited("group.updated").Summary; s != want {
 		t.Fatalf("audit %q", s)
 	}
-	if u := must(h.svc.Authenticate(h.ctx, tok)); !u.Access.Has(domain.PermInvoicesStatus) || u.Access.Has(domain.PermInvoicesSend) {
+	if u := must(h.svc.Authenticate(h.ctx, tok)); !u.Access.Has(domain.PermInvoicesVoid) || u.Access.Has(domain.PermInvoicesSend) {
 		t.Fatalf("access after the change = %+v", u.Access)
 	}
 	if us := must(h.svc.ListUsers(ctx)); !slices.Equal(us[slices.IndexFunc(us, func(u domain.User) bool { return u.ID == other.ID })].GroupIDs, []string{domain.AdministratorsGroupID, g.ID}) {

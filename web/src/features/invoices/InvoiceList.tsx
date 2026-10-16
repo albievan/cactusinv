@@ -44,7 +44,7 @@ export function InvoiceList() {
     [filter, q],
   )
   return (
-    <Page title="Invoices" actions={<Can need="invoices.edit"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
+    <Page title="Invoices" actions={<Can need="invoices.create"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search number or customer" />
       <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0" role="tablist" aria-label="Stage filter">
         {filters.map((f) => (

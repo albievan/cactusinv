@@ -19,7 +19,7 @@ interface Auth {
   outside?: boolean
 }
 
-const AuthContext = createContext<Auth>({ user: null, logout: async () => {}, refresh: async () => {}, endSession: () => {}, outside: true })
+export const AuthContext = createContext<Auth>({ user: null, logout: async () => {}, refresh: async () => {}, endSession: () => {}, outside: true })
 
 export const useAuth = () => useContext(AuthContext)
 

@@ -400,7 +400,9 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
 ## 14. Access groups (ADR-012)
 
 - **Domain** (`internal/domain/access.go`): the permission catalogue `Permissions` (area,
-  label, `Implies`), `Group` (`Normalize`), `Access` (`AccessFor(groups)`: union plus
+  label, `Implies`) — one permission per action since v1.8.0 (create, edit, issue, delete,
+  pay, overdue, void, pause, run, cancel, retry, …; an action implies only views; migration
+  `00019` split the old per-area edit permissions without changing what any group can do), `Group` (`Normalize`), `Access` (`AccessFor(groups)`: union plus
   implied, transitively; a member of `AdministratorsGroupID` has everything and
   `PermAdminister`), `CheckGroupChange` (the actor must be an active administrator and may
   not remove themselves from Administrators).

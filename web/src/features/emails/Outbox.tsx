@@ -46,8 +46,8 @@ export function Outbox() {
               <div className="text-slate-500">{m.status === 'sent' ? `Sent ${formatDateTime(m.sentAt)}` : `Due ${formatDateTime(m.nextAttemptAt)}`}{m.attempts ? ` · ${m.attempts} attempt(s)` : ''}</div>
               {m.lastError && <div className="text-red-600">{m.lastError}</div>}
               <div className="mt-2 flex gap-2">
-                {can('emails.manage') && (m.status === 'pending' || m.status === 'failed') && <button className="btn-secondary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
-                {can('emails.manage') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
+                {can('emails.cancel') && (m.status === 'pending' || m.status === 'failed') && <button className="btn-secondary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
+                {can('emails.retry') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
               </div>
             </li>
           ))}

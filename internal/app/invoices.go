@@ -44,7 +44,7 @@ type InvoiceDetail struct {
 // ListInvoices returns a page of invoices (without lines) and the total count.
 func (s *Service) ListInvoices(ctx context.Context, f ports.InvoiceFilter) ([]domain.Invoice, int, error) {
 	r := s.tx.Repos()
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return nil, 0, wrap("app.ListInvoices", err)
 	}
@@ -145,7 +145,7 @@ func (s *Service) UpdateInvoice(ctx context.Context, id string, version int, in 
 
 // draftContent merges input over the customer's defaults and prices product lines.
 func (s *Service) draftContent(ctx context.Context, r ports.Repos, c domain.Customer, in InvoiceInput) (domain.DraftContent, error) {
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return domain.DraftContent{}, err
 	}
@@ -229,7 +229,7 @@ func (s *Service) issue(ctx context.Context, r ports.Repos, inv *domain.Invoice,
 	if inv.Status != domain.InvoiceDraft {
 		return domain.ErrInvalidTransition
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func (s *Service) document(ctx context.Context, r ports.Repos, id string) (ports
 	if err != nil {
 		return ports.InvoiceDocument{}, err
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return ports.InvoiceDocument{}, err
 	}
@@ -446,7 +446,7 @@ func (s *Service) SendInvoice(ctx context.Context, id string, in SendInput) (*do
 		if inv.Status == domain.InvoiceDraft {
 			// Sending a draft issues it, which needs the right to issue (ADR-012); it keeps
 			// the draft's own date, as IssueInvoice does.
-			if !ActorFrom(ctx).Can(domain.PermInvoicesEdit) {
+			if !ActorFrom(ctx).Can(domain.PermInvoicesIssue) {
 				return domain.ErrNoAccess
 			}
 			if err := s.issue(ctx, r, inv, domain.Date{}); err != nil {
@@ -469,7 +469,7 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	if err != nil {
 		return nil, err
 	}
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +505,7 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	if m.SendAt.After(s.now()) {
 		// In the business's time zone, as the user chose it.
 		loc := time.UTC
-		if b, err := business(ctx, r); err == nil {
+		if b, err := s.business(ctx, r); err == nil {
 			loc = b.Location()
 		}
 		detail = "scheduled for " + m.SendAt.In(loc).Format("2006-01-02 15:04 MST")

@@ -348,7 +348,7 @@ export function StatementView() {
           <section className="card">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Statements e-mailed</h2>
-              <Can need="schedules.edit"><Link to={`/schedules/new?customer=${customerId}&kind=statement`} className="btn-secondary"><IconCalendar width={16} height={16} /> Schedule monthly statements</Link></Can>
+              <Can need="schedules.create"><Link to={`/schedules/new?customer=${customerId}&kind=statement`} className="btn-secondary"><IconCalendar width={16} height={16} /> Schedule monthly statements</Link></Can>
             </div>
             {history.data && history.data.items.length === 0 ? (
               <p className="text-sm text-slate-500">No statement has been e-mailed to this customer yet.</p>

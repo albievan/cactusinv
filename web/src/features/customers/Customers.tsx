@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Can } from '../../components/Access'
+import { useCan } from '../../components/auth'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
@@ -12,7 +13,7 @@ export function CustomerList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Customers" actions={<Can need="customers.edit"><Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
+    <Page title="Customers" actions={<Can need="customers.create"><Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search customers" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No customers yet.</Empty> : (
@@ -100,7 +101,7 @@ function StatementPanel({ customerId }: { customerId: string }) {
         <a className="btn-secondary" href={`/api/v1/customers/${customerId}/statement/pdf`} target="_blank" rel="noreferrer"><IconDownload width={16} height={16} /> Statement PDF</a>
         <Can need="statements.send"><button type="button" className="btn-primary" onClick={send} disabled={busy}><IconSend width={16} height={16} /> {busy ? 'Queuing…' : 'E-mail statement'}</button></Can>
         <Link className="btn-secondary" to={`/statements/${customerId}`}>Open full statement</Link>
-        <Can need="schedules.edit"><Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link></Can>
+        <Can need="schedules.create"><Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link></Can>
         {msg && <span className="text-sm text-green-700">{msg}</span>}
       </div>
     </section>
@@ -140,6 +141,7 @@ const blank: Customer = {
 }
 
 export function CustomerEditor() {
+  const can = useCan()
   const { id } = useParams()
   const nav = useNavigate()
   const { currencies } = useCurrencies()
@@ -243,13 +245,13 @@ export function CustomerEditor() {
           </div>
         </div>
         {id && <Can need="statements.view"><StatementPanel customerId={id} /></Can>}
-        <Can need="customers.edit">
+        {(id ? can('customers.edit') || can('customers.delete') : can('customers.create')) && (
           <StickyActions>
-            {id && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this customer?" message="Its details are deleted. A customer with invoices or schedules cannot be deleted; make them inactive instead." confirmLabel="Delete" onConfirm={remove} /></span>}
+            {id && can('customers.delete') && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this customer?" message="Its details are deleted. A customer with invoices or schedules cannot be deleted; make them inactive instead." confirmLabel="Delete" onConfirm={remove} /></span>}
             <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-            <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            {(!id || can('customers.edit')) && <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>}
           </StickyActions>
-        </Can>
+        )}
       </form>
     </Page>
   )

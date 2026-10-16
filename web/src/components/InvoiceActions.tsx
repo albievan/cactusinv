@@ -58,17 +58,13 @@ export function InvoiceActions({ inv, onChanged, onError, showLabels = false }: 
     )
   return (
     <div className={`flex items-center gap-1 ${showLabels ? 'flex-wrap' : 'flex-nowrap'}`} role="group" aria-label={`Actions for ${inv.number || 'draft'}`}>
-      {can('invoices.send') && (inv.status !== 'draft' || can('invoices.edit')) && (
+      {can('invoices.send') && (inv.status !== 'draft' || can('invoices.issue')) && (
         <ActionButton showLabel={showLabels} icon={IconSend} label={inv.status === 'draft' ? 'Issue & send' : 'Send e-mail'} onClick={send} disabled={busy || inv.status === 'void'} />
       )}
       <ActionButton showLabel={showLabels} icon={IconFilePdf} label="View PDF" href={`/api/v1/invoices/${inv.id}/pdf`} />
-      {can('invoices.status') && (
-        <>
-      <ActionButton showLabel={showLabels} icon={IconPaid} label="Mark paid" disabled={busy || !open} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)), `${inv.number} marked paid`)} />
-      <ActionButton showLabel={showLabels} icon={IconClockAlert} label="Mark overdue" disabled={busy || !(inv.status === 'issued' || inv.status === 'sent')} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)), `${inv.number} marked overdue`)} />
-      <ActionButton showLabel={showLabels} icon={IconBan} label="Void" tone="danger" disabled={busy || !open} onClick={() => setVoiding(true)} />
-        </>
-      )}
+      {can('invoices.pay') && <ActionButton showLabel={showLabels} icon={IconPaid} label="Mark paid" disabled={busy || !open} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)), `${inv.number} marked paid`)} />}
+      {can('invoices.overdue') && <ActionButton showLabel={showLabels} icon={IconClockAlert} label="Mark overdue" disabled={busy || !(inv.status === 'issued' || inv.status === 'sent')} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)), `${inv.number} marked overdue`)} />}
+      {can('invoices.void') && <ActionButton showLabel={showLabels} icon={IconBan} label="Void" tone="danger" disabled={busy || !open} onClick={() => setVoiding(true)} />}
       <Sheet title={`Void ${inv.number}`} open={voiding} onClose={() => setVoiding(false)}>
         <div className="space-y-4">
           <p className="text-sm text-slate-600">The number stays used, scheduled e-mails are cancelled and the void is recorded in the audit trail. This cannot be undone.</p>

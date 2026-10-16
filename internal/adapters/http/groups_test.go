@@ -67,7 +67,7 @@ func TestGroupRoutesAndAccess(t *testing.T) {
 	var g httpapi.Group
 	albie.ok(albie.do("POST", "/api/v1/groups", body, &g, "Idempotency-Key", "g1"), 201, "create group")
 	cc.ok(cc.do("GET", "/api/v1/auth/me", nil, &me), 200, "carol me")
-	if !slices.Contains(me.Permissions, "invoices.view") || slices.Contains(me.Permissions, "invoices.status") {
+	if !slices.Contains(me.Permissions, "invoices.view") || slices.Contains(me.Permissions, "invoices.void") {
 		t.Fatalf("carol's permissions = %v", me.Permissions)
 	}
 	cc.ok(cc.do("GET", "/api/v1/invoices", nil, nil), 200, "invoices now")

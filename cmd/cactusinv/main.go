@@ -137,6 +137,7 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 	deps := app.Deps{
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
 		Hasher: argon2.New(argon2.DefaultConcurrency), Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
+		TimeZone: cfg.BackupLocation.String(),
 	}
 	dc, err := dbConfig(ctx, cfg)
 	if err != nil {

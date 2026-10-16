@@ -31,7 +31,7 @@ type Dashboard struct {
 // GetDashboard assembles the dashboard.
 func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 	r := s.tx.Repos()
-	b, err := business(ctx, r)
+	b, err := s.business(ctx, r)
 	if err != nil {
 		return Dashboard{}, wrap("app.GetDashboard", err)
 	}

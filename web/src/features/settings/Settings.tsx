@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { TimeZoneSelect, deviceZone } from '../../components/TimeZoneSelect'
 import { Can } from '../../components/Access'
 import { Link, NavLink } from 'react-router-dom'
 import { api, unwrap, type BankAccount, type BusinessSettings, type Currency, type Schemas } from '../../lib/api/client'
@@ -257,15 +258,15 @@ function EmailServer() {
       </div>
       <div className="flex flex-wrap items-end gap-3 border-t border-cream-200 pt-4">
         <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="input md:w-72" value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
-        {can('settings.edit') && (
+        {can('settings.email') && (
           <button type="button" className="btn-secondary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
             Send test e-mail
           </button>
         )}
-        {can('settings.edit') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
+        {can('settings.email') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
         <span className="flex-1" />
         {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
-        {can('settings.edit') && <button className="btn-primary">Save e-mail server</button>}
+        {can('settings.email') && <button className="btn-primary">Save e-mail server</button>}
       </div>
       <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />
     </form>
@@ -303,7 +304,7 @@ function BusinessForm() {
         <Field label="Default VAT %" hint="Used for new invoices and schedules. 0 = no VAT: nothing about VAT appears on invoices.">{(f) => <input id={f} className="input" inputMode="decimal" value={b.vatPercent} onChange={(e) => set({ vatPercent: e.target.value })} />}</Field>
         <Field label="Address">{(f) => <textarea id={f} className="input min-h-[96px]" value={b.addressLines} onChange={(e) => set({ addressLines: e.target.value })} />}</Field>
         <div className="space-y-4">
-          <Field label="Time zone" hint="IANA name, e.g. Africa/Johannesburg">{(f) => <input id={f} className="input" value={b.timeZone} onChange={(e) => set({ timeZone: e.target.value })} />}</Field>
+          <Field label="Time zone" hint={b.timeZone === deviceZone() ? 'Dates, “today” and new schedules use this zone.' : `Dates, “today” and new schedules use this zone. This device is in ${deviceZone()}.`}>{(f) => <TimeZoneSelect id={f} value={b.timeZone} onChange={(z) => set({ timeZone: z })} />}</Field>
           <Field label="Invoice number format" hint="{code} customer code, {seq} sequence, {dd} day, {mm} month, {yy} or {yyyy} year — e.g. {code}/{dd}{mm}-{seq}/{yy} → CD/2108-1195/26">{(f) => <input id={f} className="input" value={b.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} />}</Field>
           <Field label="Next invoice sequence" hint="May only increase.">{(f) => <input id={f} type="number" inputMode="numeric" className="input" value={b.nextSequence} onChange={(e) => set({ nextSequence: Number(e.target.value) })} />}</Field>
         </div>
@@ -315,7 +316,7 @@ function BusinessForm() {
       </div>
       <div className="flex items-center justify-end gap-3">
         {msg && <span className="text-sm text-green-700">{msg}</span>}
-        {can('settings.edit') && <button className="btn-primary">Save business</button>}
+        {can('settings.business') && <button className="btn-primary">Save business</button>}
       </div>
     </form>
   )
@@ -360,7 +361,7 @@ function CurrenciesAndBanks() {
     <section className="card space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Currencies & bank accounts</h2>
-        <Can need="settings.edit"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
+        <Can need="settings.currencies"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
       </div>
       <p className="text-sm text-slate-500">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
       <ErrorBanner error={err ?? currencies.error ?? banks.error} />
@@ -370,7 +371,7 @@ function CurrenciesAndBanks() {
             <button className="text-left" onClick={() => setEditCur(c)}>
               <span className="font-semibold">{c.code}</span> <span className="text-slate-500">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span>
             </button>
-            <Can need="settings.edit"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
+            <Can need="settings.banks"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
           </div>
           <ul className="divide-y divide-slate-100 border-t border-slate-100">
             {banks.data?.filter((b) => b.currency === c.code).map((b) => (
@@ -403,7 +404,7 @@ function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean 
       <Field label="Symbol">{(f) => <input id={f} className="input" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
       <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="input" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /> Active</label>
-      <Can need="settings.edit"><button className="btn-primary w-full">Save</button></Can>
+      <Can need="settings.currencies"><button className="btn-primary w-full">Save</button></Can>
     </form>
   )
 }
@@ -428,8 +429,8 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /> Default for {b.currency}</label>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /> Active</label>
       <div className="flex gap-2">
-        <Can need="settings.edit">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
-        <Can need="settings.edit"><button className="btn-primary flex-1">Save</button></Can>
+        <Can need="settings.banks">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
+        <Can need="settings.banks"><button className="btn-primary flex-1">Save</button></Can>
       </div>
     </form>
   )

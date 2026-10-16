@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent, type SVGProps } from 'react'
+import { TimeZoneSelect, deviceZone } from '../../components/TimeZoneSelect'
 import { Can } from '../../components/Access'
+import { useCan } from '../../components/auth'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Schedule, type Schemas } from '../../lib/api/client'
 import { formatDate, formatInZone, todayISO } from '../../lib/format'
@@ -77,16 +79,16 @@ function IconAction({ icon: I, label, title, onClick, disabled, danger, to }: {
 /** ScheduleActions is the compact Edit / Pause or Resume / Run now / Delete bar for one schedule. */
 function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; act: (s: Schedule, what: 'pause' | 'resume') => void; ask: (p: Pending) => void }) {
   return (
-    <Can need="schedules.edit">
     <div className="flex flex-nowrap items-center gap-1" role="group" aria-label={`Actions for ${s.name}`}>
-      <IconAction icon={IconEdit} label={`Edit ${s.name}`} title="Edit" to={`/schedules/${s.id}/edit`} />
+      <Can need="schedules.edit"><IconAction icon={IconEdit} label={`Edit ${s.name}`} title="Edit" to={`/schedules/${s.id}/edit`} /></Can>
+      <Can need="schedules.pause">
       {s.status === 'paused'
         ? <IconAction icon={IconPlay} label={`Resume ${s.name}`} title="Resume" onClick={() => act(s, 'resume')} disabled={busy} />
         : <IconAction icon={IconPause} label={`Pause ${s.name}`} title="Pause" onClick={() => act(s, 'pause')} disabled={busy || s.status !== 'active'} />}
-      <IconAction icon={IconBolt} label={`Run ${s.name} now`} title="Run now" onClick={() => ask({ kind: 'run', s })} disabled={busy || s.status !== 'active'} />
-      <IconAction icon={IconTrash} label={`Delete ${s.name}`} title="Delete" onClick={() => ask({ kind: 'delete', s })} disabled={busy} danger />
+      </Can>
+      <Can need="schedules.run"><IconAction icon={IconBolt} label={`Run ${s.name} now`} title="Run now" onClick={() => ask({ kind: 'run', s })} disabled={busy || s.status !== 'active'} /></Can>
+      <Can need="schedules.delete"><IconAction icon={IconTrash} label={`Delete ${s.name}`} title="Delete" onClick={() => ask({ kind: 'delete', s })} disabled={busy} danger /></Can>
     </div>
-    </Can>
   )
 }
 
@@ -127,7 +129,7 @@ export function ScheduleList() {
   const items = data?.items ?? []
   const nextRun = (s: Schedule) => (s.nextRunAt ? formatInZone(s.nextRunAt, s.recurrence.timeZone) : 'No upcoming run')
   return (
-    <Page title="Schedules" actions={<Can need="schedules.edit"><Link to="/schedules/new" className="btn-primary">+ New</Link></Can>}>
+    <Page title="Schedules" actions={<Can need="schedules.create"><Link to="/schedules/new" className="btn-primary">+ New</Link></Can>}>
       <p className="mb-3 text-sm text-slate-500">Recurring invoices are issued and e-mailed automatically.</p>
       <ErrorBanner error={error ?? actionError} />
       {notice && <div role="status" className="mb-3 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
@@ -208,6 +210,7 @@ export function ScheduleDetailPage() {
   const { data, error, loading, setData } = useAsync(() => unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })), [id])
   const nav = useNavigate()
   const [actionError, setActionError] = useState<Error | null>(null)
+  const can = useCan()
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Schedule" back="/schedules"><ErrorBanner error={error} /></Page>
   const s = data.schedule
@@ -224,12 +227,11 @@ export function ScheduleDetailPage() {
         <div className="font-medium text-brand-900">{purposeLabel(s)}</div>
         {s.lastError && <div className="text-red-600">Last error ({s.failureCount}×): {s.lastError}</div>}
       </div>
-      <Can need="schedules.edit">
-      <div className="mb-4 grid grid-cols-2 gap-2 md:flex">
-        <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>
-        {s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
-        {s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
-        {s.status === 'active' && (
+      <div className="mb-4 grid grid-cols-2 gap-2 empty:hidden md:flex">
+        {can('schedules.edit') && <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>}
+        {can('schedules.pause') && s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
+        {can('schedules.pause') && s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
+        {can('schedules.run') && s.status === 'active' && (
           <ConfirmButton
             label="Run now"
             danger={false}
@@ -239,15 +241,14 @@ export function ScheduleDetailPage() {
             onConfirm={() => act(api.POST('/schedules/{id}/run-now', path))}
           />
         )}
-        <ConfirmButton
+        {can('schedules.delete') && <ConfirmButton
           label="Delete"
           title={`Delete ${s.name}?`}
           message="The schedule stops and is deleted. Invoices and e-mails it already made stay. This cannot be undone."
           confirmLabel="Delete schedule"
           onConfirm={async () => { try { await unwrap(api.DELETE('/schedules/{id}', path)); nav('/schedules') } catch (e) { setActionError(e as Error) } }}
-        />
+        />}
       </div>
-      </Can>
       <section className="card mb-4 text-sm">
         <h2 className="mb-2 font-semibold">Upcoming runs</h2>
         {data.upcoming.length === 0 ? <p className="text-slate-500">None.</p> : <ul className="space-y-1">{data.upcoming.map((t) => <li key={t}>{formatInZone(t, s.recurrence.timeZone)}</li>)}</ul>}
@@ -342,6 +343,8 @@ export function ScheduleEditor() {
   const template = defaults.data?.[purpose]
   const customer = customers.data?.find((c) => c.id === s.customerId)
   const r = s.recurrence
+  const zone = r.timeZone ?? preview?.timeZone
+  const zoneHint = zone && zone !== deviceZone() && preview?.runs[0] ? `The first run is ${formatInZone(preview.runs[0], deviceZone())} on this device.` : undefined
   const isInvoice = purpose === 'invoice'
 
   const submit = async (e: FormEvent) => {
@@ -441,6 +444,7 @@ export function ScheduleEditor() {
             </>
           )}
           <Field label="Time" hint={preview?.timeZone ? `${preview.timeZone} time` : undefined}>{(f) => <input id={f} type="time" className="input" value={r.sendTime} onChange={(e) => setR({ sendTime: e.target.value })} />}</Field>
+          <Field label="Time zone" hint={zoneHint}>{(f) => <TimeZoneSelect id={f} value={r.timeZone ?? preview?.timeZone ?? ''} onChange={(z) => setR({ timeZone: z })} />}</Field>
           <Field label="Starts">{(f) => <input id={f} type="date" className="input" value={r.startDate} onChange={(e) => setR({ startDate: e.target.value })} />}</Field>
           <Field label="Ends (optional)">{(f) => <input id={f} type="date" className="input" value={r.endDate ?? ''} onChange={(e) => setR({ endDate: e.target.value || undefined })} />}</Field>
           <div className="text-sm text-slate-500 md:col-span-3">

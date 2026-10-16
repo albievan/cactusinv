@@ -419,6 +419,34 @@ Evidence (2026-10-16, worktree at 5afff07 + M19): `make fmt-check lint vet cover
 
 ---
 
+
+### M20 — Access per action; schedules in the right time zone; k3s deploy (Albie, 2026-10-16) — v1.8.0
+
+> 1. "I've set up a weekly invoice and the first run was supposed to be today at 8am.
+>    Investigate and fix the issue."
+> 2. "I need the access to be more granular, e.g. I want to select to add a customer but not
+>    edit, and create invoice but not edit or issue or delete etc."
+> 3. "I've tried to deploy the platform to k3s on 192.168.1.72 and it timed out."
+
+Findings (1), read-only on the live instance: the schedule *did* run — invoice raised at
+08:00:54 UTC and e-mailed at 08:01 UTC — but in **UTC**: the business profile had been saved
+with the default zone `UTC` (`domain.BusinessProfile.Validate`, prefilled on the form) while
+the deployment runs in `TZ=Africa/Johannesburg`, so "08:00" fired at 10:00 local. The
+schedule editor had no time-zone field, so a schedule kept the zone it was created with and
+could not be corrected from the UI.
+
+| id | Step | Status | Verification | Files |
+|---|---|---|---|---|
+| 20.1 | Business zone defaults to the deployment zone (`app.Deps.TimeZone` ← `TZ`; unknown → UTC) before the profile is first saved | done | `TestBusinessZoneDefaultsToTheDeploymentZone` (08:00 Johannesburg = 06:00 UTC) | `internal/app/app.go` (`business` is now a method), `cmd/cactusinv/main.go` |
+| 20.2 | Time zones picked from a list (`TimeZoneSelect`, device zone first) on Settings → Business and in the schedule editor; the editor shows the first run in device time when the zones differ | done | Vitest `time zones are picked from a list` | `web/src/components/TimeZoneSelect.tsx`, `Settings.tsx`, `Schedules.tsx` |
+| 20.3 | One permission per action (ADR-012 table): invoices create/edit/issue/delete/send/pay/overdue/void; customers and products create/edit/delete; schedules create/edit/pause/run/delete; outbox cancel/retry; settings business/email/currencies/banks. Actions imply only views. Migration `00019` maps old grants to all the actions they covered (down folds them back) | done | `TestEachActionHasItsOwnPermission` (each permission allows exactly its operations), `TestActionPermissionsImplyOnlyWhatTheyNeed`, schedules need `invoices.create`+`invoices.issue`, sending a draft needs `invoices.issue`; integration `TestGranularPermissionsMigration` (old grants → new, down → old); Vitest (add-not-edit customer form, per-action invoice buttons) | `internal/domain/access.go`, `internal/app/{access,schedules,invoices}.go`, `migrations/00019_granular_permissions.sql`, web pages, tests |
+| 20.4 | Web shows each button only with its own permission; a page the user may open but not change shows no Save/Delete | done | Vitest `granular.test.tsx` | `web/src/App.tsx`, features/* |
+| 20.5 | k3s deploy: build without provenance/SBOM, `docker save --platform`, verify the image on the node, `imagePullPolicy: Never` on k3s, root or `sudo -n` for `k3s ctr`/`kubectl` over SSH, and on a rollout timeout print pods, events and logs | done (cause not confirmed: the screenshots did not reach the agent and SSH to the node was not attempted without the user's login) | `bash -n`; manifest render shows `imagePullPolicy: Never`; local Docker Desktop deploy still green | `deploy.sh`, `deploy/k8s/cactusinv.yaml`, `README.md` |
+| 20.6 | VERSION 1.8.0, docs, gate, integration, deploy | done | see evidence | `VERSION`, `README.md`, `docs/`, `PLAN.md` |
+
+The live schedule and business profile were **not** changed (real data): set Settings →
+Business → Time zone, then edit the "Weekly" schedule's time zone (both are now pick-lists).
+
 ## Decisions
 
 | Date | Decision | Why |

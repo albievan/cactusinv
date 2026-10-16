@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Can } from '../../components/Access'
+import { useCan } from '../../components/auth'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Product } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
@@ -11,7 +12,7 @@ export function ProductList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Products" actions={<Can need="products.edit"><Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
+    <Page title="Products" actions={<Can need="products.create"><Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search name or SKU" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No products yet.</Empty> : (
@@ -51,6 +52,7 @@ export function ProductList() {
 const blank: Product = { sku: '', name: '', description: '', unit: '', prices: [], active: true, version: 0 }
 
 export function ProductEditor() {
+  const can = useCan()
   const { id } = useParams()
   const nav = useNavigate()
   const { currencies } = useCurrencies()
@@ -123,13 +125,13 @@ export function ProductEditor() {
             <button type="button" className="btn-secondary" onClick={() => set({ prices: [...p.prices, { currency: '', unitPrice: '' }] })}>+ Add another currency</button>
           )}
         </div>
-        <Can need="products.edit">
+        {(id ? can('products.edit') || can('products.delete') : can('products.create')) && (
           <StickyActions>
-            {id && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this product?" message="It disappears from the look-up. Invoices already issued keep their lines. If it is still used by a schedule or invoice, it cannot be deleted." confirmLabel="Delete" onConfirm={remove} /></span>}
+            {id && can('products.delete') && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this product?" message="It disappears from the look-up. Invoices already issued keep their lines. If it is still used by a schedule or invoice, it cannot be deleted." confirmLabel="Delete" onConfirm={remove} /></span>}
             <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-            <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+            {(!id || can('products.edit')) && <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>}
           </StickyActions>
-        </Can>
+        )}
       </form>
     </Page>
   )

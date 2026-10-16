@@ -18,25 +18,36 @@ permissions of the groups they are in, plus what those imply. There are no per-u
 permissions and no deny rules. A user in no group can sign in, read their own account and
 change their password, and nothing else.
 
-**A fixed catalogue** (`domain.Permissions`), view and edit per area:
+**A fixed catalogue** (`domain.Permissions`), one permission per action (v1.8.0, migration
+`00019`; Albie, 2026-10-16: "add a customer but not edit; create an invoice but not edit,
+issue or delete"):
 
 | Area | Permissions |
 |---|---|
 | Dashboard | `dashboard.view` |
-| Invoices | `invoices.view`, `invoices.edit` (create, edit, issue, delete drafts), `invoices.send` (e-mail), `invoices.status` (paid, overdue, void) |
-| Customers | `customers.view`, `customers.edit` |
+| Invoices | `invoices.view`, `invoices.create` (drafts), `invoices.edit` (drafts), `invoices.issue`, `invoices.delete` (drafts), `invoices.send` (e-mail), `invoices.pay`, `invoices.overdue`, `invoices.void` |
+| Customers | `customers.view`, `customers.create`, `customers.edit`, `customers.delete` |
 | Statements | `statements.view`, `statements.send` |
-| Schedules | `schedules.view`, `schedules.edit` (create, edit, pause, resume, run, delete) |
-| Products | `products.view`, `products.edit` |
-| Outbox | `emails.view`, `emails.manage` (cancel, retry) |
+| Schedules | `schedules.view`, `schedules.create`, `schedules.edit`, `schedules.pause` (pause and resume), `schedules.run` (run now), `schedules.delete` |
+| Products | `products.view`, `products.create`, `products.edit`, `products.delete` |
+| Outbox | `emails.view`, `emails.cancel`, `emails.retry` |
 | Audit log | `audit.view` |
-| Settings | `settings.view`, `settings.edit` (business, e-mail server, currencies, bank accounts) |
+| Settings | `settings.view`, `settings.business`, `settings.email` (server and test e-mail), `settings.currencies`, `settings.banks` |
 
-A permission implies what it needs to be usable, transitively: every edit/send/status
-permission implies its area's view; `invoices.edit` and `schedules.edit` also imply
-`customers.view` and `products.view` (the editors pick them); `statements.view` implies
-`customers.view`; `schedules.view` implies `customers.view` and `products.view` (its pages
-show them; v1.7.1). Implied permissions are granted with the group, not stored, and the editor
+A permission implies only what it needs to be *seen*, transitively — never another action
+(a test checks this): every action implies its area's view; `invoices.create` and
+`invoices.edit` also imply `customers.view` and `products.view` (the editor picks them);
+`statements.view` implies `customers.view`; `schedules.view` implies `customers.view` and
+`products.view` (its pages show them; v1.7.1). On a page the user may open but not change
+(e.g. a customer with `customers.create` only) the form is shown without Save or Delete.
+
+Migration `00019` keeps every group's abilities: `invoices.edit` (which covered create,
+edit, issue and delete) became `invoices.create`, `.edit`, `.issue` and `.delete`;
+`invoices.status` became `.pay`, `.overdue` and `.void`; `customers.edit`,
+`products.edit` and `schedules.edit` gained their create/delete (and pause/run) siblings;
+`emails.manage` became `.cancel` and `.retry`; `settings.edit` became the four settings
+permissions. Its down migration folds them back (any split permission gives the old one).
+Implied permissions are granted with the group, not stored, and the editor
 shows them ticked and greyed as "included".
 
 Every signed-in user may read the reference data every page needs: currencies, the
@@ -58,11 +69,12 @@ and buttons the user may not use (`useCan`), but the server is the authority.
 
 **Checks the operation map cannot make** (v1.7.1): the signed-in user's access travels in
 the actor (`app.Actor.Access`; nil for the system workers and the command line). Sending a
-draft issues it, so it also needs `invoices.edit`; the dashboard leaves out upcoming e-mails
+draft issues it, so it also needs `invoices.issue`; the dashboard leaves out upcoming e-mails
 and failures, upcoming runs, recent invoices and the activity feed unless the user may open
 them; without `emails.view` the outbox list answers only one customer's statement e-mails
 (a statement page's history); creating, changing, resuming or running a schedule needs the
-rights of what it does — `invoices.edit` (plus `invoices.send` for auto-send) for invoice
+rights of what it does — `invoices.create` and `invoices.issue` (plus `invoices.send` for
+auto-send) for invoice
 schedules, `invoices.send` for e-mail schedules of invoices, `statements.send` for statement
 schedules.
 
