@@ -168,7 +168,12 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/TestEmailRequest' }
       responses:
-        '204': { description: Sent. }
+        '200':
+          description: Sent. The warnings say when the provider is known not to send as the Send-as address.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TestEmailResult' }
+        '204': { description: Sent (servers before v1.6.1 answer without a body). }
         default: { $ref: '#/components/responses/Problem' }
 
   /currencies:
@@ -1201,7 +1206,7 @@ components:
         build: { type: string, example: '42' }
     EmailSettings:
       type: object
-      required: [enabled, host, port, username, from, tls, passwordSet, version]
+      required: [enabled, host, port, username, from, tls, passwordSet, warnings, version]
       properties:
         enabled: { type: boolean, description: Use this server; otherwise the deployment's default server. }
         host: { type: string, maxLength: 255, example: smtp.gmail.com }
@@ -1216,12 +1221,29 @@ components:
         passwordSet: { type: boolean, readOnly: true }
         from: { type: string, maxLength: 320, description: Sender, e.g. "Example Ltd <billing@example.com>". }
         tls: { type: string, enum: [starttls, tls, none] }
+        warnings:
+          type: array
+          readOnly: true
+          x-omitempty: false
+          items: { type: string }
+          description: >-
+            When the provider is known not to send as the Send-as address as saved (Gmail rewrites
+            From unless it is a verified "Send mail as" alias; Microsoft 365 may refuse without Send As
+            permission). Always present, may be empty.
         version: { type: integer }
     TestEmailRequest:
       type: object
       required: [to]
       properties:
         to: { type: string, maxLength: 254 }
+    TestEmailResult:
+      type: object
+      required: [warnings]
+      properties:
+        warnings:
+          type: array
+          items: { type: string }
+          description: The warnings of the in-app server that sent the test e-mail; empty when the deployment's default server sent it.
     StatementLine:
       type: object
       required: [invoiceId, number, issueDate, amount, daysOverdue, status]

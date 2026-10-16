@@ -28,6 +28,7 @@ test('opens on the selected provider and shows its steps in order', async () => 
   expect(steps[1]).toHaveTextContent('App passwords')
   expect(steps[2]).toHaveTextContent('smtp.gmail.com')
   expect(steps[4]).toHaveTextContent('Send mail as')
+  expect(steps[4]).toHaveTextContent('verify it')
   expect(within(dialog).getByText('If the test e-mail fails')).toBeInTheDocument()
 })
 
@@ -40,6 +41,7 @@ test('switches to another provider', async () => {
   const outlook = within(dialog).getByRole('list', { name: 'Steps for Outlook / Microsoft 365' })
   expect(outlook).toHaveTextContent('smtp.office365.com')
   expect(outlook).toHaveTextContent('Authenticated SMTP')
+  expect(outlook).toHaveTextContent('Microsoft 365 may refuse to send')
 
   await userEvent.click(within(dialog).getByRole('tab', { name: 'Custom' }))
   const custom = within(dialog).getByRole('list', { name: 'Steps for Custom' })

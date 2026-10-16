@@ -683,6 +683,9 @@ type EmailSettings struct {
 	Tls      EmailSettingsTls `json:"tls"`
 	Username string           `json:"username"`
 	Version  int              `json:"version"`
+
+	// Warnings When the provider is known not to send as the Send-as address as saved (Gmail rewrites From unless it is a verified "Send mail as" alias; Microsoft 365 may refuse without Send As permission). Always present, may be empty.
+	Warnings []string `json:"warnings"`
 }
 
 // EmailSettingsTls defines model for EmailSettings.Tls.
@@ -1170,6 +1173,12 @@ type StatementSummary struct {
 // TestEmailRequest defines model for TestEmailRequest.
 type TestEmailRequest struct {
 	To string `json:"to"`
+}
+
+// TestEmailResult defines model for TestEmailResult.
+type TestEmailResult struct {
+	// Warnings The warnings of the in-app server that sent the test e-mail; empty when the deployment's default server sent it.
+	Warnings []string `json:"warnings"`
 }
 
 // Totals defines model for Totals.
@@ -6337,6 +6346,20 @@ type SendTestEmailRequestObject struct {
 
 type SendTestEmailResponseObject interface {
 	VisitSendTestEmailResponse(w http.ResponseWriter) error
+}
+
+type SendTestEmail200JSONResponse TestEmailResult
+
+func (response SendTestEmail200JSONResponse) VisitSendTestEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type SendTestEmail204Response struct {

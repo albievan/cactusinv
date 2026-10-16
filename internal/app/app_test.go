@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -975,14 +976,75 @@ func TestSMTPSettings(t *testing.T) {
 	if _, _, ok, _ := svc.SMTPServer(h.ctx); ok {
 		t.Fatal("disabled → fallback")
 	}
-	if err := svc.SendTestEmail(h.ctx, "me@gmail.com"); err != nil || h.mailer.Count() != 1 {
+	if w, err := svc.SendTestEmail(h.ctx, "me@gmail.com"); err != nil || h.mailer.Count() != 1 || w == nil || len(w) != 0 {
 		t.Fatal("test e-mail")
 	}
-	if err := svc.SendTestEmail(h.ctx, "nope"); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.SendTestEmail(h.ctx, "nope"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("bad recipient")
 	}
 	if _, err := svc.UpdateSMTPSettings(h.ctx, domain.SMTPSettings{Enabled: true, Port: 587}, nil); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("host required")
+	}
+}
+
+func TestSendTestEmailWarnings(t *testing.T) {
+	const gmailWarning = "Gmail sends as albievan@gmail.com unless accounts@primesoft.example is a verified \"Send mail as\" address of that account (Gmail → Settings → Accounts → Send mail as)."
+	gmail := func(enabled bool, from string) *domain.SMTPSettings {
+		return &domain.SMTPSettings{Enabled: enabled, Host: "smtp.gmail.com", Port: 587, TLS: "starttls", Username: "albievan@gmail.com", From: from}
+	}
+	tests := []struct {
+		name      string
+		saved     *domain.SMTPSettings // nil: nothing saved
+		to        string
+		storeErr  error
+		mailErr   error
+		want      []string
+		wantView  []string // GetSMTPSettings: the saved settings, enabled or not
+		wantErr   error
+		wantMails int
+	}{
+		{name: "nothing saved: the deployment's server", to: "me@example.com", want: []string{}, wantView: []string{}, wantMails: 1},
+		{name: "gmail sending as another address", saved: gmail(true, "Accounts <accounts@primesoft.example>"), to: "me@example.com", want: []string{gmailWarning}, wantView: []string{gmailWarning}, wantMails: 1},
+		{name: "gmail sending as the user name", saved: gmail(true, "albievan@gmail.com"), to: "me@example.com", want: []string{}, wantView: []string{}, wantMails: 1},
+		{name: "disabled in-app server: the view warns, the test e-mail (deployment's server) does not", saved: gmail(false, "accounts@primesoft.example"), to: "me@example.com", want: []string{}, wantView: []string{gmailWarning}, wantMails: 1},
+		{name: "bad recipient", to: "a@example.com, b@example.com", wantErr: domain.ErrValidation},
+		{name: "settings unreadable", to: "me@example.com", storeErr: domain.ErrConflict, wantErr: domain.ErrConflict},
+		{name: "mail server refuses", saved: gmail(true, "accounts@primesoft.example"), to: "me@example.com", mailErr: errors.New("535 bad credentials"), wantMails: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t).seed()
+			svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}, Cipher: fakes.Cipher{}})
+			if tt.saved != nil {
+				pw := "abcd efgh ijkl mnop"
+				must(svc.UpdateSMTPSettings(h.ctx, *tt.saved, &pw))
+			}
+			if tt.wantView != nil {
+				if v := must(svc.GetSMTPSettings(h.ctx)); v.Warnings == nil || !slices.Equal(v.Warnings, tt.wantView) {
+					t.Fatalf("GetSMTPSettings warnings = %q, want %q", v.Warnings, tt.wantView)
+				}
+			}
+			before := h.mailer.Count()
+			h.mailer.Err, h.store.FailNext = tt.mailErr, tt.storeErr
+			got, err := svc.SendTestEmail(h.ctx, tt.to)
+			switch {
+			case tt.wantErr != nil:
+				if !errors.Is(err, tt.wantErr) || got != nil {
+					t.Fatalf("SendTestEmail = %q, %v; want error %v", got, err, tt.wantErr)
+				}
+			case tt.mailErr != nil:
+				if err == nil || got != nil {
+					t.Fatalf("SendTestEmail = %q, %v; want the mail server's error", got, err)
+				}
+			default:
+				if err != nil || got == nil || !slices.Equal(got, tt.want) {
+					t.Fatalf("SendTestEmail = %q, %v; want %q", got, err, tt.want)
+				}
+			}
+			if n := h.mailer.Count() - before; n != tt.wantMails {
+				t.Fatalf("mails sent = %d, want %d", n, tt.wantMails)
+			}
+		})
 	}
 }
 

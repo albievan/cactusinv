@@ -149,6 +149,7 @@ function EmailServer() {
   const [password, setPassword] = useState('')
   const [testTo, setTestTo] = useState('')
   const [msg, setMsg] = useState('')
+  const [msgWarns, setMsgWarns] = useState(false)
   const [err, setErr] = useState<Error | null>(null)
   const [guide, setGuide] = useState(false)
   useEffect(() => { if (data) setE(data) }, [data])
@@ -159,6 +160,7 @@ function EmailServer() {
     ev.preventDefault()
     setErr(null)
     setMsg('')
+    setMsgWarns(false)
     try {
       setE(await unwrap(api.PUT('/settings/email', { body: { ...e, password: password === '' ? undefined : password } })))
       setPassword('')
@@ -170,9 +172,13 @@ function EmailServer() {
   const test = async () => {
     setErr(null)
     setMsg('')
+    setMsgWarns(false)
     try {
-      await unwrap(api.POST('/settings/email/test', { body: { to: testTo || e.username || user?.email || '' } }))
-      setMsg('Test e-mail sent — check the inbox.')
+      const r = await unwrap(api.POST('/settings/email/test', { body: { to: testTo || e.username || user?.email || '' } }))
+      // The server says when the provider will not send as the Send-as address.
+      const warnings = r?.warnings ?? []
+      setMsgWarns(warnings.length > 0)
+      setMsg(warnings.length > 0 ? `Test e-mail sent — but: ${warnings.join(' ')}` : 'Test e-mail sent — check the inbox.')
     } catch (x) {
       setErr(x as Error)
     }
@@ -213,14 +219,24 @@ function EmailServer() {
         <Field label="Password" hint={e.passwordSet ? 'A password is saved (encrypted). Leave empty to keep it.' : 'Stored encrypted.'}>
           {(f) => <input id={f} type="password" className="input" autoComplete="new-password" placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={(x) => setPassword(x.target.value)} />}
         </Field>
-        <Field label="Send as" hint='e.g. "Example Ltd <billing@example.com>". Defaults to the user name.'>{(f) => <input id={f} className="input" value={e.from} onChange={(x) => set({ from: x.target.value })} />}</Field>
+        <div>
+          <Field label="Send as" hint='e.g. "Example Ltd <billing@example.com>". Defaults to the user name. The provider decides the sender it shows; see the setup guide.'>{(f) => <input id={f} className="input" value={e.from} onChange={(x) => set({ from: x.target.value })} />}</Field>
+          {e.warnings.length > 0 && (
+            <div className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">
+              <p className="font-medium">For the saved settings:</p>
+              <ul aria-label="Send-as warnings" className="mt-1 list-disc space-y-1 pl-5">
+                {e.warnings.map((w) => <li key={w}>{w}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
         <label className="flex min-h-[44px] items-center gap-3 md:pt-6"><input type="checkbox" className="h-5 w-5" checked={e.enabled} onChange={(x) => set({ enabled: x.target.checked })} /> Use this server for all e-mail</label>
       </div>
       <div className="flex flex-wrap items-end gap-3 border-t border-cream-200 pt-4">
         <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="input md:w-72" value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
         <button type="button" className="btn-secondary" onClick={test}>Send test e-mail</button>
         <span className="flex-1" />
-        {msg && <span className="text-sm text-green-700">{msg}</span>}
+        {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
         <button className="btn-primary">Save e-mail server</button>
       </div>
       <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />

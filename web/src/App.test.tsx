@@ -91,7 +91,7 @@ function signedIn(extra: Record<string, (req: Request) => Response | Promise<Res
     'GET /api/v1/auth/me': json({ id: '1', email: 'admin' }),
     'GET /api/v1/version': json({ version: '1.4.0', build: '9' }),
     'GET /api/v1/settings/business': json(business),
-    'GET /api/v1/settings/email': json({ enabled: false, host: 'smtp.gmail.com', port: 587, username: '', passwordSet: false, from: '', tls: 'starttls', version: 0 }),
+    'GET /api/v1/settings/email': json({ enabled: false, host: 'smtp.gmail.com', port: 587, username: '', passwordSet: false, from: '', tls: 'starttls', warnings: [], version: 0 }),
     'GET /api/v1/currencies': json({ items: [{ code: 'ZAR', name: 'South African Rand', symbol: 'R', minorUnits: 2, active: true }] }),
     'GET /api/v1/bank-accounts': json({ items: [] }),
     ...extra,
@@ -199,4 +199,32 @@ test('the customer form reports a failed business settings load and an empty bus
   expect(await screen.findByText('None set yet.')).toBeInTheDocument()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   window.history.pushState({}, '', '/')
+})
+
+test('E-mail server shows the server\'s Send-as warnings and adds them to the test result', async () => {
+  const warning = 'Gmail sends as albievan@gmail.com unless accounts@primesoft.example is a verified "Send mail as" address of that account (Gmail → Settings → Accounts → Send mail as).'
+  signedIn({
+    'GET /api/v1/settings/email': json({ enabled: true, host: 'smtp.gmail.com', port: 587, username: 'albievan@gmail.com', passwordSet: true, from: 'accounts@primesoft.example', tls: 'starttls', warnings: [warning], version: 2 }),
+    'POST /api/v1/settings/email/test': json({ warnings: [warning] }),
+  })
+  window.history.pushState({}, '', '/settings/email')
+  render(<App />)
+  const list = await screen.findByRole('list', { name: 'Send-as warnings' })
+  expect(within(list).getByRole('listitem')).toHaveTextContent(warning)
+  expect(screen.getByText('For the saved settings:')).toBeInTheDocument()
+  expect(screen.getByText(/The provider decides the sender it shows; see the setup guide\./)).toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('button', { name: 'Send test e-mail' }))
+  expect(await screen.findByText(`Test e-mail sent — but: ${warning}`)).toBeInTheDocument()
+})
+
+test('E-mail server without warnings shows no note and a plain test result', async () => {
+  signedIn({ 'POST /api/v1/settings/email/test': json({ warnings: [] }) })
+  window.history.pushState({}, '', '/settings/email')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'E-mail server' })).toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: 'Send-as warnings' })).not.toBeInTheDocument()
+  await userEvent.type(screen.getByLabelText('Send a test e-mail to'), 'me@example.com')
+  await userEvent.click(screen.getByRole('button', { name: 'Send test e-mail' }))
+  expect(await screen.findByText('Test e-mail sent — check the inbox.')).toBeInTheDocument()
 })

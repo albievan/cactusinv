@@ -296,7 +296,10 @@ classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in 
   customer and their PDF is rendered at send time.
 - **SMTP**: a single `smtp_settings` row (Gmail preset until saved); the password is AES-256-GCM
   ciphertext keyed by the `app_key` secret. `smtp.Dynamic` reads the settings on every send
-  and falls back to the deployment server from `.env`.
+  and falls back to the deployment server from `.env`. The Send-as address is both
+  `MAIL FROM` and the `From` header; `domain.EmailSenderWarnings` tells the page and the
+  test result when Gmail (rewrites to the account) or Microsoft 365 (may refuse) will not
+  send as it (M15) — a warning, never a refusal.
 - **Disclaimer**: never copied onto invoices; `domain.Disclaimer(customer, business)` is
   resolved for each PDF render — the customer's own, else the business disclaimer — on every
   path that makes a PDF (download, invoice and statement e-mails, the archive export,

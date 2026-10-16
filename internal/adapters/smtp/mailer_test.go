@@ -21,6 +21,7 @@ type fakeServer struct {
 	ln       net.Listener
 	mu       sync.Mutex
 	rcpts    []string
+	mailFrom string
 	data     string
 	features []string
 	reject   string // command prefix to reject with 550
@@ -80,6 +81,9 @@ func (s *fakeServer) handle(conn net.Conn) {
 				w("250" + sep + f)
 			}
 		case strings.HasPrefix(cmd, "MAIL"):
+			s.mu.Lock()
+			s.mailFrom = strings.TrimSpace(line[len("MAIL FROM:"):])
+			s.mu.Unlock()
 			w("250 ok")
 		case strings.HasPrefix(cmd, "RCPT"):
 			s.mu.Lock()
@@ -164,6 +168,37 @@ func TestSendPlainAndParseMIME(t *testing.T) {
 	}
 	if att.FileName() != "Inv_no_CD_1195_26.pdf" {
 		t.Fatalf("filename = %q", att.FileName())
+	}
+}
+
+// TestSendAsAddress: the Send-as address, not the user name, is both the envelope sender
+// and the From header (M15). A provider may still rewrite or refuse it.
+func TestSendAsAddress(t *testing.T) {
+	s := startFake(t)
+	m, err := New(Config{
+		Host: "127.0.0.1", Port: s.port(), From: "Primesoft Accounts <accounts@primesoft.example>", TLS: TLSNone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Send(context.Background(), mailFixture()); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !strings.HasPrefix(s.mailFrom, "<accounts@primesoft.example>") {
+		t.Fatalf("MAIL FROM = %q", s.mailFrom)
+	}
+	msg, err := mail.ReadMessage(strings.NewReader(s.data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, err := msg.Header.AddressList("From")
+	if err != nil || len(from) != 1 || from[0].Address != "accounts@primesoft.example" || from[0].Name != "Primesoft Accounts" {
+		t.Fatalf("From = %v %v", from, err)
+	}
+	if msg.Header.Get("Message-ID") != "<0190-abc@primesoft.example>" {
+		t.Fatalf("Message-ID = %q", msg.Header.Get("Message-ID"))
 	}
 }
 

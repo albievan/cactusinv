@@ -447,15 +447,28 @@ func TestVersionSettingsAndStatements(t *testing.T) {
 	c.login()
 	var es httpapi.EmailSettings
 	c.ok(c.do("GET", "/api/v1/settings/email", nil, &es), 200, "email settings")
-	if es.Host != "smtp.gmail.com" || es.Port != 587 || es.Enabled {
+	if es.Host != "smtp.gmail.com" || es.Port != 587 || es.Enabled || es.Warnings == nil || len(es.Warnings) != 0 {
 		t.Fatalf("Gmail preset: %+v", es)
 	}
 	var p httpapi.Problem
 	es.Enabled, es.Username = true, "me@gmail.com"
 	c.ok(c.do("PUT", "/api/v1/settings/email", es, &p), 422, "password needed (and no cipher in this test)")
-	es.Enabled, es.Username = false, ""
+	es.Enabled, es.Username, es.From = false, "albievan@gmail.com", "Accounts <accounts@primesoft.example>"
+	c.ok(c.do("PUT", "/api/v1/settings/email", es, &es), 200, "save disabled, sending as another address")
+	if len(es.Warnings) != 1 || !strings.Contains(es.Warnings[0], "Send mail as") || !strings.Contains(es.Warnings[0], "accounts@primesoft.example") {
+		t.Fatalf("Gmail Send-as warning: %+v", es.Warnings)
+	}
+	c.ok(c.do("GET", "/api/v1/settings/email", nil, &es), 200, "email settings again")
+	if len(es.Warnings) != 1 {
+		t.Fatalf("warnings on GET: %+v", es.Warnings)
+	}
+	es.Username, es.From = "", ""
 	c.ok(c.do("PUT", "/api/v1/settings/email", es, &es), 200, "save disabled")
-	c.ok(c.do("POST", "/api/v1/settings/email/test", obj{"to": "me@example.com"}, nil), 204, "test e-mail")
+	var tr httpapi.TestEmailResult
+	c.ok(c.do("POST", "/api/v1/settings/email/test", obj{"to": "me@example.com"}, &tr), 200, "test e-mail")
+	if tr.Warnings == nil || len(tr.Warnings) != 0 {
+		t.Fatalf("test e-mail through the deployment's server has no warnings: %+v", tr)
+	}
 	c.ok(c.do("POST", "/api/v1/settings/email/test", obj{"to": "nope"}, &p), 422, "bad recipient")
 
 	ctx := context.Background()

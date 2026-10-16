@@ -1007,10 +1007,16 @@ export interface components {
             from: string;
             /** @enum {string} */
             tls: "starttls" | "tls" | "none";
+            /** @description When the provider is known not to send as the Send-as address as saved (Gmail rewrites From unless it is a verified "Send mail as" alias; Microsoft 365 may refuse without Send As permission). Always present, may be empty. */
+            readonly warnings: string[];
             version: number;
         };
         TestEmailRequest: {
             to: string;
+        };
+        TestEmailResult: {
+            /** @description The warnings of the in-app server that sent the test e-mail; empty when the deployment's default server sent it. */
+            warnings: string[];
         };
         StatementLine: {
             invoiceId: string;
@@ -1898,7 +1904,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Sent. */
+            /** @description Sent. The warnings say when the provider is known not to send as the Send-as address. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestEmailResult"];
+                };
+            };
+            /** @description Sent (servers before v1.6.1 answer without a body). */
             204: {
                 headers: {
                     [name: string]: unknown;

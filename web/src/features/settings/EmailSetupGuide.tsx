@@ -28,7 +28,8 @@ const steps: Record<GuideProvider, ReactNode[]> = {
     </>,
     <>
       Send as: your Gmail address. To send as another address (for example billing@yourdomain), first add it in Gmail
-      under <Path>Settings → Accounts → Send mail as</Path>; otherwise Gmail replaces it with your Gmail address.
+      under <Path>Settings → Accounts → Send mail as</Path> and verify it; otherwise Gmail sends as your Gmail address
+      and the page warns you.
     </>,
     <>
       Tick <Path>Use this server for all e-mail</Path>, press <Path>Save e-mail server</Path>, then{' '}
@@ -47,8 +48,8 @@ const steps: Record<GuideProvider, ReactNode[]> = {
     </>,
     <>User name: the full e-mail address of the mailbox. Password: its password (or an app password, if your organisation uses them).</>,
     <>
-      Send as: the mailbox address, or an address the mailbox has been given &ldquo;Send as&rdquo; permission for by an
-      administrator.
+      Send as: the mailbox address, or an address the mailbox has been given &ldquo;Send As&rdquo; permission for by an
+      administrator; otherwise Microsoft 365 may refuse to send and the page warns you.
     </>,
     <>
       Tick <Path>Use this server for all e-mail</Path>, press <Path>Save e-mail server</Path>, then{' '}
@@ -88,6 +89,11 @@ const trouble: ReactNode[] = [
   <>
     <Path>The test times out:</Path> the network may block outgoing mail ports &mdash; try the other port (587 or 465)
     with its matching security, or ask whoever runs the network.
+  </>,
+  <>
+    <Path>The test e-mail comes from your Gmail address:</Path> Gmail sends as the signed-in account unless the Send as
+    address is added under <Path>Settings → Accounts → Send mail as</Path> and verified. The provider decides the
+    sender it shows.
   </>,
   <>
     <Path>The test e-mail does not arrive:</Path> look in the spam folder, and check the Send as address is one the

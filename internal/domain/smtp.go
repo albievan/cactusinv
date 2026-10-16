@@ -57,3 +57,34 @@ func (s *SMTPSettings) Validate() error {
 	}
 	return nil
 }
+
+// EmailSenderWarnings says when the provider is known not to send as the Send-as address
+// as configured: Gmail rewrites From to the signed-in account unless the address is a
+// verified "Send mail as" alias, and Microsoft 365 may refuse unless it is the mailbox's own
+// address or the mailbox has Send As permission. The alias list lives at the provider, so
+// this warns and never refuses; it can warn needlessly (a Microsoft sign-in name that is not
+// the primary address, a dotted or googlemail.com spelling of a Gmail address).
+// smtp-relay.gmail.com is not covered: the Workspace relay may send for the domain. The
+// result is never nil.
+func EmailSenderWarnings(s SMTPSettings) []string {
+	warnings := []string{}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s.Host)), ".")
+	user := strings.TrimSpace(s.Username)
+	from := strings.TrimSpace(s.From)
+	if user == "" || from == "" {
+		return warnings // no account to compare with, or Send as defaults to the user name
+	}
+	a, err := mail.ParseAddress(from)
+	if err != nil || strings.EqualFold(a.Address, user) {
+		return warnings
+	}
+	switch host {
+	case "smtp.gmail.com", "smtp.googlemail.com":
+		warnings = append(warnings, "Gmail sends as "+user+" unless "+a.Address+
+			" is a verified \"Send mail as\" address of that account (Gmail → Settings → Accounts → Send mail as).")
+	case "smtp.office365.com", "smtp-mail.outlook.com":
+		warnings = append(warnings, "Microsoft 365 may refuse to send as "+a.Address+
+			" unless it is the mailbox's own address or "+user+" has Send As permission for it.")
+	}
+	return warnings
+}

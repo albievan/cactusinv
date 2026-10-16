@@ -31,7 +31,11 @@ Released into the public domain — see [LICENSE](LICENSE).
   e-mail them on a schedule.
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
-  Outlook / Microsoft 365 and other servers; the password is stored encrypted.
+  Outlook / Microsoft 365 and other servers; the password is stored encrypted. cactusInv
+  sends From the **Send as** address, but the provider decides the sender it shows: Gmail
+  sends as the signed-in account unless Send as is a verified alias (Gmail → Settings →
+  Accounts → Send mail as), and Microsoft 365 may refuse unless it is the mailbox's own
+  address or the mailbox has Send As permission for it. The page and the test result warn when that applies.
 - **Disclaimer** — printed on every PDF and read fresh each time a PDF is produced; a
   customer without its own disclaimer gets the business disclaimer, and the customer form
   says which one its PDFs use.

@@ -13,6 +13,9 @@ import (
 type SMTPView struct {
 	Settings    domain.SMTPSettings
 	PasswordSet bool
+	// Warnings are domain.EmailSenderWarnings for the saved settings, enabled or not (the
+	// server may be enabled later); never nil.
+	Warnings []string
 }
 
 // GetSMTPSettings returns the configured mail server, or the Gmail preset (disabled)
@@ -20,12 +23,13 @@ type SMTPView struct {
 func (s *Service) GetSMTPSettings(ctx context.Context) (SMTPView, error) {
 	st, enc, err := s.tx.Repos().SMTP.Get(ctx)
 	if errors.Is(err, domain.ErrNotFound) {
-		return SMTPView{Settings: domain.GmailSMTP()}, nil
+		preset := domain.GmailSMTP()
+		return SMTPView{Settings: preset, Warnings: domain.EmailSenderWarnings(preset)}, nil
 	}
 	if err != nil {
 		return SMTPView{}, wrap("app.GetSMTPSettings", err)
 	}
-	return SMTPView{Settings: st, PasswordSet: len(enc) > 0}, nil
+	return SMTPView{Settings: st, PasswordSet: len(enc) > 0, Warnings: domain.EmailSenderWarnings(st)}, nil
 }
 
 // UpdateSMTPSettings saves the mail server. password nil keeps the stored one, "" clears
@@ -92,19 +96,34 @@ func (s *Service) SMTPServer(ctx context.Context) (domain.SMTPSettings, string, 
 }
 
 // SendTestEmail sends a test message straight away (not through the outbox) so the user
-// sees immediately whether the mail server works.
-func (s *Service) SendTestEmail(ctx context.Context, to string) error {
+// sees immediately whether the mail server works. It returns the sender warnings
+// (domain.EmailSenderWarnings) of the server that sent it: the in-app server's when it is
+// enabled, none when the deployment's default server sent it; never nil. GetSMTPSettings,
+// by contrast, warns for the saved settings even while they are disabled.
+func (s *Service) SendTestEmail(ctx context.Context, to string) ([]string, error) {
 	to = strings.TrimSpace(to)
 	if _, err := domain.ParseEmailList("to", to); err != nil || to == "" || strings.ContainsAny(to, ",;") {
-		return wrap("app.SendTestEmail", &domain.ValidationError{Field: "to", Reason: "must be one e-mail address"})
+		return nil, wrap("app.SendTestEmail", &domain.ValidationError{Field: "to", Reason: "must be one e-mail address"})
 	}
-	b, err := business(ctx, s.tx.Repos())
+	r := s.tx.Repos()
+	warnings := []string{}
+	st, _, err := r.SMTP.Get(ctx)
+	switch {
+	case err == nil && st.Enabled:
+		warnings = domain.EmailSenderWarnings(st)
+	case err != nil && !errors.Is(err, domain.ErrNotFound):
+		return nil, wrap("app.SendTestEmail", err)
+	}
+	b, err := business(ctx, r)
 	if err != nil {
-		return wrap("app.SendTestEmail", err)
+		return nil, wrap("app.SendTestEmail", err)
 	}
 	_ = s.auditNow(ctx, "settings.test_email_sent", "settings", "email", "to "+to)
-	return wrap("app.SendTestEmail", s.mailer.Send(ctx, ports.Mail{
+	if err := s.mailer.Send(ctx, ports.Mail{
 		MessageID: s.ids.NewID(), To: []string{to}, Subject: "cactusInv test e-mail",
 		Body: "This is a test e-mail from " + b.Name + ". Your mail server settings work.",
-	}))
+	}); err != nil {
+		return nil, wrap("app.SendTestEmail", err)
+	}
+	return warnings, nil
 }

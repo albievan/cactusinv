@@ -288,6 +288,24 @@ one backup operation at a time); losing `backup_key` or a passphrase makes a bac
 unrecoverable; re-sealed audit entries get new hashes (markers record the original head);
 legacy plaintext dumps stay until retention prunes them.
 
+### M15 — Warn when the provider will not send as the Send-as address (Albie, 2026-10-16) — v1.6.1
+
+> Send as = accounts@primesoft.co.za, host smtp.gmail.com, user name albievan@gmail.com:
+> the test e-mail arrives From albievan@gmail.com, mailed-by gmail.com.
+
+cactusInv already puts the Send-as address in the `From` header and in `MAIL FROM`; Gmail
+rewrites `From` to the signed-in account unless the address is a verified "Send mail as"
+alias, and Microsoft 365 refuses (`SendAsDenied`) unless the mailbox has Send As
+permission. The app cannot see the provider's alias list, so it warns instead.
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 15.1 | Domain `EmailSenderWarnings(SMTPSettings) []string`: Gmail (`smtp.gmail.com`, `smtp.googlemail.com`; not `smtp-relay.gmail.com`) or Microsoft (`smtp.office365.com`, `smtp-mail.outlook.com`) with a Send-as address (net/mail; empty = user name) other than the user name (case-insensitive) → one warning; never nil. Adapter test: the composed message's `From` header and `MAIL FROM` are the Send-as address | done | table tests; smtp adapter test | `internal/domain/smtp.go`, `internal/domain/smtp_test.go`, `internal/adapters/smtp/mailer_test.go` |
+| 15.2 | Contract: `EmailSettings.warnings` (readOnly, required, may be empty); `POST /settings/email/test` gains a `200` `TestEmailResult{warnings}` (the `204` stays documented); `make gen` | done | `make contracts` in sync | `api/openapi/cactusinv.yaml`, `internal/adapters/http/api.gen.go`, `web/src/lib/api/schema.d.ts` |
+| 15.3 | App `SendTestEmail` returns the warnings of the in-app server it used (none when the deployment's server was used); handlers fill `warnings` from `domain.EmailSenderWarnings` | done | app table test; httptest | `internal/app/smtp.go`, `internal/app/app_test.go`, `internal/adapters/http/handlers_more.go`, `internal/adapters/http/server_test.go` |
+| 15.4 | Web: amber note with the server's warnings under Send as; "Test e-mail sent — but: …"; the Gmail and Microsoft guide steps say the same | done | Vitest; `pnpm -C web check` | `web/src/features/settings/Settings.tsx`, `web/src/features/settings/EmailSetupGuide.tsx`, tests |
+| 15.5 | Send-as hint "The provider decides the sender it shows; see the setup guide."; VERSION 1.6.1; README e-mail section | done | `make fmt-check lint vet cover vuln contracts web-check` green — done 2026-10-16 on macOS: domain 97.9 %, app 85.6 %, contracts in sync, 41 web tests; integration tests not run (no MariaDB adapter change); not committed, not deployed | `web/src/features/settings/Settings.tsx`, `VERSION`, `README.md` |
+
 ---
 
 ## Decisions
@@ -374,6 +392,11 @@ legacy plaintext dumps stay until retention prunes them.
 | 2026-10-16 | A new password must differ from the current one; passwords are 12–200 characters (`domain.ValidatePassword`) (14.1/14.3) | a temporary password must not survive the forced change |
 | 2026-10-16 | `UserRepository.UpdatePassword(id, hash, mustChange)` sets the flag in the same statement (no separate `SetMustChange`) (14.2) | one statement, no window with a new password and the old flag |
 | 2026-10-16 | `Login` verifies the password before the disabled flag; session, `last_login_at` and `auth.login` are written in one transaction; the failure reason is only in `auth.login_failed` (14.3) | a disabled account answers exactly like a wrong password, in the same time |
+| 2026-10-16 | The e-mail server page warns, it does not refuse, when Gmail or Microsoft 365 will not send as the Send-as address (`domain.EmailSenderWarnings`, M15) | the alias list lives at the provider and cannot be read over SMTP; a verified alias is legitimate, so refusing would block a working setup |
+| 2026-10-16 | Only `smtp.gmail.com` / `smtp.googlemail.com` and `smtp.office365.com` / `smtp-mail.outlook.com` are recognised; `smtp-relay.gmail.com` is not (M15) | the Workspace relay may send for the organisation's domains without a per-user alias |
+| 2026-10-16 | `POST /settings/email/test` answers `200 {warnings}`; the `204` stays in the contract (M15) | additive for clients that expect no body; the warnings are those of the in-app server that sent, none when the deployment's server sent |
+| 2026-10-16 | Warnings are computed in the use case (`app.SMTPView.Warnings`); the settings view warns for the saved settings even while they are disabled, the test result only for the server that actually sent (the in-app one when enabled, else none) (M15, review) | Albie may enable the server later and should see the problem first; a test through the deployment's server says nothing about the in-app one |
+| 2026-10-16 | Wording says what the provider does without overclaiming: Gmail "sends as <user> unless <from> is a verified Send mail as address of that account"; Microsoft "may refuse … unless it is the mailbox's own address or <user> has Send As permission"; the page labels the note "For the saved settings:" (M15, review) | known false positives: a Microsoft sign-in name (UPN) that differs from the mailbox's primary address or aliases, and a dotted or googlemail.com spelling of the same Gmail account — a warning, not a refusal, so these cost a needless note only |
 
 ## Later
 

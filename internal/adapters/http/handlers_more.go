@@ -23,6 +23,7 @@ func toAPIEmailSettings(v app.SMTPView) EmailSettings {
 	return EmailSettings{
 		Enabled: s.Enabled, Host: s.Host, Port: s.Port, Username: s.Username, From: s.From,
 		Tls: EmailSettingsTls(s.TLS), PasswordSet: v.PasswordSet, Version: s.Version,
+		Warnings: v.Warnings,
 	}
 }
 
@@ -47,14 +48,15 @@ func (h *handlers) UpdateEmailSettings(ctx context.Context, req UpdateEmailSetti
 }
 
 func (h *handlers) SendTestEmail(ctx context.Context, req SendTestEmailRequestObject) (SendTestEmailResponseObject, error) {
-	if err := h.svc.SendTestEmail(ctx, req.Body.To); err != nil {
+	warnings, err := h.svc.SendTestEmail(ctx, req.Body.To)
+	if err != nil {
 		if strings.Contains(err.Error(), "validation") || isDomain(err) {
 			return nil, err
 		}
 		// Surface the mail server's answer (e.g. Gmail rejecting the password) to the user.
 		return nil, &domain.ValidationError{Field: "smtp", Reason: "the mail server refused: " + rootCause(err)}
 	}
-	return SendTestEmail204Response{}, nil
+	return SendTestEmail200JSONResponse{Warnings: warnings}, nil
 }
 
 func isDomain(err error) bool { return problemFor(err).Status < 500 }
