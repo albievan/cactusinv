@@ -95,7 +95,7 @@ func TestAddUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t)
 			ctx, admin, _ := h.users()
-			u, err := h.svc.AddUser(ctx, tt.login, tt.pw, tt.current)
+			u, err := h.svc.AddUser(ctx, tt.login, tt.pw, tt.current, nil)
 			if !errors.Is(err, tt.want) || (tt.want == nil && err != nil) || fieldOf(err) != tt.field {
 				t.Fatalf("AddUser = %v (field %q), want %v (%q)", err, fieldOf(err), tt.want, tt.field)
 			}
@@ -134,7 +134,7 @@ func TestAddUserByADisabledActor(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := app.WithActor(h.ctx, app.Actor{ID: admin.ID, Name: admin.Email})
-	if _, err := h.svc.AddUser(ctx, "new@example.com", "a new user password", adminPW); !errors.Is(err, domain.ErrUnauthenticated) {
+	if _, err := h.svc.AddUser(ctx, "new@example.com", "a new user password", adminPW, nil); !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatalf("disabled actor: %v", err)
 	}
 }
@@ -362,7 +362,9 @@ func TestAuthenticateRefusesADisabledUsersSession(t *testing.T) {
 
 func TestSessionAllows(t *testing.T) {
 	must := domain.User{ID: "u", MustChangePassword: true}
-	free := domain.User{ID: "u"}
+	free := domain.User{ID: "u", Access: domain.AccessFor([]domain.Group{{ID: domain.AdministratorsGroupID, Builtin: true}})}
+	clerk := domain.User{ID: "c", Access: domain.AccessFor([]domain.Group{{ID: "g", Permissions: []domain.Permission{domain.PermInvoicesSend, domain.PermStatementsView}}})}
+	nobody := domain.User{ID: "n"}
 	tests := []struct {
 		user domain.User
 		op   string
@@ -383,6 +385,21 @@ func TestSessionAllows(t *testing.T) {
 		{must, "", domain.ErrPasswordChangeRequired},
 		{free, "listInvoices", nil},
 		{free, "applyRestore", nil},
+		{free, "createGroup", nil},
+		{free, "noSuchOperation", domain.ErrNoAccess},
+		{clerk, "sendInvoice", nil},
+		{clerk, "listInvoices", nil},  // implied by invoices.send
+		{clerk, "listCustomers", nil}, // implied by statements.view
+		{clerk, "listEmails", nil},    // a statement page lists its e-mails
+		{clerk, "markInvoicePaid", domain.ErrNoAccess},
+		{clerk, "updateBusiness", domain.ErrNoAccess},
+		{clerk, "listUsers", domain.ErrNoAccess},
+		{clerk, "applyRestore", domain.ErrNoAccess},
+		{clerk, "getBusiness", nil},
+		{nobody, "me", nil},
+		{nobody, "listCurrencies", nil},
+		{nobody, "getDashboard", domain.ErrNoAccess},
+		{nobody, "listInvoices", domain.ErrNoAccess},
 	}
 	for _, tt := range tests {
 		if err := app.SessionAllows(tt.user, tt.op); !errors.Is(err, tt.want) || (tt.want == nil && err != nil) {
@@ -465,7 +482,7 @@ func TestUserUseCasesPropagateRepositoryErrors(t *testing.T) {
 	calls := []func(h *harness, ctx context.Context, other domain.User) error{
 		func(h *harness, _ context.Context, _ domain.User) error { _, err := h.svc.ListUsers(h.ctx); return err },
 		func(h *harness, ctx context.Context, _ domain.User) error {
-			_, err := h.svc.AddUser(ctx, "new@example.com", "a new user password", adminPW)
+			_, err := h.svc.AddUser(ctx, "new@example.com", "a new user password", adminPW, nil)
 			return err
 		},
 		func(h *harness, ctx context.Context, o domain.User) error {
@@ -587,7 +604,7 @@ func TestActorDisabledDuringAChange(t *testing.T) {
 	must(h.svc.DisableUser(ctx, other.ID, adminPW)) // for the enable case
 	calls := map[string]func(svc *app.Service) error{
 		"add": func(svc *app.Service) error {
-			_, err := svc.AddUser(ctx, "new@example.com", "a new user password", adminPW)
+			_, err := svc.AddUser(ctx, "new@example.com", "a new user password", adminPW, nil)
 			return err
 		},
 		"reset": func(svc *app.Service) error {

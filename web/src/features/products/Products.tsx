@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Product } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
@@ -10,7 +11,7 @@ export function ProductList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Products" actions={<Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link>}>
+    <Page title="Products" actions={<Can need="products.edit"><Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search name or SKU" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No products yet.</Empty> : (
@@ -122,11 +123,13 @@ export function ProductEditor() {
             <button type="button" className="btn-secondary" onClick={() => set({ prices: [...p.prices, { currency: '', unitPrice: '' }] })}>+ Add another currency</button>
           )}
         </div>
-        <StickyActions>
-          {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
-          <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-          <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-        </StickyActions>
+        <Can need="products.edit">
+          <StickyActions>
+            {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
+            <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
+            <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          </StickyActions>
+        </Can>
       </form>
     </Page>
   )

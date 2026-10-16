@@ -29,7 +29,7 @@ const preview = {
 
 function routes(extra: Record<string, (req: Request) => Response | Promise<Response>> = {}, paused = false) {
   mockFetch({
-    'GET /api/v1/auth/me': json({ id: '1', email: 'admin@example.com', automationPaused: paused }),
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'admin@example.com', automationPaused: paused }),
     'GET /api/v1/version': json({ version: '1.5.0', build: '10' }),
     'GET /api/v1/backups': json(overview),
     'GET /api/v1/restores/current': json({ type: 'x', title: 'Not found', status: 404 }, 404),
@@ -61,7 +61,7 @@ test('shows the schedule and stored backups, and backs up now', async () => {
 
 test('without the server key it says so and only offers downloads', async () => {
   mockFetch({
-    'GET /api/v1/auth/me': json({ id: '1', email: 'a', automationPaused: false }),
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'a', automationPaused: false }),
     'GET /api/v1/version': json({ version: '1.5.0', build: '10' }),
     'GET /api/v1/backups': json({ ...overview, keyConfigured: false, files: [], lastRun: undefined, nextRun: undefined }),
   })
@@ -113,7 +113,7 @@ test('restores a stored backup: preview with warnings, then password and RESTORE
   let signedOut = false
   routes({
     'GET /api/v1/auth/me': () =>
-      signedOut ? json({ type: 'u', title: 'Sign in required', status: 401 }, 401)() : json({ id: '1', email: 'admin@example.com', automationPaused: false })(),
+      signedOut ? json({ type: 'u', title: 'Sign in required', status: 401 }, 401)() : json({ administrator: true, permissions: [], id: '1', email: 'admin@example.com', automationPaused: false })(),
     'POST /api/v1/restores': json(preview),
     'POST /api/v1/restores/r1/apply': async (req) => {
       applied = await req.json()
@@ -188,7 +188,7 @@ test('a file larger than the limit is refused before it is sent', async () => {
 test('the paused banner shows on every page after a restore and resumes sending', async () => {
   let paused = true
   mockFetch({
-    'GET /api/v1/auth/me': () => json({ id: '1', email: 'a', automationPaused: paused })(),
+    'GET /api/v1/auth/me': () => json({ administrator: true, permissions: [], id: '1', email: 'a', automationPaused: paused })(),
     'GET /api/v1/version': json({ version: '1.5.0', build: '10' }),
     'GET /api/v1/backups': json(overview),
     'POST /api/v1/automation/resume': () => {
@@ -233,7 +233,7 @@ test('a download that breaks off is reported as failed', async () => {
 
 test('a failed scheduled backup shows its reason in words', async () => {
   mockFetch({
-    'GET /api/v1/auth/me': json({ id: '1', email: 'a', automationPaused: false }),
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'a', automationPaused: false }),
     'GET /api/v1/version': json({ version: '1.5.0', build: '10' }),
     'GET /api/v1/backups': json({ ...overview, lastRun: { ...overview.lastRun, result: 'failed', error: 'disk' } }),
     'GET /api/v1/restores/current': json({ type: 'x', title: 'Not found', status: 404 }, 404),

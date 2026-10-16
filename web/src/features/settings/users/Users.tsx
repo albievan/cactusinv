@@ -1,57 +1,79 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { api, ApiError, unwrap, type Schemas } from '../../../lib/api/client'
+import { useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { api, unwrap } from '../../../lib/api/client'
 import { formatDateTime } from '../../../lib/format'
 import { useAsync } from '../../../lib/useAsync'
 import { Empty, ErrorBanner, Field, Sheet, Spinner } from '../../../components/ui'
 import { useAuth } from '../../../components/auth'
+import { IconBan, IconHistory, IconPlay, IconUsers } from '../../../components/icons'
 import { ChangePassword, SettingsPage } from '../Settings'
+import { GroupChoice, GroupsAdmin, UserGroupsSheet } from './Groups'
+import { MIN_PASSWORD, useSubmit, UserForm, YourPassword, type Group, type User } from './shared'
 
-type User = Schemas['User']
+export { friendly } from './shared'
 
-const MIN_PASSWORD = 12
-
-/** UsersSettingsPage is /settings/users: who can sign in (ADR-011), and your own password. */
+/**
+ * UsersSettingsPage is /settings/users: who can sign in (ADR-011) and, on the Groups tab,
+ * what each group may do (ADR-012).
+ */
 export function UsersSettingsPage() {
+  const { user: me } = useAuth()
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') === 'groups' ? 'groups' : 'users'
+  const users = useAsync(() => unwrap(api.GET('/users')), [])
+  const groups = useAsync(() => unwrap(api.GET('/groups')), [])
+  const [msg, setMsg] = useState('')
+  const changed = (text: string) => {
+    setMsg(text)
+    users.reload()
+    groups.reload()
+  }
+  const tabClass = (on: boolean) => `inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold ${on ? 'bg-brand-600 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300'}`
+  const show = (t: 'users' | 'groups') => {
+    setMsg('')
+    setParams(t === 'groups' ? { tab: 'groups' } : {}, { replace: true })
+  }
   return (
     <SettingsPage>
-      <UsersAdmin />
-      <ChangePassword />
+      <div role="tablist" aria-label="Users and groups" className="mb-4 flex gap-2">
+        <button role="tab" aria-selected={tab === 'users'} className={tabClass(tab === 'users')} onClick={() => show('users')}>
+          Users
+        </button>
+        <button role="tab" aria-selected={tab === 'groups'} className={tabClass(tab === 'groups')} onClick={() => show('groups')}>
+          Groups
+        </button>
+      </div>
+      <ErrorBanner error={users.error ?? groups.error} />
+      {msg && (
+        <p role="status" className="mb-3 text-sm font-medium text-green-700">
+          {msg}
+        </p>
+      )}
+      {(users.loading && !users.data) || (groups.loading && !groups.data) ? (
+        <Spinner />
+      ) : tab === 'users' ? (
+        <>
+          <UsersAdmin users={users.data?.items ?? []} groups={groups.data?.items ?? []} meId={me?.id} onChanged={changed} />
+          <ChangePassword />
+        </>
+      ) : (
+        <GroupsAdmin groups={groups.data?.items ?? []} catalogue={groups.data?.permissions ?? []} users={users.data?.items ?? []} meId={me?.id} onChanged={changed} />
+      )}
     </SettingsPage>
   )
 }
 
-/** friendly turns a refused request into a sentence for this page. */
-export function friendly(e: unknown): Error {
-  if (e instanceof ApiError) {
-    const p = e.problem
-    if (p.field === 'currentPassword') return new Error('Your password is not correct.')
-    if (p.field === 'email') return new Error('Enter one valid e-mail address; it is the new user’s login.')
-    if (p.field === 'password') return new Error(`The password needs ${MIN_PASSWORD} to 200 characters.`)
-    if (p.type.endsWith('/conflict')) return new Error('A user with this login already exists.')
-    if (p.detail) return new Error(`${p.title}. ${p.detail}`)
-    return new Error(p.title)
-  }
-  return e as Error
-}
+type Action = { kind: 'add' } | { kind: 'reset' | 'disable' | 'enable' | 'access'; user: User }
 
-type Action = { kind: 'add' } | { kind: 'reset' | 'disable' | 'enable'; user: User }
-
-function UsersAdmin() {
-  const { user: me } = useAuth()
-  const users = useAsync(() => unwrap(api.GET('/users')), [])
+function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; groups: Group[]; meId?: string; onChanged: (msg: string) => void }) {
   const [action, setAction] = useState<Action | null>(null)
-  const [msg, setMsg] = useState('')
   const done = (text: string) => {
     setAction(null)
-    setMsg(text)
-    users.reload()
+    onChanged(text)
   }
-  const open = (a: Action) => {
-    setMsg('')
-    setAction(a)
-  }
-  const items = users.data?.items ?? []
+  const open = (a: Action) => setAction(a)
   const active = items.filter((u) => u.active).length
+  const me = { id: meId }
   return (
     <section className="space-y-4" aria-labelledby="users-heading">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -63,18 +85,10 @@ function UsersAdmin() {
         </button>
       </div>
       <p className="text-sm text-slate-600">
-        Every user can do everything. Users are disabled, never deleted, so the audit log keeps naming them. Nobody can disable themselves or the last
-        active user.
+        What a user may do comes from their groups (see the Groups tab). Users are disabled, never deleted, so the audit log keeps naming them. Nobody can
+        disable themselves or the last active user.
       </p>
-      <ErrorBanner error={users.error} />
-      {msg && (
-        <p role="status" className="text-sm font-medium text-green-700">
-          {msg}
-        </p>
-      )}
-      {users.loading && !users.data ? (
-        <Spinner />
-      ) : items.length === 0 ? (
+      {items.length === 0 ? (
         <Empty>No users.</Empty>
       ) : (
         <>
@@ -84,6 +98,9 @@ function UsersAdmin() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="min-w-0 break-all font-semibold">{u.email}</span>
                   <Badges user={u} you={u.id === me?.id} />
+                </div>
+                <div className="text-sm">
+                  <GroupChips user={u} groups={groups} />
                 </div>
                 <div className="text-sm text-slate-500">Last sign-in: {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</div>
                 <Actions user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
@@ -97,6 +114,7 @@ function UsersAdmin() {
                 <tr>
                   <th className="px-3 py-2">Login</th>
                   <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Groups</th>
                   <th className="px-3 py-2">Last sign-in</th>
                   <th className="px-3 py-2">Added</th>
                   <th className="px-3 py-2">
@@ -107,16 +125,19 @@ function UsersAdmin() {
               <tbody>
                 {items.map((u) => (
                   <tr key={u.id} className="border-t border-cream-200 align-middle">
-                    <td className="break-all px-3 py-2 font-medium">{u.email}</td>
+                    <td className="min-w-[12rem] break-all px-3 py-2 font-medium">{u.email}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">
                         <Badges user={u} you={u.id === me?.id} />
                       </div>
                     </td>
+                    <td className="px-3 py-2">
+                      <GroupChips user={u} groups={groups} />
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</td>
                     <td className="whitespace-nowrap px-3 py-2">{formatDateTime(u.createdAt)}</td>
                     <td className="px-3 py-2">
-                      <Actions user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
+                      <Actions compact user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
                     </td>
                   </tr>
                 ))}
@@ -125,7 +146,12 @@ function UsersAdmin() {
           </div>
         </>
       )}
-      {action?.kind === 'add' && <AddUserSheet onClose={() => setAction(null)} onDone={(u) => done(`${u.email} was added. Give them the password; they must change it when they first sign in.`)} />}
+      {action?.kind === 'add' && (
+        <AddUserSheet groups={groups} onClose={() => setAction(null)} onDone={(u) => done(`${u.email} was added. Give them the password; they must change it when they first sign in.`)} />
+      )}
+      {action?.kind === 'access' && (
+        <UserGroupsSheet user={action.user} groups={groups} meId={meId} onClose={() => setAction(null)} onDone={() => done(`The access of ${action.user.email} was saved.`)} />
+      )}
       {action?.kind === 'reset' && (
         <ResetSheet user={action.user} onClose={() => setAction(null)} onDone={() => done(`The password of ${action.user.email} was reset; they were signed out and must change it when they next sign in.`)} />
       )}
@@ -155,92 +181,75 @@ function Badges({ user, you }: { user: User; you: boolean }) {
   )
 }
 
-function Actions({ user, you, lastActive, onAction }: { user: User; you: boolean; lastActive: boolean; onAction: (a: Action) => void }) {
-  if (you) return <p className="text-xs text-slate-500 md:text-right">Change your own password below.</p>
+/** GroupChips names the groups a user is in, or says they have no access. */
+function GroupChips({ user, groups }: { user: User; groups: Group[] }) {
+  const names = user.groupIds.map((id) => groups.find((g) => g.id === id)?.name ?? id)
+  if (names.length === 0) return <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">No access</span>
   return (
-    <div className="flex flex-wrap gap-2 md:justify-end">
-      <button className="btn-secondary" onClick={() => onAction({ kind: 'reset', user })} aria-label={`Reset the password of ${user.email}`}>
-        Reset password…
+    <span className="flex flex-wrap gap-1">
+      {names.map((n) => (
+        <span key={n} className="chip bg-cream-100 text-brand-900 ring-1 ring-cream-300">
+          {n}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+function Actions({ user, you, lastActive, onAction, compact }: { user: User; you: boolean; lastActive: boolean; onAction: (a: Action) => void; compact?: boolean }) {
+  // compact: icon buttons with tooltips for the desktop table; phones get labelled buttons.
+  const btn = (label: string, aria: string, icon: ReactNode, onClick: () => void, opts: { danger?: boolean; disabled?: boolean; title?: string } = {}) =>
+    compact ? (
+      <button
+        className={`btn-secondary h-9 w-9 shrink-0 px-0 ${opts.danger ? 'text-red-700' : ''}`}
+        title={opts.title ?? label.replace('…', '')}
+        aria-label={aria}
+        onClick={onClick}
+        disabled={opts.disabled}
+      >
+        {icon}
       </button>
-      {user.active ? (
-        <button
-          className="btn-danger"
-          onClick={() => onAction({ kind: 'disable', user })}
-          disabled={lastActive}
-          title={lastActive ? 'The last active user cannot be disabled' : undefined}
-          aria-label={`Disable ${user.email}`}
-        >
-          Disable…
-        </button>
+    ) : (
+      <button className={opts.danger ? 'btn-danger' : 'btn-secondary'} title={opts.title} aria-label={aria} onClick={onClick} disabled={opts.disabled}>
+        {label}
+      </button>
+    )
+  const access = btn('Access…', `Change the groups of ${user.email}`, <IconUsers width={16} height={16} />, () => onAction({ kind: 'access', user }))
+  return (
+    <div className={`flex items-center gap-2 ${compact ? 'flex-nowrap justify-end' : 'flex-wrap'}`}>
+      {access}
+      {you ? (
+        !compact && <span className="text-xs text-slate-500">Change your own password below.</span>
       ) : (
-        <button className="btn-secondary" onClick={() => onAction({ kind: 'enable', user })} aria-label={`Enable ${user.email}`}>
-          Enable…
-        </button>
+        <>
+          {btn('Reset password…', `Reset the password of ${user.email}`, <IconHistory width={16} height={16} />, () => onAction({ kind: 'reset', user }))}
+          {user.active
+            ? btn('Disable…', `Disable ${user.email}`, <IconBan width={16} height={16} />, () => onAction({ kind: 'disable', user }), {
+                danger: true,
+                disabled: lastActive,
+                title: lastActive ? 'The last active user cannot be disabled' : undefined,
+              })
+            : btn('Enable…', `Enable ${user.email}`, <IconPlay width={16} height={16} />, () => onAction({ kind: 'enable', user }))}
+        </>
       )}
     </div>
   )
 }
 
-/** YourPassword asks for the signed-in user's own password, which every change here needs. */
-function YourPassword({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <Field label="Your password" hint="To confirm it is you.">
-      {(f) => <input id={f} type="password" autoComplete="current-password" className="input" maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} required />}
-    </Field>
-  )
-}
-
-/** UserForm is the shared frame of the sheets: an error, the fields and the buttons. */
-function UserForm({ submit, err, busy, label, danger, onClose, children }: { submit: () => Promise<void>; err: Error | null; busy: boolean; label: string; danger?: boolean; onClose: () => void; children: ReactNode }) {
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    void submit()
-  }
-  return (
-    <form onSubmit={onSubmit} className="space-y-3">
-      <ErrorBanner error={err} />
-      {children}
-      <div className="flex justify-end gap-2">
-        <button type="button" className="btn-secondary" onClick={onClose}>
-          Cancel
-        </button>
-        <button className={danger ? 'btn-danger' : 'btn-primary'} disabled={busy}>
-          {busy ? 'Saving…' : label}
-        </button>
-      </div>
-    </form>
-  )
-}
-
-function useSubmit(run: () => Promise<void>) {
-  const [err, setErr] = useState<Error | null>(null)
-  const [busy, setBusy] = useState(false)
-  const submit = async () => {
-    setErr(null)
-    setBusy(true)
-    try {
-      await run()
-    } catch (e) {
-      setErr(friendly(e))
-      setBusy(false)
-    }
-  }
-  return { err, setErr, busy, submit }
-}
-
-function AddUserSheet({ onClose, onDone }: { onClose: () => void; onDone: (u: User) => void }) {
+function AddUserSheet({ groups, onClose, onDone }: { groups: Group[]; onClose: () => void; onDone: (u: User) => void }) {
   const [email, setEmail] = useState('')
+  const [groupIds, setGroupIds] = useState<string[]>([])
   const [password, setPassword] = useState('')
   const [show, setShow] = useState(false)
   const [current, setCurrent] = useState('')
   const s = useSubmit(async () => {
     if ([...password].length < MIN_PASSWORD) throw new Error(`The first password needs at least ${MIN_PASSWORD} characters.`)
-    onDone(await unwrap(api.POST('/users', { body: { email: email.trim(), password, currentPassword: current } })))
+    onDone(await unwrap(api.POST('/users', { body: { email: email.trim(), password, currentPassword: current, groupIds } })))
   })
   return (
     <Sheet title="Add a user" open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Add user" onClose={onClose}>
-        <p className="text-sm text-slate-600">The new user can do everything you can. They sign in with their e-mail address and must choose their own password the first time.</p>
+        <p className="text-sm text-slate-600">They sign in with their e-mail address and must choose their own password the first time. What they may do comes from their groups.</p>
         <Field label="E-mail address" hint="This is their login.">
           {(f) => <input id={f} type="email" inputMode="email" autoComplete="off" autoCapitalize="none" className="input" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} required />}
         </Field>
@@ -250,6 +259,7 @@ function AddUserSheet({ onClose, onDone }: { onClose: () => void; onDone: (u: Us
         <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the first password
         </label>
+        <GroupChoice groups={groups} value={groupIds} onChange={setGroupIds} />
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>
     </Sheet>

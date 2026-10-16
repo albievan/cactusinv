@@ -1,25 +1,28 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { Can } from '../../components/Access'
 import { Link, NavLink } from 'react-router-dom'
 import { api, unwrap, type BankAccount, type BusinessSettings, type Currency, type Schemas } from '../../lib/api/client'
 import { useVersion } from '../../lib/version'
 import { useAsync } from '../../lib/useAsync'
 import { ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
-import { useAuth } from '../../components/auth'
+import { useAuth, useCan } from '../../components/auth'
 import { IconInfo } from '../../components/icons'
 import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
-import { settingsHref, settingsNav } from './settingsNav'
+import { settingsHref, useSettingsNav } from './settingsNav'
 
 type EmailSettings = Schemas['EmailSettings']
 
 export function More() {
   const { user, logout } = useAuth()
+  const can = useCan()
+  const settingsNav = useSettingsNav().filter((s) => s.path !== 'account')
   const version = useVersion()
   const links = [
-    { to: '/statements', label: 'Statements', hint: "Every customer's balance and aging; e-mail statements in bulk" },
-    { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency' },
-    { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails' },
-    { to: '/audit', label: 'Audit log', hint: 'Who did what, when — permanent and tamper-evident' },
-  ]
+    { to: '/statements', label: 'Statements', hint: "Every customer's balance and aging; e-mail statements in bulk", need: 'statements.view' },
+    { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency', need: 'products.view' },
+    { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails', need: 'emails.view' },
+    { to: '/audit', label: 'Audit log', hint: 'Who did what, when — permanent and tamper-evident', need: 'audit.view' },
+  ].filter((l) => can(l.need))
   return (
     <Page title="More">
       <ul className="space-y-2">
@@ -93,6 +96,7 @@ export function ChangePassword() {
  * (the sidebar, which nests them under Settings, is hidden below md).
  */
 function SettingsSections() {
+  const settingsNav = useSettingsNav()
   return (
     <nav aria-label="Settings sections" className="-mx-3 mb-4 overflow-x-auto px-3 md:hidden">
       <ul className="flex gap-2">
@@ -131,6 +135,19 @@ export function EmailSettingsPage() {
   return <SettingsPage><EmailServer /></SettingsPage>
 }
 
+/** AccountSettingsPage is /settings/account: the signed-in user's own password. */
+export function AccountSettingsPage() {
+  const { user } = useAuth()
+  return (
+    <SettingsPage>
+      <p className="text-sm text-slate-600">
+        Signed in as <strong className="break-all">{user?.email}</strong>.
+      </p>
+      <ChangePassword />
+    </SettingsPage>
+  )
+}
+
 /** CurrencySettingsPage is /settings/currencies. */
 export function CurrencySettingsPage() {
   return <SettingsPage><CurrenciesAndBanks /></SettingsPage>
@@ -145,6 +162,7 @@ const presets: Record<string, { host: string; port: number; tls: 'starttls' | 't
 function EmailServer() {
   const { data, error } = useAsync(() => unwrap(api.GET('/settings/email')), [])
   const { user } = useAuth()
+  const can = useCan()
   const [e, setE] = useState<EmailSettings>()
   const [password, setPassword] = useState('')
   const [testTo, setTestTo] = useState('')
@@ -237,7 +255,7 @@ function EmailServer() {
         <button type="button" className="btn-secondary" onClick={test}>Send test e-mail</button>
         <span className="flex-1" />
         {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
-        <button className="btn-primary">Save e-mail server</button>
+        {can('settings.edit') && <button className="btn-primary">Save e-mail server</button>}
       </div>
       <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />
     </form>
@@ -245,6 +263,7 @@ function EmailServer() {
 }
 
 function BusinessForm() {
+  const can = useCan()
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/settings/business')), [])
   const [b, setB] = useState<BusinessSettings>()
   const [msg, setMsg] = useState('')
@@ -286,7 +305,7 @@ function BusinessForm() {
       </div>
       <div className="flex items-center justify-end gap-3">
         {msg && <span className="text-sm text-green-700">{msg}</span>}
-        <button className="btn-primary">Save business</button>
+        {can('settings.edit') && <button className="btn-primary">Save business</button>}
       </div>
     </form>
   )
@@ -331,7 +350,7 @@ function CurrenciesAndBanks() {
     <section className="card space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Currencies & bank accounts</h2>
-        <button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button>
+        <Can need="settings.edit"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
       </div>
       <p className="text-sm text-slate-500">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
       <ErrorBanner error={err ?? currencies.error ?? banks.error} />
@@ -341,7 +360,7 @@ function CurrenciesAndBanks() {
             <button className="text-left" onClick={() => setEditCur(c)}>
               <span className="font-semibold">{c.code}</span> <span className="text-slate-500">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span>
             </button>
-            <button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button>
+            <Can need="settings.edit"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
           </div>
           <ul className="divide-y divide-slate-100 border-t border-slate-100">
             {banks.data?.filter((b) => b.currency === c.code).map((b) => (
@@ -374,7 +393,7 @@ function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean 
       <Field label="Symbol">{(f) => <input id={f} className="input" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
       <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="input" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /> Active</label>
-      <button className="btn-primary w-full">Save</button>
+      <Can need="settings.edit"><button className="btn-primary w-full">Save</button></Can>
     </form>
   )
 }
@@ -399,8 +418,8 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /> Default for {b.currency}</label>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /> Active</label>
       <div className="flex gap-2">
-        {b.id && <button type="button" className="btn-danger" onClick={() => onDelete(b)}>Delete</button>}
-        <button className="btn-primary flex-1">Save</button>
+        <Can need="settings.edit">{b.id && <button type="button" className="btn-danger" onClick={() => onDelete(b)}>Delete</button>}</Can>
+        <Can need="settings.edit"><button className="btn-primary flex-1">Save</button></Can>
       </div>
     </form>
   )

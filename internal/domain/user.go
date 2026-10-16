@@ -12,7 +12,8 @@ const (
 	MaxPasswordLength = 200
 )
 
-// User is an administrator who can sign in (ADR-011: every user is an administrator).
+// User is someone who can sign in (ADR-011). What they may do comes from their access
+// groups (ADR-012).
 // Email is the login: an e-mail address for every user added in the app; logins made
 // before v1.6.0 (the default "admin") need not be one.
 type User struct {
@@ -28,6 +29,11 @@ type User struct {
 	MustChangePassword bool
 	// LastLoginAt is the last successful sign-in; zero if never.
 	LastLoginAt time.Time
+	// GroupIDs are the access groups the user is in, sorted (ADR-012).
+	GroupIDs []string
+	// Access is what the user may do, computed from their groups when a session is
+	// authenticated; it is not stored.
+	Access Access
 }
 
 // Active reports whether the user may sign in.

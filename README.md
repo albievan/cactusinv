@@ -60,9 +60,10 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
-- **Users** — Settings → Users: add users (every user is an administrator), reset a password,
-  disable and enable; users are never deleted, and nobody can disable themselves or the last
-  active user. A password someone else chose must be changed at the first sign-in.
+- **Users and access groups** — Settings → Users & groups: add users, reset a password,
+  disable and enable; create groups, choose what each group may do (view and edit per area)
+  and who is in it. Only Administrators manage users, groups, backups and restore. Users are
+  never deleted, and a password someone else chose must be changed at the first sign-in.
 - **Mobile first** — designed for a phone, bottom navigation, large touch targets; scales
   up to a desktop layout. Installable as a home-screen app.
 
@@ -149,15 +150,29 @@ All defaults live in [`.env`](.env) (no secrets in it):
 
 ## Users
 
-Settings → Users (on a phone: More → Users) lists everyone who can sign in, with their status
-and last sign-in. There are no roles: every user can do everything.
+Settings → Users & groups (on a phone: More → Users & groups; Administrators only) lists
+everyone who can sign in, with their groups, status and last sign-in. What a user may do
+comes from their **groups** (ADR-012):
+
+- **Groups tab** — create a group, tick what it may do (view and edit per area: Dashboard;
+  Invoices — view, edit, e-mail, mark paid/overdue/void; Customers; Statements — view, send;
+  Schedules; Products; Outbox; Audit log; Settings) and who is in it; change or delete it
+  later. Permissions a ticked one needs (e.g. seeing invoices, to e-mail them) are included
+  and shown greyed. A change applies at once.
+- **Administrators** is built in: it can do everything, including users, groups, backups and
+  restore. Only its members can change, and you cannot remove yourself from it.
+- A user in **no group** can sign in but sees nothing (the Add user form warns). **Access…**
+  on a user's row sets their groups.
+- Every group and membership change asks for your own password and is in the audit log.
+- Upgrading to v1.7.0: only the default administrator (`admin`) stays an administrator;
+  everyone else has no access until you put them in a group.
 
 - **Add user** — the login is the person's e-mail address; you choose a first password and
   give it to them. Existing logins such as `admin` keep working.
 - **Reset password** — gives someone a temporary password and signs them out everywhere.
 - **Disable / Enable** — a disabled user cannot sign in and is signed out at once; nothing they
   did is removed. Users are never deleted. You cannot disable yourself or the last active user.
-- Adding, resetting, disabling and enabling ask for **your own password** again; wrong
+- Adding, resetting, disabling, enabling and every group change ask for **your own password** again; wrong
   attempts are recorded in the audit log and limited to 10 a minute per address (shared with
   sign-in).
 - A password chosen by someone else (a new user, a reset, the default `admin`) must be changed
@@ -166,7 +181,7 @@ and last sign-in. There are no roles: every user can do everything.
 - A failed sign-in always says the same thing; the reason (unknown login, wrong password,
   disabled user) is in the audit log.
 - On the server, `cactusinv admin set-password <login>` (password on stdin) is the way back in
-  if every password is forgotten; `cactusinv admin create <login>` adds a user.
+  if every password is forgotten; `cactusinv admin create <login>` adds an administrator.
 
 ## Backup and restore
 

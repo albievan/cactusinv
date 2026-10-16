@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Can } from '../../components/Access'
 import { Link } from 'react-router-dom'
 import { api, unwrap, type Dashboard as DashboardData } from '../../lib/api/client'
 import { formatDateTime, formatInZone } from '../../lib/format'
@@ -27,7 +28,7 @@ export function Dashboard() {
 
   if (loading && !data) return <Spinner />
   return (
-    <Page title="Dashboard" actions={<Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link>}>
+    <Page title="Dashboard" actions={<Can need="invoices.edit"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
       <ErrorBanner error={error} />
       {data && (
         <div className="space-y-5">

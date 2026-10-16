@@ -10,15 +10,34 @@ import (
 	"github.com/albievan/cactusinv/internal/ports"
 )
 
-// ListUsers returns every user, disabled ones included, ordered by login.
+// ListUsers returns every user, disabled ones included, ordered by login, each with the
+// groups they are in.
 func (s *Service) ListUsers(ctx context.Context) ([]domain.User, error) {
-	us, err := s.tx.Repos().Users.List(ctx)
-	return us, wrap("app.ListUsers", err)
+	r := s.tx.Repos()
+	us, err := r.Users.List(ctx)
+	if err != nil {
+		return nil, wrap("app.ListUsers", err)
+	}
+	gs, err := r.Groups.List(ctx)
+	if err != nil {
+		return nil, wrap("app.ListUsers", err)
+	}
+	for i := range us {
+		us[i].GroupIDs = []string{}
+		for _, g := range gs {
+			if g.HasMember(us[i].ID) {
+				us[i].GroupIDs = append(us[i].GroupIDs, g.ID)
+			}
+		}
+		slices.Sort(us[i].GroupIDs)
+	}
+	return us, nil
 }
 
-// AddUser adds an administrator with a password the actor chose; the new user must change
-// it at the first sign-in. The actor proves who they are with currentPassword (ADR-011).
-func (s *Service) AddUser(ctx context.Context, login, password, currentPassword string) (domain.User, error) {
+// AddUser adds a user with a password the actor chose; the new user must change it at the
+// first sign-in. The actor proves who they are with currentPassword (ADR-011). The user
+// gets the access of groupIDs — none at all when it is empty (ADR-012).
+func (s *Service) AddUser(ctx context.Context, login, password, currentPassword string, groupIDs []string) (domain.User, error) {
 	login, err := domain.ValidateNewLogin(login)
 	if err != nil {
 		return domain.User{}, wrap("app.AddUser", err)
@@ -33,15 +52,26 @@ func (s *Service) AddUser(ctx context.Context, login, password, currentPassword 
 	if err != nil {
 		return domain.User{}, wrap("app.AddUser", err)
 	}
-	u := domain.User{ID: s.ids.NewID(), Email: login, PasswordHash: hash, CreatedAt: s.now(), MustChangePassword: true}
+	groupIDs = slices.Compact(slices.Sorted(slices.Values(groupIDs)))
+	u := domain.User{ID: s.ids.NewID(), Email: login, PasswordHash: hash, CreatedAt: s.now(), MustChangePassword: true, GroupIDs: groupIDs}
 	return u, wrap("app.AddUser", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if err := lockActor(ctx, r); err != nil {
+			return err
+		}
+		if _, err := lockAdministrators(ctx, r, nil); err != nil {
+			return err
+		}
+		names, err := groupNames(ctx, r, groupIDs)
+		if err != nil {
 			return err
 		}
 		if err := r.Users.Create(ctx, u); err != nil {
 			return err
 		}
-		return s.audit(ctx, r, "user.created", "user", u.ID, u.Email+"; must change the password at the first sign-in")
+		if err := r.Groups.SetUserGroups(ctx, u.ID, groupIDs); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "user.created", "user", u.ID, u.Email+"; groups: "+orNone(names)+"; must change the password at the first sign-in")
 	}))
 }
 
@@ -68,6 +98,9 @@ func (s *Service) ResetUserPassword(ctx context.Context, userID, password, curre
 	}
 	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if err := lockActor(ctx, r); err != nil {
+			return err
+		}
+		if _, err := lockAdministrators(ctx, r, nil); err != nil {
 			return err
 		}
 		if err := r.Users.UpdatePassword(ctx, u.ID, hash, true); err != nil {
@@ -115,6 +148,9 @@ func (s *Service) DisableUser(ctx context.Context, userID, currentPassword strin
 		if !slices.Contains(active, actor.ID) { // disabled meanwhile
 			return domain.ErrUnauthenticated
 		}
+		if _, err := lockAdministrators(ctx, r, nil); err != nil {
+			return err
+		}
 		if !u.Active() {
 			return nil
 		}
@@ -142,6 +178,9 @@ func (s *Service) EnableUser(ctx context.Context, userID, currentPassword string
 	}
 	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if err := lockActor(ctx, r); err != nil {
+			return err
+		}
+		if _, err := lockAdministrators(ctx, r, nil); err != nil {
 			return err
 		}
 		if u, err = r.Users.Lock(ctx, userID); err != nil || u.Active() {

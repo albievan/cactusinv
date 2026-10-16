@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useCan } from '../../components/auth'
 import { Link } from 'react-router-dom'
 import { api, unwrap } from '../../lib/api/client'
 import { formatDateTime } from '../../lib/format'
@@ -8,6 +9,7 @@ import { Badge, Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
 const statuses = ['pending', 'failed', 'sent', 'cancelled'] as const
 
 export function Outbox() {
+  const can = useCan()
   const [status, setStatus] = useState<(typeof statuses)[number]>('pending')
   const { data, error, loading, reload } = useAsync(() => unwrap(api.GET('/emails', { params: { query: { status, limit: 100 } } })), [status])
   const [actionError, setActionError] = useState<Error | null>(null)
@@ -44,8 +46,8 @@ export function Outbox() {
               <div className="text-slate-500">{m.status === 'sent' ? `Sent ${formatDateTime(m.sentAt)}` : `Due ${formatDateTime(m.nextAttemptAt)}`}{m.attempts ? ` · ${m.attempts} attempt(s)` : ''}</div>
               {m.lastError && <div className="text-red-600">{m.lastError}</div>}
               <div className="mt-2 flex gap-2">
-                {(m.status === 'pending' || m.status === 'failed') && <button className="btn-secondary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
-                {(m.status === 'failed' || m.status === 'cancelled') && <button className="btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
+                {can('emails.manage') && (m.status === 'pending' || m.status === 'failed') && <button className="btn-secondary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
+                {can('emails.manage') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
               </div>
             </li>
           ))}

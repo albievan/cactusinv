@@ -420,7 +420,9 @@ func TestRestoreRefusesBadBackups(t *testing.T) {
 		{"tampered", func(b *backupHarness) (string, string) {
 			name := b.backupNow()
 			data := b.files.Data(name)
-			data[len(data)/2] ^= 0x01
+			// The fake cipher has no integrity check of its own (age's AEAD does), so break a
+			// row's structure rather than a byte that may land inside a value.
+			data[bytes.Index(data, []byte("\n{\"table\""))+1] ^= 0x01
 			b.files.Put(name, data, b.clock.Now())
 			return name, ""
 		}, domain.ErrBackupInvalid, "backup.restore_refused"},

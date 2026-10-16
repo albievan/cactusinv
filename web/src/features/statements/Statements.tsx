@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Can } from '../../components/Access'
 import { Link, useParams } from 'react-router-dom'
 import { api, unwrap, type Schemas } from '../../lib/api/client'
 import { formatDate, formatDateTime } from '../../lib/format'
@@ -74,9 +75,11 @@ export function Statements() {
     <Page
       title="Statements"
       actions={
-        <button type="button" className="btn-primary" disabled={picked.size === 0} onClick={() => setConfirm(true)}>
-          <IconSend width={16} height={16} /> E-mail {picked.size > 0 ? `${picked.size} statement${picked.size === 1 ? '' : 's'}` : 'statements'}
-        </button>
+        <Can need="statements.send">
+          <button type="button" className="btn-primary" disabled={picked.size === 0} onClick={() => setConfirm(true)}>
+            <IconSend width={16} height={16} /> E-mail {picked.size > 0 ? `${picked.size} statement${picked.size === 1 ? '' : 's'}` : 'statements'}
+          </button>
+        </Can>
       }
     >
       <ErrorBanner error={error} />
@@ -267,7 +270,7 @@ export function StatementView() {
         s && (
           <div className="flex flex-wrap gap-2">
             <a className="btn-secondary" href={pdfHref(customerId)} target="_blank" rel="noreferrer"><IconFilePdf width={16} height={16} /> PDF</a>
-            <button type="button" className="btn-primary" onClick={send} disabled={busy}><IconSend width={16} height={16} /> {busy ? 'Queuing…' : 'E-mail statement'}</button>
+            <Can need="statements.send"><button type="button" className="btn-primary" onClick={send} disabled={busy}><IconSend width={16} height={16} /> {busy ? 'Queuing…' : 'E-mail statement'}</button></Can>
           </div>
         )
       }
@@ -340,7 +343,7 @@ export function StatementView() {
           <section className="card">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">Statements e-mailed</h2>
-              <Link to={`/schedules/new?customer=${customerId}&kind=statement`} className="btn-secondary"><IconCalendar width={16} height={16} /> Schedule monthly statements</Link>
+              <Can need="schedules.edit"><Link to={`/schedules/new?customer=${customerId}&kind=statement`} className="btn-secondary"><IconCalendar width={16} height={16} /> Schedule monthly statements</Link></Can>
             </div>
             {history.data && history.data.items.length === 0 ? (
               <p className="text-sm text-slate-500">No statement has been e-mailed to this customer yet.</p>

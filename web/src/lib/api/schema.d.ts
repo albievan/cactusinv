@@ -958,6 +958,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Replaces the access groups a user is in (no group = no access). Administrators only.
+         *     You cannot remove yourself from Administrators (403 `forbidden`). Needs your current
+         *     password; shares the sign-in rate limit; exempt from Idempotency-Key. Audited.
+         */
+        put: operations["setUserGroups"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Every access group with its permissions and members, and the catalogue of permissions a group can be given. Administrators only. */
+        get: operations["listGroups"];
+        put?: never;
+        /**
+         * @description Adds an access group. Administrators only. Needs your current password; shares the
+         *     sign-in rate limit; exempt from Idempotency-Key. A name in use is 409. Audited.
+         */
+        post: operations["createGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Replaces a group's name, description, permissions and members. For the built-in
+         *     Administrators group only `memberIds` is used (it always has every permission), and
+         *     you cannot remove yourself from it (403 `forbidden`). Needs your current password;
+         *     shares the sign-in rate limit; exempt from Idempotency-Key. Audited.
+         */
+        put: operations["updateGroup"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Deletes a group; its members lose the access it gave them. The Administrators group
+         *     cannot be deleted (403 `forbidden`). Needs your current password; shares the sign-in
+         *     rate limit; exempt from Idempotency-Key. Audited.
+         */
+        post: operations["deleteGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/enable": {
         parameters: {
             query?: never;
@@ -1092,6 +1183,10 @@ export interface components {
             over90: components["schemas"]["Decimal"];
         };
         Me: {
+            /** @description A member of Administrators — every permission, plus users, groups, backups and restore. */
+            administrator: boolean;
+            /** @description What the user may do (their groups' permissions with the ones they imply); every one for an administrator. */
+            permissions: string[];
             id: string;
             email: string;
             /** @description The password was chosen by someone else (or is the default); until it is changed with POST /auth/password, nothing else is allowed. */
@@ -1103,6 +1198,8 @@ export interface components {
             id: string;
             /** @description The login. An e-mail address for every user added in the app. */
             email: string;
+            /** @description The access groups the user is in. None means no access. */
+            groupIds: string[];
             /** Format: date-time */
             createdAt: string;
             /** @description False once disabled; a disabled user cannot sign in. */
@@ -1120,6 +1217,8 @@ export interface components {
         NewUserRequest: {
             /** @description One e-mail address; it is the new user's login. */
             email: string;
+            /** @description The access groups to put the user in. None means no access until they are put in a group. */
+            groupIds?: string[];
             /** @description A first password; the user must change it at the first sign-in. */
             password: string;
             /** @description Your own password. */
@@ -1128,6 +1227,47 @@ export interface components {
         ResetPasswordRequest: {
             /** @description A temporary password; the user must change it at the next sign-in. */
             password: string;
+            /** @description Your own password. */
+            currentPassword: string;
+        };
+        PermissionInfo: {
+            /** @example invoices.send */
+            key: string;
+            /** @example Invoices */
+            area: string;
+            label: string;
+            /** @description Permissions granted with this one (it needs them to be usable). */
+            implies: string[];
+        };
+        Group: {
+            id: string;
+            name: string;
+            description: string;
+            /** @description The Administrators group — every permission and administration; cannot be changed or deleted */
+            builtin: boolean;
+            /** @description The permissions granted (empty for Administrators */
+            permissions: string[];
+            memberIds: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        GroupList: {
+            items: components["schemas"]["Group"][];
+            /** @description The catalogue of permissions a group can be given */
+            permissions: components["schemas"]["PermissionInfo"][];
+        };
+        GroupRequest: {
+            name: string;
+            description?: string;
+            permissions: string[];
+            memberIds: string[];
+            /** @description Your own password. */
+            currentPassword: string;
+        };
+        UserGroupsRequest: {
+            groupIds: string[];
             /** @description Your own password. */
             currentPassword: string;
         };
@@ -3524,6 +3664,147 @@ export interface operations {
             };
             403: components["responses"]["Problem"];
             409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    setUserGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserGroupsRequest"];
+            };
+        };
+        responses: {
+            /** @description The user with their new groups. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Groups, Administrators first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Added. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReauthRequest"];
+            };
+        };
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
             429: components["responses"]["Problem"];
             default: components["responses"]["Problem"];

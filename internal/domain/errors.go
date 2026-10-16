@@ -46,6 +46,9 @@ var (
 	// ErrForbidden means the signed-in user may not do this (e.g. disable or reset their
 	// own account).
 	ErrForbidden = errors.New("forbidden")
+	// ErrNoAccess means the signed-in user's groups do not give them the permission an
+	// operation needs (ADR-012).
+	ErrNoAccess = errors.New("no access")
 	// ErrLastActiveUser means the change would leave no active user (ADR-011).
 	ErrLastActiveUser = errors.New("the last active user cannot be disabled")
 	// ErrPasswordChangeRequired means the session's user must change their password before

@@ -12,7 +12,10 @@ import (
 // ---- users (ADR-011) ----
 
 func toAPIUser(u domain.User) User {
-	out := User{Id: u.ID, Email: u.Email, CreatedAt: u.CreatedAt, Active: u.Active(), MustChangePassword: u.MustChangePassword}
+	out := User{Id: u.ID, Email: u.Email, CreatedAt: u.CreatedAt, Active: u.Active(), MustChangePassword: u.MustChangePassword, GroupIds: u.GroupIDs}
+	if out.GroupIds == nil {
+		out.GroupIds = []string{}
+	}
 	if !u.DisabledAt.IsZero() {
 		t := u.DisabledAt
 		out.DisabledAt = &t
@@ -37,7 +40,7 @@ func (h *handlers) ListUsers(ctx context.Context, _ ListUsersRequestObject) (Lis
 }
 
 func (h *handlers) AddUser(ctx context.Context, req AddUserRequestObject) (AddUserResponseObject, error) {
-	u, err := h.svc.AddUser(ctx, req.Body.Email, req.Body.Password, req.Body.CurrentPassword)
+	u, err := h.svc.AddUser(ctx, req.Body.Email, req.Body.Password, req.Body.CurrentPassword, req.Body.GroupIds)
 	if err != nil {
 		return nil, err
 	}
@@ -68,9 +71,80 @@ func (h *handlers) EnableUser(ctx context.Context, req EnableUserRequestObject) 
 	return EnableUser200JSONResponse(toAPIUser(u)), nil
 }
 
-// sessionGate refuses every operation a signed-in user's session may not run yet — while
-// the user must change their password, everything but me, changePassword and logout
-// (app.SessionAllows). It is a strict-server middleware because only there is the
+func (h *handlers) SetUserGroups(ctx context.Context, req SetUserGroupsRequestObject) (SetUserGroupsResponseObject, error) {
+	u, err := h.svc.SetUserGroups(ctx, req.Id, req.Body.GroupIds, req.Body.CurrentPassword)
+	if err != nil {
+		return nil, err
+	}
+	return SetUserGroups200JSONResponse(toAPIUser(u)), nil
+}
+
+// ---- access groups (ADR-012) ----
+
+func toAPIGroup(g domain.Group) Group {
+	out := Group{
+		Id: g.ID, Name: g.Name, Description: g.Description, Builtin: g.Builtin, CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt,
+		Permissions: make([]string, len(g.Permissions)), MemberIds: append([]string{}, g.MemberIDs...),
+	}
+	for i, p := range g.Permissions {
+		out.Permissions[i] = string(p)
+	}
+	return out
+}
+
+func groupInput(b GroupRequest) app.GroupInput {
+	in := app.GroupInput{Name: b.Name, Description: b.Description, MemberIDs: b.MemberIds, Permissions: make([]domain.Permission, len(b.Permissions))}
+	for i, p := range b.Permissions {
+		in.Permissions[i] = domain.Permission(p)
+	}
+	return in
+}
+
+func (h *handlers) ListGroups(ctx context.Context, _ ListGroupsRequestObject) (ListGroupsResponseObject, error) {
+	gs, err := h.svc.ListGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := ListGroups200JSONResponse{Items: make([]Group, len(gs)), Permissions: make([]PermissionInfo, len(domain.Permissions))}
+	for i, g := range gs {
+		out.Items[i] = toAPIGroup(g)
+	}
+	for i, p := range domain.Permissions {
+		info := PermissionInfo{Key: string(p.Key), Area: p.Area, Label: p.Label, Implies: make([]string, len(p.Implies))}
+		for j, q := range p.Implies {
+			info.Implies[j] = string(q)
+		}
+		out.Permissions[i] = info
+	}
+	return out, nil
+}
+
+func (h *handlers) CreateGroup(ctx context.Context, req CreateGroupRequestObject) (CreateGroupResponseObject, error) {
+	g, err := h.svc.CreateGroup(ctx, groupInput(*req.Body), req.Body.CurrentPassword)
+	if err != nil {
+		return nil, err
+	}
+	return CreateGroup201JSONResponse(toAPIGroup(g)), nil
+}
+
+func (h *handlers) UpdateGroup(ctx context.Context, req UpdateGroupRequestObject) (UpdateGroupResponseObject, error) {
+	g, err := h.svc.UpdateGroup(ctx, req.Id, groupInput(*req.Body), req.Body.CurrentPassword)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateGroup200JSONResponse(toAPIGroup(g)), nil
+}
+
+func (h *handlers) DeleteGroup(ctx context.Context, req DeleteGroupRequestObject) (DeleteGroupResponseObject, error) {
+	if err := h.svc.DeleteGroup(ctx, req.Id, req.Body.CurrentPassword); err != nil {
+		return nil, err
+	}
+	return DeleteGroup204Response{}, nil
+}
+
+// sessionGate refuses every operation a signed-in user's session may not run: while the
+// user must change their password, everything but me, changePassword and logout, and
+// otherwise what their access groups do not allow (app.SessionAllows). It is a strict-server middleware because only there is the
 // operation known; it runs before the handler reads an upload or export body.
 func sessionGate(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
@@ -83,14 +157,22 @@ func sessionGate(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 	}
 }
 
-// reauthPaths are the POST routes that check a password and so share the sign-in rate
-// limit and are never fingerprinted for Idempotency-Key (an unsalted hash of a password
-// could be guessed).
+// reauthPaths are the routes that check a password and so share the sign-in rate limit
+// and are never fingerprinted for Idempotency-Key (an unsalted hash of a password could be
+// guessed).
 func reauthPath(r *http.Request) bool {
+	p := r.URL.Path
+	if r.Method == http.MethodPut {
+		// Changing a group, or a user's groups (ADR-012).
+		return (strings.HasPrefix(p, "/api/v1/groups/") && !strings.Contains(strings.TrimPrefix(p, "/api/v1/groups/"), "/")) ||
+			(strings.HasPrefix(p, "/api/v1/users/") && strings.HasSuffix(p, "/groups"))
+	}
 	if r.Method != http.MethodPost {
 		return false
 	}
-	p := r.URL.Path
+	if p == "/api/v1/groups" || (strings.HasPrefix(p, "/api/v1/groups/") && strings.HasSuffix(p, "/delete")) {
+		return true
+	}
 	if p == "/api/v1/auth/login" || p == "/api/v1/auth/password" || p == "/api/v1/users" {
 		return true
 	}

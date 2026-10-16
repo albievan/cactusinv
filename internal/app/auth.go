@@ -109,26 +109,22 @@ func (s *Service) Authenticate(ctx context.Context, token string) (domain.User, 
 	if errors.Is(err, domain.ErrNotFound) || (err == nil && !u.Active()) {
 		return domain.User{}, domain.ErrUnauthenticated
 	}
-	return u, wrap("app.Authenticate", err)
+	if err != nil {
+		return domain.User{}, wrap("app.Authenticate", err)
+	}
+	// Access is read on every request, so a group change applies at once (ADR-012).
+	groups, err := r.Groups.ForUser(ctx, u.ID)
+	if err != nil {
+		return domain.User{}, wrap("app.Authenticate", err)
+	}
+	u.Access = domain.AccessFor(groups)
+	for _, g := range groups {
+		u.GroupIDs = append(u.GroupIDs, g.ID)
+	}
+	return u, nil
 }
 
-// SessionAllows decides whether a signed-in user's session may run an API operation,
-// named by its OpenAPI operationId (compared ignoring letter case). While the user must
-// change their password, only reading their own account (me), changing the password
-// (changePassword) and signing out (logout) are allowed; everything else is
-// ErrPasswordChangeRequired (ADR-011).
-func SessionAllows(u domain.User, operationID string) error {
-	if !u.MustChangePassword {
-		return nil
-	}
-	switch strings.ToLower(operationID) {
-	case "me", "changepassword", "logout":
-		return nil
-	}
-	return domain.ErrPasswordChangeRequired
-}
-
-// CreateUser adds an administrator from the server's command line (`cactusinv admin
+// CreateUser adds an administrator (a member of Administrators) from the server's command line (`cactusinv admin
 // create`). Shell access is the authority, so the password is not flagged must-change.
 func (s *Service) CreateUser(ctx context.Context, email, password string) (domain.User, error) {
 	login, err := domain.ValidateNewLogin(email)
@@ -147,7 +143,10 @@ func (s *Service) CreateUser(ctx context.Context, email, password string) (domai
 		if err := r.Users.Create(ctx, u); err != nil {
 			return err
 		}
-		return s.audit(ctx, r, "user.created", "user", u.ID, u.Email)
+		if err := r.Groups.SetUserGroups(ctx, u.ID, []string{domain.AdministratorsGroupID}); err != nil {
+			return err
+		}
+		return s.audit(ctx, r, "user.created", "user", u.ID, u.Email+"; in Administrators")
 	}))
 }
 
@@ -172,6 +171,9 @@ func (s *Service) EnsureDefaultAdmin(ctx context.Context, login, password string
 	u := domain.User{ID: s.ids.NewID(), Email: login, PasswordHash: hash, CreatedAt: s.now(), MustChangePassword: true}
 	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if err := r.Users.Create(ctx, u); err != nil {
+			return err
+		}
+		if err := r.Groups.SetUserGroups(ctx, u.ID, []string{domain.AdministratorsGroupID}); err != nil {
 			return err
 		}
 		return s.audit(ctx, r, "user.created", "user", u.ID, "default administrator "+u.Email+"; must change the password at the first sign-in")

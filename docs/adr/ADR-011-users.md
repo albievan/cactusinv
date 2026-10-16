@@ -1,6 +1,6 @@
 # ADR-011 — Users: administrators who are added, reset and disabled in the app
 
-**Status:** accepted · **Date:** 2026-10-16 (defaults accepted 2026-10-15) · Part A of M14 · Related: ADR-009 (audit), ADR-010 (restore)
+**Status:** accepted; "one kind of user" superseded by ADR-012 (access groups, v1.7.0) · **Date:** 2026-10-16 (defaults accepted 2026-10-15) · Part A of M14 · Related: ADR-009 (audit), ADR-010 (restore)
 
 ## Context
 Until v1.5.0 cactusInv had one way to get a user: the default `admin`/`admin` account made
@@ -93,4 +93,4 @@ must-change, and it deletes that user's sessions. `cactusinv admin create` likew
   sign-in, even if its password was changed before (the upgrade cannot tell).
 - A restore (ADR-010) brings back the users, their flags and their disabled state as they
   were in the backup; the preview warns when your account is not an active user there.
-- Roles, OIDC and per-user permissions remain out of scope.
+- Roles, OIDC and per-user permissions remain out of scope. (Access groups came later: ADR-012.)

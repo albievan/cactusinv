@@ -8,7 +8,7 @@ afterEach(() => vi.unstubAllGlobals())
 test('shows the sign-in form when not authenticated, then the dashboard', async () => {
   let signedIn = false
   mockFetch({
-    'GET /api/v1/auth/me': () => (signedIn ? json({ id: '1', email: 'admin' })() : json({ type: 'u', title: 'Sign in required', status: 401 }, 401)()),
+    'GET /api/v1/auth/me': () => (signedIn ? json({ administrator: true, permissions: [], id: '1', email: 'admin' })() : json({ type: 'u', title: 'Sign in required', status: 401 }, 401)()),
     'POST /api/v1/auth/login': () => { signedIn = true; return new Response(null, { status: 204 }) },
     'GET /api/v1/version': json({ version: '1.1.0', build: '7' }),
     'GET /api/v1/dashboard': json({ today: '2026-08-21', totals: [{ currency: 'ZAR', openCount: 1, outstanding: '3251.16', overdueCount: 0, overdue: '0.00' }], upcomingEmails: [], upcomingRuns: [], recentInvoices: [], failedEmailCount: 0, months: ['2026-07', '2026-08'], invoiced: [{ currency: 'ZAR', month: '2026-08', total: '3251.16', count: 1 }], paid: [], topDebtors: [{ customerId: 'c', name: 'Acme', currency: 'ZAR', outstanding: '3251.16', openCount: 1 }], activity: [{ seq: 1, at: '2026-08-21T07:00:00Z', actorId: 'u', actor: 'admin', action: 'invoice.issued', entityType: 'invoice', entityId: 'i', summary: 'CD/1195/26', hash: 'h' }] }),
@@ -52,7 +52,7 @@ test('the statements page lists balances and e-mails selected statements', async
   const aging = (cur: string) => ({ current: cur, days1to30: '0.00', days31to60: '0.00', days61to90: '0.00', over90: '0.00' })
   let sent: unknown
   mockFetch({
-    'GET /api/v1/auth/me': json({ id: '1', email: 'admin' }),
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'admin' }),
     'GET /api/v1/version': json({ version: '1.2.0', build: '8' }),
     'GET /api/v1/statements': json({
       asOf: '2026-10-15',
@@ -88,7 +88,7 @@ const business = {
 
 function signedIn(extra: Record<string, (req: Request) => Response | Promise<Response>> = {}) {
   mockFetch({
-    'GET /api/v1/auth/me': json({ id: '1', email: 'admin' }),
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'admin' }),
     'GET /api/v1/version': json({ version: '1.4.0', build: '9' }),
     'GET /api/v1/settings/business': json(business),
     'GET /api/v1/settings/email': json({ enabled: false, host: 'smtp.gmail.com', port: 587, username: '', passwordSet: false, from: '', tls: 'starttls', warnings: [], version: 0 }),
@@ -115,7 +115,7 @@ test('/settings opens Business, and the sidebar nests the settings pages under S
 
   const group = within(sidebar()).getByRole('list', { name: 'Settings' })
   const links = within(group).getAllByRole('link')
-  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts', 'Users', 'Backup & restore'])
+  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts', 'Users & groups', 'Backup & restore', 'Your account'])
   expect(within(group).getByRole('link', { name: 'Business' })).toHaveAttribute('aria-current', 'page')
   expect(within(sidebar()).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'true')
 
@@ -227,4 +227,34 @@ test('E-mail server without warnings shows no note and a plain test result', asy
   await userEvent.type(screen.getByLabelText('Send a test e-mail to'), 'me@example.com')
   await userEvent.click(screen.getByRole('button', { name: 'Send test e-mail' }))
   expect(await screen.findByText('Test e-mail sent — check the inbox.')).toBeInTheDocument()
+})
+
+test('a user sees only what their groups allow', async () => {
+  mockFetch({
+    'GET /api/v1/auth/me': json({ id: '2', email: 'clerk@example.com', administrator: false, permissions: ['customers.view', 'statements.view'], automationPaused: true, mustChangePassword: false }),
+    'GET /api/v1/version': json({ version: '1.7.0', build: '1' }),
+    'GET /api/v1/statements': json({ items: [] }),
+  })
+  window.history.pushState({}, '', '/')
+  render(<App />)
+  // No dashboard: the start page is the first one allowed.
+  expect(await screen.findByRole('heading', { name: 'Customers' })).toBeInTheDocument()
+  expect(window.location.pathname).toBe('/customers')
+  const links = within(sidebar()).getAllByRole('link').map((l) => l.textContent)
+  expect(links).toEqual(['Customers', 'Statements', 'Settings'])
+  expect(screen.queryByRole('link', { name: /New customer/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Resume automatic sending' })).not.toBeInTheDocument()
+  expect(screen.getByText(/An administrator resumes it/)).toBeInTheDocument()
+
+  // A page outside their access says so instead.
+  window.history.pushState({}, '', '/invoices')
+  window.dispatchEvent(new PopStateEvent('popstate'))
+  expect(await screen.findByRole('heading', { name: 'You do not have access to this' })).toBeInTheDocument()
+
+  // Settings has only their own account.
+  window.history.pushState({}, '', '/settings')
+  window.dispatchEvent(new PopStateEvent('popstate'))
+  expect(await screen.findByRole('heading', { name: 'Change password' })).toBeInTheDocument()
+  expect(window.location.pathname).toBe('/settings/account')
+  window.history.pushState({}, '', '/')
 })

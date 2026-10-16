@@ -1,5 +1,6 @@
 import type { ComponentType, SVGProps } from 'react'
-import { IconArchive, IconBank, IconBuilding, IconServer, IconUser } from '../../components/icons'
+import { useCan } from '../../components/auth'
+import { IconArchive, IconBank, IconBuilding, IconServer, IconShield, IconUser } from '../../components/icons'
 
 /** A Settings sub-page: its route, its label in the sidebar and on More, and what it holds. */
 export type SettingsItem = {
@@ -8,6 +9,8 @@ export type SettingsItem = {
   label: string
   hint: string
   icon: ComponentType<SVGProps<SVGSVGElement>>
+  /** The permission that shows it (ADR-012); none = every signed-in user. */
+  need?: string
 }
 
 /**
@@ -16,12 +19,19 @@ export type SettingsItem = {
  * new page is one entry here plus its route in App.tsx.
  */
 export const settingsNav: SettingsItem[] = [
-  { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding },
-  { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer },
-  { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank },
-  { path: 'users', label: 'Users', hint: 'Who can sign in: add users, reset passwords, disable and enable', icon: IconUser },
-  { path: 'backup', label: 'Backup & restore', hint: 'Encrypted backups, downloads, and restoring from a file', icon: IconArchive },
+  { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding, need: 'settings.view' },
+  { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer, need: 'settings.view' },
+  { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.view' },
+  { path: 'users', label: 'Users & groups', hint: 'Who can sign in and what each group may do', icon: IconUser, need: 'administer' },
+  { path: 'backup', label: 'Backup & restore', hint: 'Encrypted backups, downloads, and restoring from a file', icon: IconArchive, need: 'administer' },
+  { path: 'account', label: 'Your account', hint: 'Your password', icon: IconShield },
 ]
+
+/** useSettingsNav is settingsNav without the pages the signed-in user may not open. */
+export function useSettingsNav(): SettingsItem[] {
+  const can = useCan()
+  return settingsNav.filter((s) => !s.need || can(s.need))
+}
 
 /** settingsHref is the absolute route of a Settings sub-page. */
 export const settingsHref = (item: SettingsItem) => `/settings/${item.path}`

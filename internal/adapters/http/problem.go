@@ -62,10 +62,15 @@ func problemFor(err error) Problem {
 			Type: problemType("last-active-user"), Title: "The last active user cannot be disabled", Status: http.StatusConflict,
 			Detail: "Add or enable another user first, so someone can still sign in.",
 		}
+	case errors.Is(err, domain.ErrNoAccess):
+		return Problem{
+			Type: problemType("no-access"), Title: "You do not have access to this", Status: http.StatusForbidden,
+			Detail: "Ask an administrator to put you in a group that allows it.",
+		}
 	case errors.Is(err, domain.ErrForbidden):
 		return Problem{
-			Type: problemType("forbidden"), Title: "Not allowed for your own account", Status: http.StatusForbidden,
-			Detail: "You cannot disable yourself or reset your own password here; change your own password instead.",
+			Type: problemType("forbidden"), Title: "Not allowed", Status: http.StatusForbidden,
+			Detail: "You cannot disable yourself, reset your own password here, remove yourself from Administrators, or delete the Administrators group.",
 		}
 	case errors.Is(err, domain.ErrUnauthenticated):
 		return Problem{Type: problemType("unauthenticated"), Title: "Sign in required", Status: http.StatusUnauthorized}

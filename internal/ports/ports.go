@@ -40,6 +40,7 @@ type Repos struct {
 	Schedules   ScheduleRepository
 	Emails      EmailRepository
 	Users       UserRepository
+	Groups      GroupRepository
 	Sessions    SessionRepository
 	Idempotency IdempotencyRepository
 	SMTP        SMTPRepository
@@ -349,6 +350,33 @@ type UserRepository interface {
 	// transaction ends (SELECT … FOR UPDATE): call inside WithinTx before disabling.
 	LockActive(ctx context.Context) ([]string, error)
 	Count(ctx context.Context) (int, error)
+}
+
+// GroupRepository stores access groups, their permissions and their members (ADR-012).
+type GroupRepository interface {
+	// List returns every group with its permissions and members, Administrators first,
+	// then by name.
+	List(ctx context.Context) ([]domain.Group, error)
+	// Get returns one group with its permissions and members.
+	Get(ctx context.Context, id string) (domain.Group, error)
+	// Lock reads a group FOR UPDATE (inside WithinTx), with its permissions and members.
+	Lock(ctx context.Context, id string) (domain.Group, error)
+	// Create stores a group with its permissions and members; a name in use in any letter
+	// case is ErrConflict.
+	Create(ctx context.Context, g domain.Group) error
+	// Update replaces a group's name, description, permissions and members; for the
+	// built-in group only its members.
+	Update(ctx context.Context, g domain.Group) error
+	// Delete removes a group that is not built in, with its memberships.
+	Delete(ctx context.Context, id string) error
+	// ForUser returns the groups the user is in, with their permissions (members not filled).
+	ForUser(ctx context.Context, userID string) ([]domain.Group, error)
+	// SetUserGroups replaces the groups the user is in.
+	SetUserGroups(ctx context.Context, userID string, groupIDs []string) error
+	// LockActiveAdministrators returns the ids of the active members of Administrators,
+	// locking those memberships and users until the transaction ends: every change to who
+	// administers serialises on it.
+	LockActiveAdministrators(ctx context.Context) ([]string, error)
 }
 
 // SessionRepository stores browser sessions by token hash.

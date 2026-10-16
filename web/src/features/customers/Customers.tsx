@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
@@ -11,7 +12,7 @@ export function CustomerList() {
   const [q, setQ] = useState('')
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
   return (
-    <Page title="Customers" actions={<Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link>}>
+    <Page title="Customers" actions={<Can need="customers.edit"><Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search customers" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No customers yet.</Empty> : (
@@ -92,9 +93,9 @@ function StatementPanel({ customerId }: { customerId: string }) {
       <ErrorBanner error={err} />
       <div className="flex flex-wrap items-center gap-2">
         <a className="btn-secondary" href={`/api/v1/customers/${customerId}/statement/pdf`} target="_blank" rel="noreferrer"><IconDownload width={16} height={16} /> Statement PDF</a>
-        <button type="button" className="btn-primary" onClick={send}><IconSend width={16} height={16} /> E-mail statement</button>
+        <Can need="statements.send"><button type="button" className="btn-primary" onClick={send}><IconSend width={16} height={16} /> E-mail statement</button></Can>
         <Link className="btn-secondary" to={`/statements/${customerId}`}>Open full statement</Link>
-        <Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link>
+        <Can need="schedules.edit"><Link className="btn-secondary" to={`/schedules/new?customer=${customerId}&kind=statement`}>Schedule statements…</Link></Can>
         {msg && <span className="text-sm text-green-700">{msg}</span>}
       </div>
     </section>
@@ -236,12 +237,14 @@ export function CustomerEditor() {
             <DisclaimerInUse source={existing.data?.disclaimerSource} businessText={business.data?.defaultNotes} loading={business.loading} error={business.error} />
           </div>
         </div>
-        {id && <StatementPanel customerId={id} />}
-        <StickyActions>
-          {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
-          <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-          <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-        </StickyActions>
+        {id && <Can need="statements.view"><StatementPanel customerId={id} /></Can>}
+        <Can need="customers.edit">
+          <StickyActions>
+            {id && <button type="button" className="btn-danger mr-auto" onClick={remove}>Delete</button>}
+            <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
+            <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          </StickyActions>
+        </Can>
       </form>
     </Page>
   )

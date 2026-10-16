@@ -66,6 +66,7 @@ type state struct {
 	runs        []domain.ScheduleRun
 	emails      map[string]domain.EmailMessage
 	users       map[string]domain.User
+	groups      map[string]domain.Group
 	sessions    map[string]domain.Session
 	idempotency map[string]ports.IdempotencyRecord
 	exported    map[string]int
@@ -81,6 +82,7 @@ func newState() *state {
 		customers: map[string]domain.Customer{}, products: map[string]domain.Product{},
 		invoices: map[string]domain.Invoice{}, seq: 1, schedules: map[string]domain.Schedule{},
 		emails: map[string]domain.EmailMessage{}, users: map[string]domain.User{},
+		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{},
 	}
@@ -102,6 +104,7 @@ func (s *state) clone() *state {
 	c.runs = slices.Clone(s.runs)
 	c.emails = maps.Clone(s.emails)
 	c.users = maps.Clone(s.users)
+	c.groups = maps.Clone(s.groups) // groups' slices are replaced, never changed in place
 	c.sessions = maps.Clone(s.sessions)
 	c.idempotency = maps.Clone(s.idempotency)
 	c.exported = maps.Clone(s.exported)
@@ -141,7 +144,7 @@ func (s *Store) Repos() ports.Repos {
 	return ports.Repos{
 		Business: business{s}, Currencies: currencies{s}, Banks: banks{s}, Customers: customers{s},
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
-		Emails: emails{s}, Users: users{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
+		Emails: emails{s}, Users: users{s}, Groups: groups{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
 		System: systemStore{s}, BackupRuns: backupRuns{s},
 	}
 }
@@ -1503,4 +1506,164 @@ func (s *Store) SetSending(id string, at time.Time) {
 	m := s.st.emails[id]
 	m.Status, m.UpdatedAt = domain.EmailSending, at
 	s.st.emails[id] = m
+}
+
+// groups is the fake GroupRepository. Every write stores fresh slices, so a cloned state
+// never shares one that changes.
+type groups struct{ s *Store }
+
+func copyGroup(g domain.Group) domain.Group {
+	g.Permissions = append([]domain.Permission{}, g.Permissions...)
+	g.MemberIDs = append([]string{}, g.MemberIDs...)
+	return g
+}
+
+func (r groups) List(_ context.Context) ([]domain.Group, error) {
+	var out []domain.Group
+	err := r.s.do(func(st *state) error {
+		for _, g := range st.groups {
+			out = append(out, copyGroup(g))
+		}
+		slices.SortFunc(out, func(a, b domain.Group) int {
+			if a.Builtin != b.Builtin {
+				if a.Builtin {
+					return -1
+				}
+				return 1
+			}
+			return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
+		})
+		return nil
+	})
+	return out, err
+}
+
+func (r groups) Get(_ context.Context, id string) (domain.Group, error) {
+	var out domain.Group
+	err := r.s.do(func(st *state) error {
+		g, ok := st.groups[id]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		out = copyGroup(g)
+		return nil
+	})
+	return out, err
+}
+
+// Lock reads the group (the fake serialises transactions).
+func (r groups) Lock(ctx context.Context, id string) (domain.Group, error) { return r.Get(ctx, id) }
+
+func (r groups) Create(_ context.Context, g domain.Group) error {
+	return r.s.do(func(st *state) error {
+		for _, o := range st.groups {
+			if strings.EqualFold(o.Name, g.Name) {
+				return domain.ErrConflict
+			}
+		}
+		if err := checkMembers(st, g.MemberIDs); err != nil {
+			return err
+		}
+		st.groups[g.ID] = copyGroup(g)
+		return nil
+	})
+}
+
+func (r groups) Update(_ context.Context, g domain.Group) error {
+	return r.s.do(func(st *state) error {
+		old, ok := st.groups[g.ID]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		if err := checkMembers(st, g.MemberIDs); err != nil {
+			return err
+		}
+		if old.Builtin {
+			old.MemberIDs = g.MemberIDs
+			st.groups[g.ID] = copyGroup(old)
+			return nil
+		}
+		for _, o := range st.groups {
+			if o.ID != g.ID && strings.EqualFold(o.Name, g.Name) {
+				return domain.ErrConflict
+			}
+		}
+		g.Builtin, g.CreatedAt = false, old.CreatedAt
+		st.groups[g.ID] = copyGroup(g)
+		return nil
+	})
+}
+
+func checkMembers(st *state, ids []string) error {
+	for _, id := range ids {
+		if _, ok := st.users[id]; !ok {
+			return domain.ErrNotFound
+		}
+	}
+	return nil
+}
+
+func (r groups) Delete(_ context.Context, id string) error {
+	return r.s.do(func(st *state) error {
+		g, ok := st.groups[id]
+		if !ok || g.Builtin {
+			return domain.ErrNotFound
+		}
+		delete(st.groups, id)
+		return nil
+	})
+}
+
+func (r groups) ForUser(_ context.Context, userID string) ([]domain.Group, error) {
+	var out []domain.Group
+	err := r.s.do(func(st *state) error {
+		for _, g := range st.groups {
+			if g.HasMember(userID) {
+				g = copyGroup(g)
+				g.MemberIDs = nil
+				out = append(out, g)
+			}
+		}
+		slices.SortFunc(out, func(a, b domain.Group) int { return strings.Compare(a.ID, b.ID) })
+		return nil
+	})
+	return out, err
+}
+
+func (r groups) SetUserGroups(_ context.Context, userID string, groupIDs []string) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.users[userID]; !ok {
+			return domain.ErrNotFound
+		}
+		for _, id := range groupIDs {
+			if _, ok := st.groups[id]; !ok {
+				return domain.ErrNotFound
+			}
+		}
+		for id, g := range st.groups {
+			g = copyGroup(g)
+			g.MemberIDs = slices.DeleteFunc(g.MemberIDs, func(m string) bool { return m == userID })
+			if slices.Contains(groupIDs, id) {
+				g.MemberIDs = append(g.MemberIDs, userID)
+				slices.Sort(g.MemberIDs)
+			}
+			st.groups[id] = g
+		}
+		return nil
+	})
+}
+
+// LockActiveAdministrators returns the active administrators' ids (the fake serialises
+// transactions, so there is nothing to lock).
+func (r groups) LockActiveAdministrators(_ context.Context) ([]string, error) {
+	var out []string
+	err := r.s.do(func(st *state) error {
+		for _, id := range st.groups[domain.AdministratorsGroupID].MemberIDs {
+			if u, ok := st.users[id]; ok && u.Active() {
+				out = append(out, id)
+			}
+		}
+		return nil
+	})
+	return out, err
 }

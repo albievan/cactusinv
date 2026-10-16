@@ -5,17 +5,33 @@ import { Wordmark } from './Logo'
 import { Spinner } from './ui'
 
 interface Auth {
-  user: { id: string; email: string; automationPaused?: boolean; mustChangePassword?: boolean } | null
+  user: { id: string; email: string; automationPaused?: boolean; mustChangePassword?: boolean; administrator?: boolean; permissions?: string[] } | null
   logout: () => Promise<void>
   /** refresh re-reads the signed-in user (e.g. after resuming automation). */
   refresh: () => Promise<void>
   /** endSession shows the sign-in screen with a notice (the server already ended the session). */
   endSession: (notice: string) => void
+  /**
+   * outside is set only on the default value, used by a component rendered without an
+   * AuthProvider (a unit test). In the app every page is inside the provider, which shows
+   * nothing but the sign-in screen until a user is signed in.
+   */
+  outside?: boolean
 }
 
-const AuthContext = createContext<Auth>({ user: null, logout: async () => {}, refresh: async () => {}, endSession: () => {} })
+const AuthContext = createContext<Auth>({ user: null, logout: async () => {}, refresh: async () => {}, endSession: () => {}, outside: true })
 
 export const useAuth = () => useContext(AuthContext)
+
+/**
+ * useCan tells what the signed-in user may do (ADR-012): `can('invoices.send')`, or
+ * `can('administer')` for users, groups, backups and restore (Administrators only). The
+ * server enforces the same rules; this only hides what would be refused.
+ */
+export function useCan() {
+  const { user, outside } = useAuth()
+  return (permission: string) => !!outside || (!!user && (!!user.administrator || (permission !== 'administer' && !!user.permissions?.includes(permission))))
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Auth['user']>(null)
@@ -54,6 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // The server allows nothing else until the password is changed (ADR-011).
   if (user.mustChangePassword) return <ForcedPasswordChange login={user.email} onChanged={load} onSignOut={logout} />
   return <AuthContext.Provider value={{ user, logout, refresh: load, endSession }}>{children}</AuthContext.Provider>
+}
+
+/** The public source repository. */
+const REPO_URL = 'https://github.com/albievan/cactusinv'
+
+function IconGitHub() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+      <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z" />
+    </svg>
+  )
 }
 
 function WaveLines() {
@@ -112,6 +139,12 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
               </li>
             ))}
           </ul>
+          <p className="mt-6 text-sm text-cream-200/90">
+            Free and open source:{' '}
+            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-cream-50 underline decoration-cream-300/50 underline-offset-4 hover:decoration-cream-50">
+              <IconGitHub /> github.com/albievan/cactusinv
+            </a>
+          </p>
         </div>
         <WaveLines />
       </section>
@@ -146,7 +179,12 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <div className="mt-auto border-t border-cream-300 pt-4 text-xs text-slate-500">{version || ' '}</div>
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-cream-300 pt-4 text-xs text-slate-500">
+          <span>{version || ' '}</span>
+          <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-900 hover:underline">
+            <IconGitHub /> Source on GitHub
+          </a>
+        </div>
       </section>
     </main>
   )

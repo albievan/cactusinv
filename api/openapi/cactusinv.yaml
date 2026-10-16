@@ -1126,6 +1126,115 @@ paths:
         '422': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         default: { $ref: '#/components/responses/Problem' }
+  /users/{id}/groups:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [users]
+      operationId: setUserGroups
+      description: |
+        Replaces the access groups a user is in (no group = no access). Administrators only.
+        You cannot remove yourself from Administrators (403 `forbidden`). Needs your current
+        password; shares the sign-in rate limit; exempt from Idempotency-Key. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserGroupsRequest' }
+      responses:
+        '200':
+          description: The user with their new groups.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /groups:
+    get:
+      tags: [users]
+      operationId: listGroups
+      description: Every access group with its permissions and members, and the catalogue of permissions a group can be given. Administrators only.
+      responses:
+        '200':
+          description: Groups, Administrators first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [users]
+      operationId: createGroup
+      description: |
+        Adds an access group. Administrators only. Needs your current password; shares the
+        sign-in rate limit; exempt from Idempotency-Key. A name in use is 409. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupRequest' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /groups/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [users]
+      operationId: updateGroup
+      description: |
+        Replaces a group's name, description, permissions and members. For the built-in
+        Administrators group only `memberIds` is used (it always has every permission), and
+        you cannot remove yourself from it (403 `forbidden`). Needs your current password;
+        shares the sign-in rate limit; exempt from Idempotency-Key. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupRequest' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /groups/{id}/delete:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [users]
+      operationId: deleteGroup
+      description: |
+        Deletes a group; its members lose the access it gave them. The Administrators group
+        cannot be deleted (403 `forbidden`). Needs your current password; shares the sign-in
+        rate limit; exempt from Idempotency-Key. Audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReauthRequest' }
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
   /users/{id}/enable:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -1324,8 +1433,15 @@ components:
         over90: { $ref: '#/components/schemas/Decimal' }
     Me:
       type: object
-      required: [id, email, automationPaused, mustChangePassword]
+      required: [id, email, automationPaused, mustChangePassword, administrator, permissions]
       properties:
+        administrator:
+          type: boolean
+          description: A member of Administrators — every permission, plus users, groups, backups and restore.
+        permissions:
+          type: array
+          description: What the user may do (their groups' permissions with the ones they imply); every one for an administrator.
+          items: { type: string }
         id: { type: string }
         email: { type: string }
         mustChangePassword:
@@ -1337,10 +1453,11 @@ components:
 
     User:
       type: object
-      required: [id, email, createdAt, active, mustChangePassword]
+      required: [id, email, createdAt, active, mustChangePassword, groupIds]
       properties:
         id: { type: string }
         email: { type: string, description: The login. An e-mail address for every user added in the app. }
+        groupIds: { type: array, items: { type: string }, description: The access groups the user is in. None means no access. }
         createdAt: { type: string, format: date-time }
         active: { type: boolean, description: False once disabled; a disabled user cannot sign in. }
         disabledAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
@@ -1356,6 +1473,7 @@ components:
       required: [email, password, currentPassword]
       properties:
         email: { type: string, maxLength: 254, description: One e-mail address; it is the new user's login. }
+        groupIds: { type: array, items: { type: string }, description: The access groups to put the user in. None means no access until they are put in a group. }
         password: { type: string, minLength: 12, maxLength: 200, description: A first password; the user must change it at the first sign-in. }
         currentPassword: { type: string, maxLength: 200, description: Your own password. }
     ResetPasswordRequest:
@@ -1363,6 +1481,47 @@ components:
       required: [password, currentPassword]
       properties:
         password: { type: string, minLength: 12, maxLength: 200, description: A temporary password; the user must change it at the next sign-in. }
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
+    PermissionInfo:
+      type: object
+      required: [key, area, label, implies]
+      properties:
+        key: { type: string, example: invoices.send }
+        area: { type: string, example: Invoices }
+        label: { type: string }
+        implies: { type: array, items: { type: string }, description: Permissions granted with this one (it needs them to be usable). }
+    Group:
+      type: object
+      required: [id, name, description, builtin, permissions, memberIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        builtin: { type: boolean, description: The Administrators group — every permission and administration; cannot be changed or deleted, only its members. }
+        permissions: { type: array, items: { type: string }, description: The permissions granted (empty for Administrators, which has all). }
+        memberIds: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    GroupList:
+      type: object
+      required: [items, permissions]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Group' } }
+        permissions: { type: array, items: { $ref: '#/components/schemas/PermissionInfo' }, description: The catalogue of permissions a group can be given, in display order. }
+    GroupRequest:
+      type: object
+      required: [name, permissions, memberIds, currentPassword]
+      properties:
+        name: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+        permissions: { type: array, items: { type: string } }
+        memberIds: { type: array, items: { type: string } }
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
+    UserGroupsRequest:
+      type: object
+      required: [groupIds, currentPassword]
+      properties:
+        groupIds: { type: array, items: { type: string } }
         currentPassword: { type: string, maxLength: 200, description: Your own password. }
     ReauthRequest:
       type: object

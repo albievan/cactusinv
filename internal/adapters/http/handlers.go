@@ -68,7 +68,15 @@ func (h *handlers) Me(ctx context.Context, _ MeRequestObject) (MeResponseObject,
 	if err != nil {
 		return nil, err
 	}
-	return Me200JSONResponse{Id: u.ID, Email: u.Email, AutomationPaused: held, MustChangePassword: u.MustChangePassword}, nil
+	perms := u.Access.Permissions()
+	out := Me200JSONResponse{
+		Id: u.ID, Email: u.Email, AutomationPaused: held, MustChangePassword: u.MustChangePassword,
+		Administrator: u.Access.Administrator, Permissions: make([]string, len(perms)),
+	}
+	for i, p := range perms {
+		out.Permissions[i] = string(p)
+	}
+	return out, nil
 }
 
 // ---- settings ----

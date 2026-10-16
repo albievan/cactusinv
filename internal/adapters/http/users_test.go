@@ -93,7 +93,7 @@ func TestMustChangePasswordGate(t *testing.T) {
 	var me httpapi.Me
 	albie.ok(albie.do("GET", "/api/v1/auth/me", nil, &me), 200, "me")
 	actor := app.WithActor(context.Background(), app.Actor{ID: me.Id, Name: me.Email})
-	if _, err := svc.AddUser(actor, "carol@example.com", "chosen by albie", albiePW); err != nil {
+	if _, err := svc.AddUser(actor, "carol@example.com", "chosen by albie", albiePW, []string{domain.AdministratorsGroupID}); err != nil {
 		t.Fatal(err)
 	}
 	carol := c.second()

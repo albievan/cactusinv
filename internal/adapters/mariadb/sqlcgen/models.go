@@ -9,6 +9,25 @@ import (
 	"time"
 )
 
+type AccessGroup struct {
+	ID          string
+	Name        string
+	Description string
+	Builtin     bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type AccessGroupMember struct {
+	GroupID string
+	UserID  string
+}
+
+type AccessGroupPermission struct {
+	GroupID    string
+	Permission string
+}
+
 type AuditHead struct {
 	ID       int8
 	LastHash string

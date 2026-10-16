@@ -369,7 +369,7 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
 
 ## 13. Users (ADR-011)
 
-- Every user is an administrator; no roles. The login is `users.email` (case-insensitive by
+- What a user may do comes from their access groups (§14, ADR-012). The login is `users.email` (case-insensitive by
   collation); users added in the app must use one e-mail address (`domain.ValidateNewLogin`),
   older logins such as `admin` keep working. Passwords: 12–200 characters, Argon2id.
 - **Use cases** (`internal/app/users.go`, `auth.go`): `ListUsers`, `AddUser`,
@@ -396,3 +396,34 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   `password-change-required` 403.
 - **CLI**: `cactusinv admin create|set-password <login>` (password on stdin) — shell access is
   the authority, so those passwords are not flagged; `set-password` ends the user's sessions.
+
+## 14. Access groups (ADR-012)
+
+- **Domain** (`internal/domain/access.go`): the permission catalogue `Permissions` (area,
+  label, `Implies`), `Group` (`Normalize`), `Access` (`AccessFor(groups)`: union plus
+  implied, transitively; a member of `AdministratorsGroupID` has everything and
+  `PermAdminister`), `CheckGroupChange` (the actor must be an active administrator and may
+  not remove themselves from Administrators).
+- **Data**: `access_groups` (the built-in row `administrators`, `builtin = TRUE`),
+  `access_group_permissions (group_id, permission)` — none stored for Administrators —
+  and `access_group_members (group_id, user_id)`; migration `00018` seeds Administrators
+  with the default administrator only (fallback: the oldest active user). Backed up and
+  restored like every table.
+- **Enforcement**: `Authenticate` loads the user's groups (`GroupRepository.ForUser`) on every
+  request into `User.Access`; `app.SessionAllows(user, operationID)` checks
+  `app.operationAccess` (operation → any of its permissions; none = every signed-in user;
+  missing = refused) in the strict-server middleware `sessionGate`. `403 no-access`.
+  `TestEveryOperationHasAnAccessRule` reads the contract.
+- **Use cases** (`internal/app/groups.go`): `ListGroups`, `CreateGroup`, `UpdateGroup`
+  (Administrators: members only), `DeleteGroup` (not Administrators), `SetUserGroups`;
+  `AddUser` takes group ids. Each re-authenticates (`reauthUser`), locks the active
+  administrators (`LockActiveAdministrators`, `FOR UPDATE`) and audits `group.*` /
+  `user.groups_changed`. User management takes the same lock.
+- **API**: `GET/POST /groups` (the list carries the permission catalogue), `PUT /groups/{id}`,
+  `POST /groups/{id}/delete`, `PUT /users/{id}/groups`; `Me.permissions`/`administrator`,
+  `User.groupIds`, `NewUserRequest.groupIds`. The group and user-groups routes are in
+  `reauthPath` (password rate limit, never fingerprinted).
+- **Web**: `useCan()` (`components/auth.tsx`); `useNav`/`useSettingsNav` filter the menus;
+  `RequireAccess` guards routes (a `NoAccess` page instead); `Can` hides buttons; the start
+  page is the dashboard or the first page allowed; Settings → Your account is open to all.
+  Settings → Users & groups has Users and Groups tabs (`features/settings/users/`).

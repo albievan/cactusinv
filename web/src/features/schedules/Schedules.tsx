@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type SVGProps } from 'react'
+import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Schedule, type Schemas } from '../../lib/api/client'
 import { formatDate, formatInZone } from '../../lib/format'
@@ -76,6 +77,7 @@ function IconAction({ icon: I, label, title, onClick, disabled, danger, to }: {
 /** ScheduleActions is the compact Edit / Pause or Resume / Run now / Delete bar for one schedule. */
 function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; act: (s: Schedule, what: 'pause' | 'resume') => void; ask: (p: Pending) => void }) {
   return (
+    <Can need="schedules.edit">
     <div className="flex flex-nowrap items-center gap-1" role="group" aria-label={`Actions for ${s.name}`}>
       <IconAction icon={IconEdit} label={`Edit ${s.name}`} title="Edit" to={`/schedules/${s.id}/edit`} />
       {s.status === 'paused'
@@ -84,6 +86,7 @@ function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; ac
       <IconAction icon={IconBolt} label={`Run ${s.name} now`} title="Run now" onClick={() => ask({ kind: 'run', s })} disabled={busy || s.status !== 'active'} />
       <IconAction icon={IconTrash} label={`Delete ${s.name}`} title="Delete" onClick={() => ask({ kind: 'delete', s })} disabled={busy} danger />
     </div>
+    </Can>
   )
 }
 
@@ -124,7 +127,7 @@ export function ScheduleList() {
   const items = data?.items ?? []
   const nextRun = (s: Schedule) => (s.nextRunAt ? formatInZone(s.nextRunAt, s.recurrence.timeZone) : 'No upcoming run')
   return (
-    <Page title="Schedules" actions={<Link to="/schedules/new" className="btn-primary">+ New</Link>}>
+    <Page title="Schedules" actions={<Can need="schedules.edit"><Link to="/schedules/new" className="btn-primary">+ New</Link></Can>}>
       <p className="mb-3 text-sm text-slate-500">Recurring invoices are issued and e-mailed automatically.</p>
       <ErrorBanner error={error ?? actionError} />
       {notice && <div role="status" className="mb-3 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
@@ -221,6 +224,7 @@ export function ScheduleDetailPage() {
         <div className="font-medium text-brand-900">{purposeLabel(s)}</div>
         {s.lastError && <div className="text-red-600">Last error ({s.failureCount}×): {s.lastError}</div>}
       </div>
+      <Can need="schedules.edit">
       <div className="mb-4 grid grid-cols-2 gap-2 md:flex">
         <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>
         {s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
@@ -228,6 +232,7 @@ export function ScheduleDetailPage() {
         {s.status === 'active' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/run-now', path))}>Run now</button>}
         <button className="btn-danger" onClick={async () => { try { await unwrap(api.DELETE('/schedules/{id}', path)); nav('/schedules') } catch (e) { setActionError(e as Error) } }}>Delete</button>
       </div>
+      </Can>
       <section className="card mb-4 text-sm">
         <h2 className="mb-2 font-semibold">Upcoming runs</h2>
         {data.upcoming.length === 0 ? <p className="text-slate-500">None.</p> : <ul className="space-y-1">{data.upcoming.map((t) => <li key={t}>{formatInZone(t, s.recurrence.timeZone)}</li>)}</ul>}

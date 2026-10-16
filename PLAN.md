@@ -333,6 +333,35 @@ and a preview without a zone was computed in UTC while saving used the business 
 | 17.10 | Re-review fixes: `ActivateFrom` keeps an unrun overdue occurrence on edit and on resume after an auto-pause (BLOCKER); `UpcomingRuns` starts with `NextRunAt`; run records keyed by billing period (`period_key`, migration `00017`) | done | domain: `ActivateFrom` table (failed this morning, day moved earlier/later, overdue by months, future pending not pulled forward), `PeriodKey`/`PeriodStart`, lifecycle (auto-pause resume keeps the period, user pause skips); app `TestEditOrResumeKeepsUnrunPeriod` (the review's repro → 1 October invoice; auto-pause → resume → once; user pause → skipped; downtime + edit → September and October; day moved within a billed month → no second invoice, November raised); integration `TestScheduleRunPeriodKey` (backfill incl. a month billed twice, then the day-move case on MariaDB); `headSchema` 17 | `internal/domain/{schedule,recurrence}.go`, `internal/app/schedules.go`, `internal/ports/{ports.go,fakes/store.go}`, `migrations/00017_schedule_run_period_key.sql`, `internal/adapters/mariadb/{schedules.go,queries/schedules.sql,sqlcgen/}`, tests |
 | 17.4 | VERSION 1.6.2; README; gate `make fmt-check lint vet cover vuln contracts web-check` | done | all green — done 2026-10-16 on macOS: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.8 %, app 85.7 %, "No vulnerabilities found.", contracts in sync, web 14 files / 62 tests, build OK); the adapter changed in 17.7, so `make remote-test-int` ran too (green, see 17.7); not committed, not deployed | `VERSION`, `README.md`, `PLAN.md` |
 
+### M18 — Access groups (RBAC) on the Users page (Albie, 2026-10-16) — v1.7.0
+
+> "Add functionality for RBAC on the user page, e.g. I want to be able to create groups and
+> assign access to the group or remove access from a group." Also: the active sidebar item's
+> outline was clipped at the top of the menu (screenshot).
+
+Design: ADR-012. Users get access only through groups; a group holds permissions from a fixed
+catalogue; a user's access is the union of their groups' permissions (with implied view
+permissions). The built-in **Administrators** group has every permission plus the
+administration areas (users, groups, backups, restore), cannot be renamed or deleted, and
+always keeps at least one active member. On upgrade only the default administrator is in
+Administrators; everyone else starts with no access (Albie, 2026-10-16). Also asked during
+M18: the GitHub repository link on the sign-in page (18.9).
+
+| ID | Step | Status | Acceptance | Files |
+|---|---|---|---|---|
+| 18.1 | Domain: `Permission` catalogue (areas, labels, implications), `Group` (validate name/description/permissions), `Access` (union + implications; administrator = everything), `AdministratorsGroupID`; `ErrNoAccess` | done | table tests: implications, unknown/duplicate permission, builtin rules, admin has all | `internal/domain/access.go`, tests |
+| 18.2 | Migration `00018_access_groups`: `access_groups`, `access_group_permissions`, `access_group_members`; seed Administrators; every existing user a member | done | migrations up/down/up; integration round trip | `migrations/00018_access_groups.sql` |
+| 18.3 | Ports `GroupRepository` (+fake), MariaDB adapter, sqlc queries; `LockAdministrators` (active members, FOR UPDATE) | done | integration test: CRUD, members, permissions, lock | `internal/ports`, `internal/adapters/mariadb` |
+| 18.4 | App: every API operation mapped to the permission it needs (unknown operation = refused); `SessionAllows` checks it; `Authenticate` loads the user's access; groups use cases (list, create, update, delete, set a user's groups) re-authenticated, audited, refusing to remove yourself from Administrators and serialised on the Administrators lock; new and CLI/default users join groups | done | app tests: every operation mapped (checked against the contract in the HTTP tests), access denied, lockout rules, audit entries | `internal/app/{access,groups,auth,users}.go`, tests |
+| 18.5 | Contract: `Me.permissions`/`administrator`, `User.groupIds`, `NewUserRequest.groupIds`, `/groups` (list incl. the permission catalogue, create), `/groups/{id}` (update), `/groups/{id}/delete`, `/users/{id}/groups`; 403 `no-access`; handlers | done | httptest: a user without a permission gets 403, admin-only routes, group CRUD | `api/openapi/cactusinv.yaml`, generated, `internal/adapters/http` |
+| 18.6 | Web: `useCan`; menus, routes and action buttons follow the signed-in user's access; Users page gets Users / Groups tabs: groups table, group editor (permissions by area, implied ones shown as included, members), a user's groups, groups when adding a user | done | Vitest: nav filtered, no-access page, group create/update payloads, user groups payload | `web/src` |
+| 18.7 | Sidebar: the active item's outline is no longer clipped and the menu lines up with the search box | done | rendered at 1280 px, folded and with Settings open | `web/src/components/Layout.tsx` |
+| 18.8 | VERSION 1.7.0; README, ARCHITECTURE, ADR-011 note, ADR-012; `make check` | done | see the evidence line below | docs |
+| 18.9 | Sign-in page: "Free and open source: github.com/albievan/cactusinv" under the feature list, and "Source on GitHub" beside the version | done | rendered | `web/src/components/auth.tsx` |
+
+Evidence (2026-10-16, isolated worktree at 27bf815 + M18): `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.7 %, app 85.5 %, "No vulnerabilities found.", contracts in sync, web 68 tests, build OK); `make test-int` on local Docker: `ok internal/adapters/mariadb 34.9s` (incl. `TestGroupRepository`, `TestAccessGroupsMigrationSeedsOneAdministrator`, `headSchema` 18); screens checked at 1280 px and 390 px with mocked data (users, groups, group editor, sign-in page).
+
+
 ---
 
 ## Decisions
@@ -447,13 +476,19 @@ and a preview without a zone was computed in UTC while saving used the business 
 | 2026-10-16 | `CustomerRepository.GetMany` (query `ListCustomersByIDs`) for the schedule read model (17.9) | one query for every customer on a list page instead of one per schedule |
 | 2026-10-16 | The form does not choose a weekend rule for a new schedule: it sends none and shows the rule the server's preview applied (`RunPreview.weekendRule`) (17.9) | the default is the server's |
 | 2026-10-16 | Keeping or dropping a line's fixed price when a product is re-picked stays in the editor (17.9 review: justified, not moved) | it is form state — the user replacing a line's product clears what was typed for the old one, as a new line would be; the server stores and validates whatever override is sent and decides nothing from the product change, which it cannot see (lines are replaced as a whole on save) |
+| 2026-10-16 | Access groups (ADR-012): permissions belong to groups, users to groups; access = union + implied; a fixed catalogue, view and edit per area; administration (users, groups, backups, restore) only through the built-in Administrators (M18) | Albie's answers 1–2 |
+| 2026-10-16 | Upgrade: only the default administrator joins Administrators (fallback: the oldest active user); every other user has no access until put in a group (M18) | Albie's answer 3 |
+| 2026-10-16 | A user in no group can sign in but do nothing; the Add user form warns (M18) | Albie's answer 4 |
+| 2026-10-16 | Every group and membership change needs the actor's password, takes the Administrators lock and is audited; nobody removes themselves from Administrators (M18) | Albie's answers 5–6; keeps an active administrator without a separate "last administrator" rule |
+| 2026-10-16 | Access is checked per API operation in the session middleware; an operation without a rule is refused; a test checks every contract operation has one; currencies, business profile and bank accounts are readable by every signed-in user (M18) | one place to enforce, fail closed; reference data is printed on every invoice anyway |
+| 2026-10-16 | Settings → Your account (own password) is open to every user (M18) | a user without administration could otherwise not change their password on a desktop |
 
 ## Later
 
 - Credit notes; partial payments; payment reminders for overdue invoices (would reuse the
   outbox + schedules).
 - Customer portal / "view invoice" link.
-- OpenTelemetry tracing; Helm chart; multiple users with roles.
+- OpenTelemetry tracing; Helm chart. (Users with access groups: M18.)
 
 ## Open questions
 

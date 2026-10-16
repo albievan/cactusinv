@@ -1,33 +1,40 @@
 import { useState, type FormEvent } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api, unwrap } from '../lib/api/client'
-import { settingsHref, settingsNav } from '../features/settings/settingsNav'
+import { settingsHref, useSettingsNav } from '../features/settings/settingsNav'
 import { useVersion } from '../lib/version'
-import { useAuth } from './auth'
+import { useAuth, useCan } from './auth'
 import { CactusMark } from './Logo'
 import {
   IconBox, IconCalendar, IconShield, IconStatement, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
 } from './icons'
 
+/** The main menu; `need` is the permission that shows an entry (ADR-012). */
 export const nav = [
-  { to: '/', label: 'Dashboard', icon: IconHome, end: true },
-  { to: '/invoices', label: 'Invoices', icon: IconInvoice },
-  { to: '/customers', label: 'Customers', icon: IconUsers },
-  { to: '/statements', label: 'Statements', icon: IconStatement },
-  { to: '/schedules', label: 'Schedules', icon: IconCalendar },
-  { to: '/products', label: 'Products', icon: IconBox },
-  { to: '/emails', label: 'Outbox', icon: IconMail },
-  { to: '/audit', label: 'Audit log', icon: IconShield },
+  { to: '/', label: 'Dashboard', icon: IconHome, end: true, need: 'dashboard.view' },
+  { to: '/invoices', label: 'Invoices', icon: IconInvoice, need: 'invoices.view' },
+  { to: '/customers', label: 'Customers', icon: IconUsers, need: 'customers.view' },
+  { to: '/statements', label: 'Statements', icon: IconStatement, need: 'statements.view' },
+  { to: '/schedules', label: 'Schedules', icon: IconCalendar, need: 'schedules.view' },
+  { to: '/products', label: 'Products', icon: IconBox, need: 'products.view' },
+  { to: '/emails', label: 'Outbox', icon: IconMail, need: 'emails.view' },
+  { to: '/audit', label: 'Audit log', icon: IconShield, need: 'audit.view' },
   { to: '/settings', label: 'Settings', icon: IconSettings },
 ]
 
 const mobileTabs = [
-  { to: '/', label: 'Dashboard', icon: IconHome, end: true },
-  { to: '/invoices', label: 'Invoices', icon: IconInvoice },
-  { to: '/customers', label: 'Customers', icon: IconUsers },
-  { to: '/schedules', label: 'Schedules', icon: IconCalendar },
+  { to: '/', label: 'Dashboard', icon: IconHome, end: true, need: 'dashboard.view' },
+  { to: '/invoices', label: 'Invoices', icon: IconInvoice, need: 'invoices.view' },
+  { to: '/customers', label: 'Customers', icon: IconUsers, need: 'customers.view' },
+  { to: '/schedules', label: 'Schedules', icon: IconCalendar, need: 'schedules.view' },
   { to: '/more', label: 'More', icon: IconMenu },
 ]
+
+/** useNav is the main menu without the entries the signed-in user may not open. */
+export function useNav() {
+  const can = useCan()
+  return nav.filter((t) => !t.need || can(t.need))
+}
 
 const itemClass = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-100'
 const activeClass = 'bg-brand-500 font-semibold text-white ring-2 ring-cream-100/90'
@@ -40,6 +47,7 @@ const idleClass = 'text-cream-100/90 hover:bg-brand-700/70'
  */
 function SettingsNavItem({ folded }: { folded: boolean }) {
   const { pathname } = useLocation()
+  const settingsNav = useSettingsNav()
   const open = pathname === '/settings' || pathname.startsWith('/settings/')
   return (
     <div>
@@ -83,6 +91,7 @@ function SettingsNavItem({ folded }: { folded: boolean }) {
  */
 function PausedBanner() {
   const { user, refresh } = useAuth()
+  const can = useCan()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   if (!user?.automationPaused) return null
@@ -103,11 +112,14 @@ function PausedBanner() {
       <span className="min-w-0 flex-1">
         <strong>Automatic sending is paused after a restore.</strong> Check the <Link className="underline" to="/emails">Outbox</Link> and{' '}
         <Link className="underline" to="/schedules">schedules</Link>, then resume.
+        {!can('administer') && ' An administrator resumes it.'}
         {error && <span className="ml-2 font-semibold text-red-700">{error}</span>}
       </span>
-      <button className="btn-primary" onClick={resume} disabled={busy}>
-        Resume automatic sending
-      </button>
+      {can('administer') && (
+        <button className="btn-primary" onClick={resume} disabled={busy}>
+          Resume automatic sending
+        </button>
+      )}
     </div>
   )
 }
@@ -122,6 +134,9 @@ function readFolded(): boolean {
 
 export function Layout() {
   const { user, logout } = useAuth()
+  const can = useCan()
+  const menu = useNav()
+  const tabs = mobileTabs.filter((t) => !t.need || can(t.need))
   const version = useVersion()
   const navigate = useNavigate()
   const [folded, setFolded] = useState(readFolded)
@@ -159,7 +174,7 @@ export function Layout() {
             )}
           </div>
         </div>
-        {!folded && (
+        {!folded && can('invoices.view') && (
           <form onSubmit={search} className="mt-4 flex gap-2 px-3" role="search">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoices" aria-label="Search invoices" className="min-w-0 flex-1 rounded-lg border border-cream-300/30 bg-brand-900/40 px-3 py-2 text-sm text-cream-50 placeholder:text-cream-300/70 focus:border-cream-300 focus:outline-none" />
             <button className="rounded-lg border border-cream-300/30 px-2.5 text-cream-100 hover:bg-brand-700" aria-label="Search">
@@ -167,8 +182,8 @@ export function Layout() {
             </button>
           </form>
         )}
-        <nav className="mt-4 flex flex-1 flex-col gap-1 overflow-y-auto px-2" aria-label="Main">
-          {nav.map((t) =>
+        <nav className="mt-3 flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-1" aria-label="Main">
+          {menu.map((t) =>
             t.to === '/settings' ? (
               <SettingsNavItem key={t.to} folded={folded} />
             ) : (
@@ -214,8 +229,12 @@ export function Layout() {
         </main>
       </div>
 
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-cream-300 bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-        {mobileTabs.map((t) => (
+      <nav
+        aria-label="Main"
+        className="fixed inset-x-0 bottom-0 z-40 grid border-t border-cream-300 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      >
+        {tabs.map((t) => (
           <NavLink key={t.to} to={t.to} end={'end' in t} className={({ isActive }) => `flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${isActive ? 'text-brand-600' : 'text-slate-500'}`}>
             <t.icon width={22} height={22} />
             {t.label}
