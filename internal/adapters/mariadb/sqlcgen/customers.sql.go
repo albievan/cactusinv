@@ -297,6 +297,62 @@ func (q *Queries) ListCustomers(ctx context.Context, arg ListCustomersParams) ([
 	return items, nil
 }
 
+const listCustomersByIDs = `-- name: ListCustomersByIDs :many
+SELECT id, code, name, email, cc, attention, billing_address, shipping_name, shipping_address, phone, tax_number, currency_code, terms_kind, terms_value, bank_account_id, default_notes, active, version FROM customers WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListCustomersByIDs(ctx context.Context, ids []string) ([]Customer, error) {
+	query := listCustomersByIDs
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Customer{}
+	for rows.Next() {
+		var i Customer
+		if err := rows.Scan(
+			&i.ID,
+			&i.Code,
+			&i.Name,
+			&i.Email,
+			&i.Cc,
+			&i.Attention,
+			&i.BillingAddress,
+			&i.ShippingName,
+			&i.ShippingAddress,
+			&i.Phone,
+			&i.TaxNumber,
+			&i.CurrencyCode,
+			&i.TermsKind,
+			&i.TermsValue,
+			&i.BankAccountID,
+			&i.DefaultNotes,
+			&i.Active,
+			&i.Version,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPricesByProductIDs = `-- name: ListPricesByProductIDs :many
 SELECT product_id, currency_code, unit_price_minor FROM product_prices WHERE product_id IN (/*SLICE:ids*/?) ORDER BY product_id, currency_code
 `

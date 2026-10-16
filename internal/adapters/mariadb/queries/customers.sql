@@ -13,6 +13,9 @@ WHERE (sqlc.arg(include_inactive) OR active = TRUE)
 -- name: GetCustomer :one
 SELECT * FROM customers WHERE id = ?;
 
+-- name: ListCustomersByIDs :many
+SELECT * FROM customers WHERE id IN (sqlc.slice(ids));
+
 -- name: InsertCustomer :exec
 INSERT INTO customers (id, code, name, email, cc, attention, billing_address, shipping_name, shipping_address, phone,
     tax_number, currency_code, terms_kind, terms_value, bank_account_id, default_notes, active, version)

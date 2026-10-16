@@ -20,6 +20,7 @@ func toSchedule(r sqlcgen.Schedule) *domain.Schedule {
 			Frequency: domain.Frequency(r.Frequency), Interval: int(r.IntervalCount), DayOfMonth: int(r.DayOfMonth),
 			Weekday: time.Weekday(r.Weekday), SendHour: int(r.SendHour), SendMinute: int(r.SendMinute),
 			TimeZone: r.TimeZone, StartDate: fromDate(r.StartDate), EndDate: fromNullDate(r.EndDate),
+			Weekend: domain.WeekendRule(r.WeekendRule),
 		},
 		Header:         domain.InvoiceHeader{SalesPerson: r.SalesPerson, Job: r.Job, ShippingMethod: r.ShippingMethod, ShippingTerms: r.ShippingTerms},
 		Notes:          r.Notes,
@@ -111,7 +112,7 @@ func (r scheduleRepo) Create(ctx context.Context, s *domain.Schedule) error {
 		Notes: s.Notes, TaxRateBp: nullRate(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
 		EmailBody: s.EmailBody, NextOccurrence: nullTime(s.NextOccurrence), NextRunAt: nullTime(s.NextRunAt),
 		LastRunAt: nullTime(s.LastRunAt), FailureCount: i32(s.FailureCount), LastError: s.LastError,
-		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
+		CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(), WeekendRule: weekendRule(rc.Weekend),
 	})
 	if err != nil {
 		return mapErr(err)
@@ -131,7 +132,7 @@ func (r scheduleRepo) Update(ctx context.Context, s *domain.Schedule) error {
 		Notes: s.Notes, TaxRateBp: nullRate(s.TaxRate), AutoSend: s.AutoSend, EmailSubject: s.EmailSubject,
 		EmailBody: s.EmailBody, NextOccurrence: nullTime(s.NextOccurrence), NextRunAt: nullTime(s.NextRunAt),
 		LastRunAt: nullTime(s.LastRunAt), FailureCount: i32(s.FailureCount), LastError: s.LastError,
-		UpdatedAt: s.UpdatedAt.UTC(), ID: s.ID, Version: i32(s.Version),
+		UpdatedAt: s.UpdatedAt.UTC(), WeekendRule: weekendRule(rc.Weekend), ID: s.ID, Version: i32(s.Version),
 	})
 	if err := affected(n, err, domain.ErrConflict); err != nil {
 		return err
@@ -177,7 +178,7 @@ func (r scheduleRepo) ClaimDue(ctx context.Context, now time.Time, limit int) ([
 
 func (r scheduleRepo) InsertRun(ctx context.Context, run domain.ScheduleRun) error {
 	return mapErr(r.q.InsertScheduleRun(ctx, sqlcgen.InsertScheduleRunParams{
-		ScheduleID: run.ScheduleID, Period: dateValue(run.Period), InvoiceID: run.InvoiceID, At: run.At.UTC(),
+		ScheduleID: run.ScheduleID, Period: dateValue(run.Period), PeriodKey: run.PeriodKey, InvoiceID: run.InvoiceID, At: run.At.UTC(),
 	}))
 }
 
@@ -188,7 +189,7 @@ func (r scheduleRepo) ListRuns(ctx context.Context, scheduleID string, limit int
 	}
 	out := make([]domain.ScheduleRun, len(rows))
 	for i, x := range rows {
-		out[i] = domain.ScheduleRun{ScheduleID: x.ScheduleID, Period: fromDate(x.Period), InvoiceID: x.InvoiceID, At: x.At.UTC()}
+		out[i] = domain.ScheduleRun{ScheduleID: x.ScheduleID, Period: fromDate(x.Period), PeriodKey: x.PeriodKey, InvoiceID: x.InvoiceID, At: x.At.UTC()}
 	}
 	return out, nil
 }
@@ -206,4 +207,12 @@ func nullRate(r *domain.BasisPoints) sql.NullInt32 {
 		return sql.NullInt32{}
 	}
 	return sql.NullInt32{Int32: i32(int(*r)), Valid: true}
+}
+
+// weekendRule stores an unset rule as none (the column's default).
+func weekendRule(w domain.WeekendRule) string {
+	if w == "" {
+		return string(domain.WeekendNone)
+	}
+	return string(w)
 }

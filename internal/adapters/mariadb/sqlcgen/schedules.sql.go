@@ -13,7 +13,7 @@ import (
 )
 
 const claimDueSchedules = `-- name: ClaimDueSchedules :many
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days, weekend_rule FROM schedules
 WHERE status = 'active' AND next_run_at <= ?
 ORDER BY next_run_at
 LIMIT ?
@@ -68,6 +68,7 @@ func (q *Queries) ClaimDueSchedules(ctx context.Context, arg ClaimDueSchedulesPa
 			&i.Kind,
 			&i.EmailScope,
 			&i.EmailDelayDays,
+			&i.WeekendRule,
 		); err != nil {
 			return nil, err
 		}
@@ -127,7 +128,7 @@ func (q *Queries) DeleteScheduleLines(ctx context.Context, scheduleID string) er
 }
 
 const getSchedule = `-- name: GetSchedule :one
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules WHERE id = ?
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days, weekend_rule FROM schedules WHERE id = ?
 `
 
 func (q *Queries) GetSchedule(ctx context.Context, id string) (Schedule, error) {
@@ -167,6 +168,7 @@ func (q *Queries) GetSchedule(ctx context.Context, id string) (Schedule, error) 
 		&i.Kind,
 		&i.EmailScope,
 		&i.EmailDelayDays,
+		&i.WeekendRule,
 	)
 	return i, err
 }
@@ -175,8 +177,8 @@ const insertSchedule = `-- name: InsertSchedule :exec
 INSERT INTO schedules (id, customer_id, name, kind, email_scope, email_delay_days, status, frequency, interval_count, day_of_month, weekday, send_hour,
     send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes,
     tax_rate_bp, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count,
-    last_error, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    last_error, created_at, updated_at, weekend_rule, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 `
 
 type InsertScheduleParams struct {
@@ -212,6 +214,7 @@ type InsertScheduleParams struct {
 	LastError      string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	WeekendRule    string
 }
 
 func (q *Queries) InsertSchedule(ctx context.Context, arg InsertScheduleParams) error {
@@ -248,6 +251,7 @@ func (q *Queries) InsertSchedule(ctx context.Context, arg InsertScheduleParams) 
 		arg.LastError,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.WeekendRule,
 	)
 	return err
 }
@@ -282,12 +286,13 @@ func (q *Queries) InsertScheduleLine(ctx context.Context, arg InsertScheduleLine
 }
 
 const insertScheduleRun = `-- name: InsertScheduleRun :exec
-INSERT INTO schedule_runs (schedule_id, period, invoice_id, at) VALUES (?, ?, ?, ?)
+INSERT INTO schedule_runs (schedule_id, period, period_key, invoice_id, at) VALUES (?, ?, ?, ?, ?)
 `
 
 type InsertScheduleRunParams struct {
 	ScheduleID string
 	Period     time.Time
+	PeriodKey  string
 	InvoiceID  string
 	At         time.Time
 }
@@ -296,6 +301,7 @@ func (q *Queries) InsertScheduleRun(ctx context.Context, arg InsertScheduleRunPa
 	_, err := q.db.ExecContext(ctx, insertScheduleRun,
 		arg.ScheduleID,
 		arg.Period,
+		arg.PeriodKey,
 		arg.InvoiceID,
 		arg.At,
 	)
@@ -348,7 +354,7 @@ func (q *Queries) ListScheduleLines(ctx context.Context, ids []string) ([]Schedu
 }
 
 const listScheduleRuns = `-- name: ListScheduleRuns :many
-SELECT schedule_id, period, invoice_id, at FROM schedule_runs WHERE schedule_id = ? ORDER BY period DESC LIMIT ?
+SELECT schedule_id, period, invoice_id, at, period_key FROM schedule_runs WHERE schedule_id = ? ORDER BY period DESC LIMIT ?
 `
 
 type ListScheduleRunsParams struct {
@@ -370,6 +376,7 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 			&i.Period,
 			&i.InvoiceID,
 			&i.At,
+			&i.PeriodKey,
 		); err != nil {
 			return nil, err
 		}
@@ -385,7 +392,7 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 }
 
 const listSchedules = `-- name: ListSchedules :many
-SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days FROM schedules
+SELECT id, customer_id, name, status, frequency, interval_count, day_of_month, weekday, send_hour, send_minute, time_zone, start_date, end_date, sales_person, job, shipping_method, shipping_terms, notes, auto_send, email_subject, email_body, next_occurrence, next_run_at, last_run_at, failure_count, last_error, created_at, updated_at, version, tax_rate_bp, kind, email_scope, email_delay_days, weekend_rule FROM schedules
 WHERE (? = '' OR customer_id = ?)
   AND (? = '' OR status = ?)
 ORDER BY name, id
@@ -449,6 +456,7 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 			&i.Kind,
 			&i.EmailScope,
 			&i.EmailDelayDays,
+			&i.WeekendRule,
 		); err != nil {
 			return nil, err
 		}
@@ -468,7 +476,7 @@ UPDATE schedules SET customer_id = ?, name = ?, kind = ?, email_scope = ?, email
     weekday = ?, send_hour = ?, send_minute = ?, time_zone = ?, start_date = ?, end_date = ?, sales_person = ?,
     job = ?, shipping_method = ?, shipping_terms = ?, notes = ?, tax_rate_bp = ?, auto_send = ?, email_subject = ?,
     email_body = ?, next_occurrence = ?, next_run_at = ?, last_run_at = ?, failure_count = ?, last_error = ?,
-    updated_at = ?, version = version + 1
+    updated_at = ?, weekend_rule = ?, version = version + 1
 WHERE id = ? AND version = ?
 `
 
@@ -503,6 +511,7 @@ type UpdateScheduleParams struct {
 	FailureCount   int32
 	LastError      string
 	UpdatedAt      time.Time
+	WeekendRule    string
 	ID             string
 	Version        int32
 }
@@ -539,6 +548,7 @@ func (q *Queries) UpdateSchedule(ctx context.Context, arg UpdateScheduleParams) 
 		arg.FailureCount,
 		arg.LastError,
 		arg.UpdatedAt,
+		arg.WeekendRule,
 		arg.ID,
 		arg.Version,
 	)

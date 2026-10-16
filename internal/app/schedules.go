@@ -12,21 +12,86 @@ import (
 // timeT keeps method-expression signatures short.
 type timeT = time.Time
 
-// ScheduleDetail is a schedule with its next run dates and recent runs.
+// ScheduleDetail is a schedule with its next run dates and recent runs. LineProducts holds
+// one entry per line: the line's product as it is now (name, state, price in the
+// customer's currency), read from the product look-up.
 type ScheduleDetail struct {
-	Schedule *domain.Schedule
-	Upcoming []time.Time
-	Runs     []domain.ScheduleRun
+	Schedule     *domain.Schedule
+	LineProducts []domain.ScheduleLineProduct
+	Upcoming     []time.Time
+	Runs         []domain.ScheduleRun
 }
 
-// ListSchedules returns a page of schedules.
-func (s *Service) ListSchedules(ctx context.Context, f ports.ScheduleFilter) ([]domain.Schedule, int, error) {
+// ScheduleView is a listed schedule with its lines' products as they are now (see
+// ScheduleDetail.LineProducts).
+type ScheduleView struct {
+	domain.Schedule
+	LineProducts []domain.ScheduleLineProduct
+}
+
+// ListSchedules returns a page of schedules with their lines' products.
+func (s *Service) ListSchedules(ctx context.Context, f ports.ScheduleFilter) ([]ScheduleView, int, error) {
 	f.Page = f.Page.Normalize()
-	out, n, err := s.tx.Repos().Schedules.List(ctx, f)
-	return out, n, wrap("app.ListSchedules", err)
+	r := s.tx.Repos()
+	ss, n, err := r.Schedules.List(ctx, f)
+	if err != nil {
+		return nil, 0, wrap("app.ListSchedules", err)
+	}
+	ptrs := make([]*domain.Schedule, len(ss))
+	for i := range ss {
+		ptrs[i] = &ss[i]
+	}
+	views, err := lineProducts(ctx, r, ptrs)
+	if err != nil {
+		return nil, 0, wrap("app.ListSchedules", err)
+	}
+	out := make([]ScheduleView, len(ss))
+	for i := range ss {
+		out[i] = ScheduleView{Schedule: ss[i], LineProducts: views[i]}
+	}
+	return out, n, nil
 }
 
-// GetSchedule returns a schedule with a preview of its next five runs.
+// lineProducts describes every line's product of each schedule, priced in the currency
+// of the schedule's customer. Products are read from the look-up, never from the line's
+// stored description.
+func lineProducts(ctx context.Context, r ports.Repos, ss []*domain.Schedule) ([][]domain.ScheduleLineProduct, error) {
+	var ids, customerIDs []string
+	for _, sc := range ss {
+		if len(sc.Lines) == 0 {
+			continue
+		}
+		customerIDs = append(customerIDs, sc.CustomerID)
+		for _, l := range sc.Lines {
+			if l.ProductID != "" {
+				ids = append(ids, l.ProductID)
+			}
+		}
+	}
+	customers, err := r.Customers.GetMany(ctx, customerIDs)
+	if err != nil {
+		return nil, err
+	}
+	currencies := make(map[string]domain.CurrencyCode, len(customers))
+	for id, c := range customers {
+		currencies[id] = c.Currency
+	}
+	products, err := r.Products.GetMany(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]domain.ScheduleLineProduct, len(ss))
+	for i, sc := range ss {
+		out[i] = make([]domain.ScheduleLineProduct, len(sc.Lines))
+		for j, l := range sc.Lines {
+			out[i][j] = l.ProductView(products, currencies[sc.CustomerID])
+		}
+	}
+	return out, nil
+}
+
+// GetSchedule returns a schedule with its lines' products and a preview of its next five
+// runs.
 func (s *Service) GetSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
 	r := s.tx.Repos()
 	sc, err := r.Schedules.Get(ctx, id)
@@ -37,25 +102,59 @@ func (s *Service) GetSchedule(ctx context.Context, id string) (ScheduleDetail, e
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.GetSchedule", err)
 	}
+	views, err := lineProducts(ctx, r, []*domain.Schedule{sc})
+	if err != nil {
+		return ScheduleDetail{}, wrap("app.GetSchedule", err)
+	}
 	var upcoming []time.Time
 	if sc.Status == domain.ScheduleActive {
-		upcoming = append([]time.Time{sc.NextOccurrence}, sc.Recurrence.Upcoming(sc.NextOccurrence, 4)...)
+		upcoming = sc.UpcomingRuns(5)
 	}
-	return ScheduleDetail{Schedule: sc, Upcoming: upcoming, Runs: runs}, nil
+	return ScheduleDetail{Schedule: sc, LineProducts: views[0], Upcoming: upcoming, Runs: runs}, nil
 }
 
-// PreviewRecurrence lists the next n run times of an unsaved recurrence.
-func (s *Service) PreviewRecurrence(r domain.Recurrence, n int) ([]time.Time, error) {
-	if err := r.Validate(); err != nil {
-		return nil, wrap("app.PreviewRecurrence", err)
+// RunPreview is the next run times of an unsaved recurrence and the time zone they were
+// computed in.
+type RunPreview struct {
+	Runs     []time.Time
+	TimeZone string
+	Weekend  domain.WeekendRule
+}
+
+// PreviewRecurrence lists the next n run times of an unsaved recurrence, after its weekend
+// rule. A recurrence without a time zone is computed in the business time zone and one
+// without a weekend rule gets the default, as creating it would.
+func (s *Service) PreviewRecurrence(ctx context.Context, r domain.Recurrence, n int) (RunPreview, error) {
+	if r.TimeZone == "" {
+		b, err := business(ctx, s.tx.Repos())
+		if err != nil {
+			return RunPreview{}, wrap("app.PreviewRecurrence", err)
+		}
+		r.TimeZone = b.TimeZone
 	}
-	return r.Upcoming(s.now(), min(max(n, 1), 24)), nil
+	r.DefaultWeekendRule() // as creating it would
+	if err := r.Validate(); err != nil {
+		return RunPreview{}, wrap("app.PreviewRecurrence", err)
+	}
+	return RunPreview{Runs: r.Upcoming(s.now(), min(max(n, 1), 24)), TimeZone: r.TimeZone, Weekend: r.Weekend}, nil
+}
+
+// ScheduleEmailDefaults returns the suggested e-mail subject and body for a new schedule
+// of each type; the recurring-invoice type uses the business's own invoice e-mail texts
+// when it has set them.
+func (s *Service) ScheduleEmailDefaults(ctx context.Context) (domain.ScheduleEmailDefaults, error) {
+	b, err := business(ctx, s.tx.Repos())
+	if err != nil {
+		return domain.ScheduleEmailDefaults{}, wrap("app.ScheduleEmailDefaults", err)
+	}
+	return domain.ScheduleEmailsFor(b), nil
 }
 
 // CreateSchedule saves a new active schedule for a customer.
 func (s *Service) CreateSchedule(ctx context.Context, sc domain.Schedule) (ScheduleDetail, error) {
 	sc.ID = s.ids.NewID()
 	sc.CreatedAt = s.now()
+	sc.Recurrence.DefaultWeekendRule()
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		if err := s.checkSchedule(ctx, r, &sc); err != nil {
 			return err
@@ -82,13 +181,20 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 		if cur.Version != sc.Version {
 			return domain.ErrConflict
 		}
+		if sc.Recurrence.Weekend == "" { // a client that does not know the rule keeps it
+			sc.Recurrence.Weekend = cur.Recurrence.Weekend
+		}
 		if err := s.checkSchedule(ctx, r, &sc); err != nil {
 			return err
 		}
+		// The run state is the server's: a paused schedule keeps its pending occurrence and
+		// failure count (Resume decides from them); an active one keeps an unrun overdue
+		// occurrence (ActivateFrom).
 		sc.Status, sc.CreatedAt, sc.LastRunAt = cur.Status, cur.CreatedAt, cur.LastRunAt
+		sc.FailureCount, sc.LastError, sc.NextOccurrence, sc.NextRunAt = cur.FailureCount, cur.LastError, cur.NextOccurrence, cur.NextRunAt
 		sc.UpdatedAt = s.now()
 		if cur.Status != domain.SchedulePaused {
-			sc.Activate(s.now())
+			sc.ActivateFrom(cur.NextOccurrence, s.now())
 		}
 		if err := r.Schedules.Update(ctx, &sc); err != nil {
 			return err
@@ -242,10 +348,11 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if sc.Kind != domain.ScheduleEmail {
 		invoiceID = s.ids.NewID()
 	}
-	err := r.Schedules.InsertRun(ctx, domain.ScheduleRun{ScheduleID: sc.ID, Period: period, InvoiceID: invoiceID, At: s.now()})
+	err := r.Schedules.InsertRun(ctx, domain.ScheduleRun{ScheduleID: sc.ID, Period: period, PeriodKey: sc.PeriodKey(), InvoiceID: invoiceID, At: s.now()})
 	switch {
 	case errors.Is(err, domain.ErrConflict):
-		// Already invoiced (a previous run committed but did not advance): just advance.
+		// This billing period already ran (a previous run committed but did not advance, or
+		// the day was moved within the period after it ran): just advance.
 		sc.Advance(s.now())
 		return r.Schedules.Update(ctx, sc)
 	case err != nil:
@@ -275,7 +382,8 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err != nil {
 		return err
 	}
-	content, err := sc.BuildDraft(c, products, b.VATRate)
+	issueDate := sc.IssueDate(s.today(b))
+	content, err := sc.BuildDraft(c, products, b.VATRate, issueDate)
 	if err != nil {
 		return err
 	}
@@ -290,7 +398,7 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err := s.event(ctx, r, inv.ID, "created", "schedule "+sc.Name); err != nil {
 		return err
 	}
-	if err := s.issue(ctx, r, inv, period); err != nil {
+	if err := s.issue(ctx, r, inv, issueDate); err != nil {
 		return err
 	}
 	if sc.AutoSend {

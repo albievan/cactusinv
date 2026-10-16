@@ -144,15 +144,20 @@ export function Layout() {
     <div className="min-h-screen md:flex">
       <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-gradient-to-b from-brand-800 to-brand-950 text-cream-100 md:flex ${folded ? 'w-[4.5rem]' : 'w-60'}`}>
         <div className={`px-3 pt-4 ${folded ? 'text-center' : ''}`}>
-          <div className={`flex items-center gap-2 ${folded ? 'justify-center' : ''}`}>
-            <CactusMark className="h-7 w-7" color="#e9dfc9" />
+          {/* The version sits beside the mark, under the name, so the mark never runs into it. */}
+          <div className={`flex items-center gap-2.5 ${folded ? 'justify-center' : ''}`}>
+            <CactusMark className="h-8 w-8 shrink-0" color="#e9dfc9" />
             {!folded && (
-              <span className="text-lg font-semibold">
-                cactus<span className="text-[#d9c89f]">Inv</span>
-              </span>
+              <div className="min-w-0 leading-tight">
+                <span className="block text-lg font-semibold">
+                  cactus<span className="text-[#d9c89f]">Inv</span>
+                </span>
+                <span className="block truncate text-xs text-cream-300/80" data-testid="version">
+                  {version}
+                </span>
+              </div>
             )}
           </div>
-          {!folded && <div className="mt-1 text-xs text-cream-300/80" data-testid="version">{version}</div>}
         </div>
         {!folded && (
           <form onSubmit={search} className="mt-4 flex gap-2 px-3" role="search">

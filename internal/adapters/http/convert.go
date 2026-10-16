@@ -305,7 +305,7 @@ func toAPIRecurrence(r domain.Recurrence) Recurrence {
 	return Recurrence{
 		Frequency: RecurrenceFrequency(r.Frequency), Interval: r.Interval, DayOfMonth: r.DayOfMonth,
 		Weekday: int(r.Weekday), SendTime: fmt.Sprintf("%02d:%02d", r.SendHour, r.SendMinute),
-		TimeZone: r.TimeZone, StartDate: toAPIDate(r.StartDate), EndDate: end,
+		TimeZone: r.TimeZone, StartDate: toAPIDate(r.StartDate), EndDate: end, WeekendRule: RecurrenceWeekendRule(r.Weekend),
 	}
 }
 
@@ -321,11 +321,13 @@ func fromAPIRecurrence(r Recurrence) (domain.Recurrence, error) {
 	return domain.Recurrence{
 		Frequency: domain.Frequency(r.Frequency), Interval: r.Interval, DayOfMonth: r.DayOfMonth,
 		Weekday: time.Weekday(r.Weekday), SendHour: hour, SendMinute: minute, TimeZone: r.TimeZone,
-		StartDate: fromAPIDate(r.StartDate), EndDate: fromAPIDatePtr(r.EndDate),
+		StartDate: fromAPIDate(r.StartDate), EndDate: fromAPIDatePtr(r.EndDate), Weekend: domain.WeekendRule(r.WeekendRule),
 	}, nil
 }
 
-func toAPISchedule(s *domain.Schedule, currency domain.CurrencyCode, mu minorUnits) Schedule {
+// toAPISchedule renders a schedule. products, when not nil, holds one entry per line: the
+// line's product as it is now (productName, productStatus, productUnitPrice).
+func toAPISchedule(s *domain.Schedule, products []domain.ScheduleLineProduct, currency domain.CurrencyCode, mu minorUnits) Schedule {
 	lines := make([]ScheduleLine, len(s.Lines))
 	for i, l := range s.Lines {
 		var price *string
@@ -337,13 +339,21 @@ func toAPISchedule(s *domain.Schedule, currency domain.CurrencyCode, mu minorUni
 			ProductId: l.ProductID, Description: l.Description, Quantity: l.Quantity.String(), UnitPrice: price,
 			DiscountPercent: l.Discount.String(),
 		}
+		if i < len(products) {
+			p := products[i]
+			lines[i].ProductName, lines[i].ProductStatus = p.Name, ScheduleLineProductStatus(p.State)
+			if p.UnitPrice != nil {
+				v := mu.format(*p.UnitPrice, currency)
+				lines[i].ProductUnitPrice = &v
+			}
+		}
 	}
 	return Schedule{
 		Id: s.ID, CustomerId: s.CustomerID, Name: s.Name, Kind: ScheduleKind(scheduleKindOf(s.Kind)),
 		EmailScope: ScheduleEmailScope(s.EmailScope), Status: ScheduleStatus(s.Status),
 		Recurrence: toAPIRecurrence(s.Recurrence), Lines: lines, Header: toAPIHeader(s.Header), Notes: s.Notes,
 		VatPercent: ratePtr(s.TaxRate), AutoSend: s.AutoSend, EmailDelayDays: s.EmailDelayDays, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
-		NextRunAt: timePtr(s.NextRunAt), LastRunAt: timePtr(s.LastRunAt), FailureCount: s.FailureCount,
+		NextRunAt: timePtr(s.NextRunAt), LastRunAt: timePtr(s.LastRunAt), LastRunResult: ScheduleLastRunResult(s.LastRunResult()), FailureCount: s.FailureCount,
 		LastError: s.LastError, Version: s.Version,
 	}
 }

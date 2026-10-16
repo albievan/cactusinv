@@ -592,7 +592,7 @@ func (h *handlers) scheduleDetail(ctx context.Context, d app.ScheduleDetail, mu 
 	for i, r := range d.Runs {
 		runs[i] = ScheduleRun{Period: toAPIDate(r.Period), InvoiceId: r.InvoiceID, At: r.At.UTC()}
 	}
-	return ScheduleDetail{Schedule: toAPISchedule(d.Schedule, cur, mu), Upcoming: upcoming, Runs: runs}, nil
+	return ScheduleDetail{Schedule: toAPISchedule(d.Schedule, d.LineProducts, cur, mu), Upcoming: upcoming, Runs: runs}, nil
 }
 
 func (h *handlers) ListSchedules(ctx context.Context, req ListSchedulesRequestObject) (ListSchedulesResponseObject, error) {
@@ -612,7 +612,7 @@ func (h *handlers) ListSchedules(ctx context.Context, req ListSchedulesRequestOb
 		if err != nil {
 			return nil, err
 		}
-		out[i] = toAPISchedule(&ss[i], c, mu)
+		out[i] = toAPISchedule(&ss[i].Schedule, ss[i].LineProducts, c, mu)
 	}
 	return ListSchedules200JSONResponse{Items: out, Total: total}, nil
 }
@@ -649,20 +649,35 @@ func (h *handlers) CreateSchedule(ctx context.Context, req CreateScheduleRequest
 	return CreateSchedule201JSONResponse(out), nil
 }
 
-func (h *handlers) PreviewSchedule(_ context.Context, req PreviewScheduleRequestObject) (PreviewScheduleResponseObject, error) {
+func (h *handlers) PreviewSchedule(ctx context.Context, req PreviewScheduleRequestObject) (PreviewScheduleResponseObject, error) {
 	r, err := fromAPIRecurrence(*req.Body)
 	if err != nil {
 		return nil, err
 	}
-	runs, err := h.svc.PreviewRecurrence(r, 6)
+	pv, err := h.svc.PreviewRecurrence(ctx, r, 6)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]time.Time, len(runs))
-	for i, t := range runs {
+	out := make([]time.Time, len(pv.Runs))
+	for i, t := range pv.Runs {
 		out[i] = t.UTC()
 	}
-	return PreviewSchedule200JSONResponse{Runs: out}, nil
+	return PreviewSchedule200JSONResponse{Runs: out, TimeZone: pv.TimeZone, WeekendRule: RunPreviewWeekendRule(pv.Weekend)}, nil
+}
+
+func toAPIEmailTemplate(t domain.EmailTemplate) EmailTemplate {
+	return EmailTemplate{Subject: t.Subject, Body: t.Body, Placeholders: t.Placeholders}
+}
+
+func (h *handlers) GetScheduleDefaults(ctx context.Context, _ GetScheduleDefaultsRequestObject) (GetScheduleDefaultsResponseObject, error) {
+	d, err := h.svc.ScheduleEmailDefaults(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return GetScheduleDefaults200JSONResponse{
+		Invoice: toAPIEmailTemplate(d.Invoice), Unsent: toAPIEmailTemplate(d.Unsent),
+		Outstanding: toAPIEmailTemplate(d.Outstanding), Statement: toAPIEmailTemplate(d.Statement),
+	}, nil
 }
 
 func (h *handlers) GetSchedule(ctx context.Context, req GetScheduleRequestObject) (GetScheduleResponseObject, error) {
@@ -762,7 +777,7 @@ func (h *handlers) GetDashboard(ctx context.Context, _ GetDashboardRequestObject
 		if err != nil {
 			return nil, err
 		}
-		out.UpcomingRuns = append(out.UpcomingRuns, toAPISchedule(&d.UpcomingRuns[i], c, mu))
+		out.UpcomingRuns = append(out.UpcomingRuns, toAPISchedule(&d.UpcomingRuns[i], nil, c, mu))
 	}
 	for i := range d.RecentInvoices {
 		out.RecentInvoices = append(out.RecentInvoices, toAPIInvoice(&d.RecentInvoices[i], mu, d.Today))

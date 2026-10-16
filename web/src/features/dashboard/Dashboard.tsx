@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, unwrap, type Dashboard as DashboardData } from '../../lib/api/client'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, formatInZone } from '../../lib/format'
 import { groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { ColumnChart } from '../../components/charts/ColumnChart'
@@ -142,7 +142,7 @@ function Upcoming({ data }: { data: DashboardData }) {
             {data.upcomingRuns.map((s) => (
               <li key={s.id} className="flex justify-between gap-2">
                 <Link to={`/schedules/${s.id}`} className="truncate text-brand-700 hover:underline">{s.name}</Link>
-                <span className="shrink-0 text-slate-500">{formatDateTime(s.nextRunAt)}</span>
+                <span className="shrink-0 text-slate-500">{formatInZone(s.nextRunAt, s.recurrence.timeZone)}</span>
               </li>
             ))}
           </ul>

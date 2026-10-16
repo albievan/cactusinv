@@ -126,19 +126,19 @@ func (e EmailMessageKind) Valid() bool {
 
 // Defines values for EmailSettingsTls.
 const (
-	None     EmailSettingsTls = "none"
-	Starttls EmailSettingsTls = "starttls"
-	Tls      EmailSettingsTls = "tls"
+	EmailSettingsTlsNone     EmailSettingsTls = "none"
+	EmailSettingsTlsStarttls EmailSettingsTls = "starttls"
+	EmailSettingsTlsTls      EmailSettingsTls = "tls"
 )
 
 // Valid indicates whether the value is a known member of the EmailSettingsTls enum.
 func (e EmailSettingsTls) Valid() bool {
 	switch e {
-	case None:
+	case EmailSettingsTlsNone:
 		return true
-	case Starttls:
+	case EmailSettingsTlsStarttls:
 		return true
-	case Tls:
+	case EmailSettingsTlsTls:
 		return true
 	default:
 		return false
@@ -280,6 +280,42 @@ func (e RecurrenceFrequency) Valid() bool {
 	}
 }
 
+// Defines values for RecurrenceWeekendRule.
+const (
+	RecurrenceWeekendRuleNone           RecurrenceWeekendRule = "none"
+	RecurrenceWeekendRulePreviousFriday RecurrenceWeekendRule = "previous-friday"
+)
+
+// Valid indicates whether the value is a known member of the RecurrenceWeekendRule enum.
+func (e RecurrenceWeekendRule) Valid() bool {
+	switch e {
+	case RecurrenceWeekendRuleNone:
+		return true
+	case RecurrenceWeekendRulePreviousFriday:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RunPreviewWeekendRule.
+const (
+	RunPreviewWeekendRuleNone           RunPreviewWeekendRule = "none"
+	RunPreviewWeekendRulePreviousFriday RunPreviewWeekendRule = "previous-friday"
+)
+
+// Valid indicates whether the value is a known member of the RunPreviewWeekendRule enum.
+func (e RunPreviewWeekendRule) Valid() bool {
+	switch e {
+	case RunPreviewWeekendRuleNone:
+		return true
+	case RunPreviewWeekendRulePreviousFriday:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScheduleEmailScope.
 const (
 	ScheduleEmailScopeOutstanding ScheduleEmailScope = "outstanding"
@@ -319,21 +355,60 @@ func (e ScheduleKind) Valid() bool {
 	}
 }
 
+// Defines values for ScheduleLastRunResult.
+const (
+	ScheduleLastRunResultFailed ScheduleLastRunResult = "failed"
+	ScheduleLastRunResultOk     ScheduleLastRunResult = "ok"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleLastRunResult enum.
+func (e ScheduleLastRunResult) Valid() bool {
+	switch e {
+	case ScheduleLastRunResultFailed:
+		return true
+	case ScheduleLastRunResultOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleLineProductStatus.
+const (
+	ScheduleLineProductStatusActive   ScheduleLineProductStatus = "active"
+	ScheduleLineProductStatusInactive ScheduleLineProductStatus = "inactive"
+	ScheduleLineProductStatusMissing  ScheduleLineProductStatus = "missing"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleLineProductStatus enum.
+func (e ScheduleLineProductStatus) Valid() bool {
+	switch e {
+	case ScheduleLineProductStatusActive:
+		return true
+	case ScheduleLineProductStatusInactive:
+		return true
+	case ScheduleLineProductStatusMissing:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ScheduleStatus.
 const (
-	Active ScheduleStatus = "active"
-	Ended  ScheduleStatus = "ended"
-	Paused ScheduleStatus = "paused"
+	ScheduleStatusActive ScheduleStatus = "active"
+	ScheduleStatusEnded  ScheduleStatus = "ended"
+	ScheduleStatusPaused ScheduleStatus = "paused"
 )
 
 // Valid indicates whether the value is a known member of the ScheduleStatus enum.
 func (e ScheduleStatus) Valid() bool {
 	switch e {
-	case Active:
+	case ScheduleStatusActive:
 		return true
-	case Ended:
+	case ScheduleStatusEnded:
 		return true
-	case Paused:
+	case ScheduleStatusPaused:
 		return true
 	default:
 		return false
@@ -694,6 +769,15 @@ type EmailSettingsTls string
 // EmailStatus defines model for EmailStatus.
 type EmailStatus string
 
+// EmailTemplate defines model for EmailTemplate.
+type EmailTemplate struct {
+	Body string `json:"body,omitempty"`
+
+	// Placeholders The placeholders the server fills for this type of e-mail.
+	Placeholders []string `json:"placeholders,omitempty"`
+	Subject      string   `json:"subject,omitempty"`
+}
+
 // ExportRequest defines model for ExportRequest.
 type ExportRequest struct {
 	Passphrase string `json:"passphrase"`
@@ -939,7 +1023,7 @@ type ReauthRequest struct {
 
 // Recurrence defines model for Recurrence.
 type Recurrence struct {
-	// DayOfMonth 0 = last day of the month.
+	// DayOfMonth 0 = last day of the month; 1 = first day; a day past the month's end means its last day.
 	DayOfMonth int                 `json:"dayOfMonth"`
 	EndDate    *openapi_types.Date `json:"endDate,omitempty"`
 	Frequency  RecurrenceFrequency `json:"frequency"`
@@ -954,10 +1038,16 @@ type Recurrence struct {
 
 	// Weekday 0 = Sunday.
 	Weekday int `json:"weekday"`
+
+	// WeekendRule Monthly, quarterly and yearly: when the day falls on a Saturday or Sunday, previous-friday runs on the Friday before (the first of a month can move into the previous month) and none runs on that day. The run keeps the period of its day. Omitted on create: previous-friday; omitted on update: unchanged. Weekly and once are always none.
+	WeekendRule RecurrenceWeekendRule `json:"weekendRule,omitempty"`
 }
 
 // RecurrenceFrequency defines model for Recurrence.Frequency.
 type RecurrenceFrequency string
+
+// RecurrenceWeekendRule Monthly, quarterly and yearly: when the day falls on a Saturday or Sunday, previous-friday runs on the Friday before (the first of a month can move into the previous month) and none runs on that day. The run keeps the period of its day. Omitted on create: previous-friday; omitted on update: unchanged. Weekly and once are always none.
+type RecurrenceWeekendRule string
 
 // ResetPasswordRequest defines model for ResetPasswordRequest.
 type ResetPasswordRequest struct {
@@ -1018,7 +1108,18 @@ type RestoreTableCount struct {
 // RunPreview defines model for RunPreview.
 type RunPreview struct {
 	Runs []time.Time `json:"runs"`
+
+	// TimeZone The IANA time zone the runs were computed in — the recurrence's own, or the business time zone when it names none. Show the runs in this zone.
+	//
+	// Example: UTC
+	TimeZone string `json:"timeZone"`
+
+	// WeekendRule The weekend rule the runs were computed with — the recurrence's own, or the default a new schedule would get.
+	WeekendRule RunPreviewWeekendRule `json:"weekendRule"`
 }
+
+// RunPreviewWeekendRule The weekend rule the runs were computed with — the recurrence's own, or the default a new schedule would get.
+type RunPreviewWeekendRule string
 
 // Schedule defines model for Schedule.
 type Schedule struct {
@@ -1038,15 +1139,20 @@ type Schedule struct {
 	Id           string             `json:"id,omitempty"`
 
 	// Kind invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
-	Kind       ScheduleKind   `json:"kind"`
-	LastError  string         `json:"lastError,omitempty"`
-	LastRunAt  *time.Time     `json:"lastRunAt,omitempty"`
-	Lines      []ScheduleLine `json:"lines"`
-	Name       string         `json:"name"`
-	NextRunAt  *time.Time     `json:"nextRunAt,omitempty"`
-	Notes      string         `json:"notes"`
-	Recurrence Recurrence     `json:"recurrence"`
-	Status     ScheduleStatus `json:"status,omitempty"`
+	Kind      ScheduleKind `json:"kind"`
+	LastError string       `json:"lastError,omitempty"`
+
+	// LastRunAt When the schedule last ran successfully.
+	LastRunAt *time.Time `json:"lastRunAt,omitempty"`
+
+	// LastRunResult Outcome of the latest run — failed while failed runs are recorded since the last success (see failureCount, lastError), ok once it has run and nothing failed since; absent when it never ran.
+	LastRunResult ScheduleLastRunResult `json:"lastRunResult,omitempty"`
+	Lines         []ScheduleLine        `json:"lines"`
+	Name          string                `json:"name"`
+	NextRunAt     *time.Time            `json:"nextRunAt,omitempty"`
+	Notes         string                `json:"notes"`
+	Recurrence    Recurrence            `json:"recurrence"`
+	Status        ScheduleStatus        `json:"status,omitempty"`
 
 	// VatPercent Omit to use the business default VAT when each invoice is created.
 	VatPercent *string `json:"vatPercent,omitempty"`
@@ -1059,11 +1165,24 @@ type ScheduleEmailScope string
 // ScheduleKind invoice = issue a recurring invoice from the lines; email = e-mail this customer's existing invoices or statement.
 type ScheduleKind string
 
+// ScheduleLastRunResult Outcome of the latest run — failed while failed runs are recorded since the last success (see failureCount, lastError), ok once it has run and nothing failed since; absent when it never ran.
+type ScheduleLastRunResult string
+
 // ScheduleDetail defines model for ScheduleDetail.
 type ScheduleDetail struct {
 	Runs     []ScheduleRun `json:"runs"`
 	Schedule Schedule      `json:"schedule"`
-	Upcoming []time.Time   `json:"upcoming"`
+
+	// Upcoming Next runs; show them in schedule.recurrence.timeZone.
+	Upcoming []time.Time `json:"upcoming"`
+}
+
+// ScheduleEmailDefaults defines model for ScheduleEmailDefaults.
+type ScheduleEmailDefaults struct {
+	Invoice     EmailTemplate `json:"invoice"`
+	Outstanding EmailTemplate `json:"outstanding"`
+	Statement   EmailTemplate `json:"statement"`
+	Unsent      EmailTemplate `json:"unsent"`
 }
 
 // ScheduleLine A product from the look-up. A product description may contain {month}, {year} or {period}.
@@ -1074,12 +1193,24 @@ type ScheduleLine struct {
 	DiscountPercent Decimal `json:"discountPercent,omitempty"`
 	ProductId       string  `json:"productId"`
 
+	// ProductName The product's current name, read from the product look-up when the schedule is read (never from description). Empty when the product no longer exists.
+	ProductName string `json:"productName,omitempty"`
+
+	// ProductStatus The product's state when the schedule is read — inactive (deactivated) or missing (no longer in the look-up) means choose another product.
+	ProductStatus ScheduleLineProductStatus `json:"productStatus,omitempty"`
+
+	// ProductUnitPrice The product's current unit price in the customer's currency, for display and preview. Absent when the product has no price in that currency or no longer exists. Not stored; unitPrice is the override.
+	ProductUnitPrice *string `json:"productUnitPrice,omitempty"`
+
 	// Quantity Example: 2701.16
 	Quantity Decimal `json:"quantity"`
 
 	// UnitPrice Omit to use the product's price in the customer's currency at run time.
 	UnitPrice *string `json:"unitPrice,omitempty"`
 }
+
+// ScheduleLineProductStatus The product's state when the schedule is read — inactive (deactivated) or missing (no longer in the look-up) means choose another product.
+type ScheduleLineProductStatus string
 
 // ScheduleList defines model for ScheduleList.
 type ScheduleList struct {
@@ -1581,6 +1712,9 @@ type ServerInterface interface {
 
 	// (POST /schedules)
 	CreateSchedule(w http.ResponseWriter, r *http.Request)
+
+	// (GET /schedules/defaults)
+	GetScheduleDefaults(w http.ResponseWriter, r *http.Request)
 
 	// (POST /schedules/preview)
 	PreviewSchedule(w http.ResponseWriter, r *http.Request)
@@ -3226,6 +3360,20 @@ func (siw *ServerInterfaceWrapper) CreateSchedule(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetScheduleDefaults operation middleware
+func (siw *ServerInterfaceWrapper) GetScheduleDefaults(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScheduleDefaults(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PreviewSchedule operation middleware
 func (siw *ServerInterfaceWrapper) PreviewSchedule(w http.ResponseWriter, r *http.Request) {
 
@@ -3781,6 +3929,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules", wrapper.ListSchedules)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules", wrapper.CreateSchedule)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules/preview", wrapper.PreviewSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/defaults", wrapper.GetScheduleDefaults)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/schedules/{id}", wrapper.DeleteSchedule)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/{id}", wrapper.GetSchedule)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/schedules/{id}", wrapper.UpdateSchedule)
@@ -5918,6 +6067,44 @@ func (response CreateScheduledefaultApplicationProblemPlusJSONResponse) VisitCre
 	return err
 }
 
+type GetScheduleDefaultsRequestObject struct {
+}
+
+type GetScheduleDefaultsResponseObject interface {
+	VisitGetScheduleDefaultsResponse(w http.ResponseWriter) error
+}
+
+type GetScheduleDefaults200JSONResponse ScheduleEmailDefaults
+
+func (response GetScheduleDefaults200JSONResponse) VisitGetScheduleDefaultsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleDefaultsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetScheduleDefaultsdefaultApplicationProblemPlusJSONResponse) VisitGetScheduleDefaultsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type PreviewScheduleRequestObject struct {
 	Body *PreviewScheduleJSONRequestBody
 }
@@ -7022,6 +7209,9 @@ type StrictServerInterface interface {
 
 	// (POST /schedules)
 	CreateSchedule(ctx context.Context, request CreateScheduleRequestObject) (CreateScheduleResponseObject, error)
+
+	// (GET /schedules/defaults)
+	GetScheduleDefaults(ctx context.Context, request GetScheduleDefaultsRequestObject) (GetScheduleDefaultsResponseObject, error)
 
 	// (POST /schedules/preview)
 	PreviewSchedule(ctx context.Context, request PreviewScheduleRequestObject) (PreviewScheduleResponseObject, error)
@@ -8609,6 +8799,30 @@ func (sh *strictHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateScheduleResponseObject); ok {
 		if err := validResponse.VisitCreateScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScheduleDefaults operation middleware
+func (sh *strictHandler) GetScheduleDefaults(w http.ResponseWriter, r *http.Request) {
+	var request GetScheduleDefaultsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScheduleDefaults(ctx, request.(GetScheduleDefaultsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScheduleDefaults")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleDefaultsResponseObject); ok {
+		if err := validResponse.VisitGetScheduleDefaultsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

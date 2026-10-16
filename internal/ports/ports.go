@@ -167,6 +167,8 @@ type CustomerFilter struct {
 type CustomerRepository interface {
 	List(ctx context.Context, f CustomerFilter) ([]domain.Customer, int, error)
 	Get(ctx context.Context, id string) (domain.Customer, error)
+	// GetMany returns the customers with the given IDs that exist, keyed by ID.
+	GetMany(ctx context.Context, ids []string) (map[string]domain.Customer, error)
 	Create(ctx context.Context, c domain.Customer) error
 	Update(ctx context.Context, c domain.Customer) error
 	Delete(ctx context.Context, id string) error
@@ -288,7 +290,8 @@ type ScheduleRepository interface {
 	// nothing while automation is held after a restore (it reads the system state in share
 	// mode first, so it also waits for a restore in progress).
 	ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.Schedule, error)
-	// InsertRun records a processed period; ErrConflict if it was already processed.
+	// InsertRun records a processed billing period (ScheduleID, PeriodKey); ErrConflict if
+	// it was already processed.
 	InsertRun(ctx context.Context, run domain.ScheduleRun) error
 	ListRuns(ctx context.Context, scheduleID string, limit int) ([]domain.ScheduleRun, error)
 }

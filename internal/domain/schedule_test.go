@@ -157,14 +157,24 @@ func TestScheduleLifecycle(t *testing.T) {
 	if err := s.Pause(first); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatal("cannot pause paused")
 	}
-	if err := s.Resume(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)); err != nil || s.Period() != NewDate(2026, 11, 21) {
-		t.Fatalf("Resume skips missed periods: %v %v", err, s.Period())
+	// Paused by failures: resuming keeps the failed period and runs it now (later missed
+	// periods are caught up one by one, as after downtime).
+	if !s.PausedByFailures() {
+		t.Fatal("paused by failures")
+	}
+	resumed := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	if err := s.Resume(resumed); err != nil || s.Period() != NewDate(2026, 9, 21) || !s.NextRunAt.Equal(resumed) || s.FailureCount != 0 {
+		t.Fatalf("Resume after failures keeps the failed period: %v %v %v", err, s.Period(), s.NextRunAt)
 	}
 	if err := s.Resume(first); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatal("cannot resume active")
 	}
-	if err := s.Pause(first); err != nil || s.Status != SchedulePaused {
+	if err := s.Pause(first); err != nil || s.Status != SchedulePaused || s.PausedByFailures() {
 		t.Fatal("Pause")
+	}
+	// Paused by the user: resuming skips the periods missed while paused.
+	if err := s.Resume(resumed); err != nil || s.Period() != NewDate(2026, 11, 21) {
+		t.Fatalf("Resume after a user pause skips missed periods: %v %v", err, s.Period())
 	}
 
 	// Ending.
@@ -207,20 +217,20 @@ func TestScheduleBuildDraft(t *testing.T) {
 	s := cityDeepSchedule()
 	s.Notes = "Disclaimer: third party software."
 	s.Activate(time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC))
-	products := map[string]Product{"p-users": {ID: "p-users", SKU: "U", Name: "Users", Description: "Stock system usage for 14 concurrent users.", Prices: map[CurrencyCode]int64{"ZAR": 19294}}}
-	content, err := s.BuildDraft(cityDeep(), products, 0)
+	products := map[string]Product{"p-users": {ID: "p-users", SKU: "U", Name: "Users", Description: "Stock system usage for 14 concurrent users.", Prices: map[CurrencyCode]int64{"ZAR": 19294}, Active: true}}
+	content, err := s.BuildDraft(cityDeep(), products, 0, s.RunDate())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if content.TaxRate != 0 {
 		t.Fatal("no VAT by default")
 	}
-	if c15, _ := s.BuildDraft(cityDeep(), products, 1500); c15.TaxRate != 1500 {
+	if c15, _ := s.BuildDraft(cityDeep(), products, 1500, s.RunDate()); c15.TaxRate != 1500 {
 		t.Fatal("business default VAT applies")
 	}
 	own := BasisPoints(0)
 	s.TaxRate = &own
-	if c0, _ := s.BuildDraft(cityDeep(), products, 1500); c0.TaxRate != 0 {
+	if c0, _ := s.BuildDraft(cityDeep(), products, 1500, s.RunDate()); c0.TaxRate != 0 {
 		t.Fatal("schedule's own VAT (0) overrides the default")
 	}
 	s.TaxRate = nil
@@ -239,10 +249,10 @@ func TestScheduleBuildDraft(t *testing.T) {
 
 	usd := cityDeep()
 	usd.Currency = "USD"
-	if _, err := s.BuildDraft(usd, products, 0); !errors.Is(err, ErrNoPriceForCurrency) {
+	if _, err := s.BuildDraft(usd, products, 0, s.RunDate()); !errors.Is(err, ErrNoPriceForCurrency) {
 		t.Fatalf("no USD price: %v", err)
 	}
-	if _, err := s.BuildDraft(cityDeep(), map[string]Product{}, 0); !errors.Is(err, ErrNotFound) {
+	if _, err := s.BuildDraft(cityDeep(), map[string]Product{}, 0, s.RunDate()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing product: %v", err)
 	}
 }
@@ -390,5 +400,307 @@ func TestEmailSchedules(t *testing.T) {
 	plain := cityDeepSchedule()
 	if err := plain.Validate(); err != nil || plain.Kind != ScheduleInvoice {
 		t.Fatal("default kind")
+	}
+}
+
+func TestScheduleLineProductView(t *testing.T) {
+	products := map[string]Product{
+		"p1": {ID: "p1", Name: "Stock system users", Description: "Stock system usage", Active: true, Prices: map[CurrencyCode]int64{"ZAR": 19294}},
+		"p2": {ID: "p2", Name: "Old support plan", Active: false, Prices: map[CurrencyCode]int64{"ZAR": 55000}},
+		"p3": {ID: "p3", Name: "Dollar thing", Active: true, Prices: map[CurrencyCode]int64{"USD": 1000}},
+	}
+	price := func(v int64) *int64 { return &v }
+	tests := []struct {
+		name string
+		line ScheduleLine
+		cur  CurrencyCode
+		want ScheduleLineProduct
+	}{
+		{"active, priced; the stored description is not the name", ScheduleLine{ProductID: "p1", Description: ""}, "ZAR", ScheduleLineProduct{Name: "Stock system users", State: ProductActive, UnitPrice: price(19294)}},
+		{"stored description ignored", ScheduleLine{ProductID: "p1", Description: "Users for {month}"}, "ZAR", ScheduleLineProduct{Name: "Stock system users", State: ProductActive, UnitPrice: price(19294)}},
+		{"fixed price does not hide the product's price", ScheduleLine{ProductID: "p1", UnitPrice: price(1)}, "ZAR", ScheduleLineProduct{Name: "Stock system users", State: ProductActive, UnitPrice: price(19294)}},
+		{"inactive keeps its name", ScheduleLine{ProductID: "p2"}, "ZAR", ScheduleLineProduct{Name: "Old support plan", State: ProductInactive, UnitPrice: price(55000)}},
+		{"no price in the currency", ScheduleLine{ProductID: "p3"}, "ZAR", ScheduleLineProduct{Name: "Dollar thing", State: ProductActive}},
+		{"missing", ScheduleLine{ProductID: "gone"}, "ZAR", ScheduleLineProduct{State: ProductMissing}},
+		{"no product", ScheduleLine{}, "ZAR", ScheduleLineProduct{State: ProductMissing}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.line.ProductView(products, tc.cur)
+			if got.Name != tc.want.Name || got.State != tc.want.State || (got.UnitPrice == nil) != (tc.want.UnitPrice == nil) ||
+				(got.UnitPrice != nil && *got.UnitPrice != *tc.want.UnitPrice) {
+				t.Fatalf("got %+v (price %v), want %+v", got, got.UnitPrice, tc.want)
+			}
+		})
+	}
+}
+
+func TestScheduleLastRunResult(t *testing.T) {
+	ran := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		s    Schedule
+		want RunOutcome
+	}{
+		{"never ran", Schedule{}, RunNever},
+		{"ran", Schedule{LastRunAt: ran}, RunOK},
+		{"failed before any success", Schedule{FailureCount: 1, LastError: "no bank account"}, RunFailed},
+		{"failed since the last success", Schedule{LastRunAt: ran, FailureCount: 2}, RunFailed},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.s.LastRunResult(); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	// The lifecycle sets it: a failure, then a successful run.
+	s := Schedule{Status: ScheduleActive, Recurrence: Recurrence{Frequency: FrequencyMonthly, Interval: 1, DayOfMonth: 1, TimeZone: "UTC", StartDate: NewDate(2026, 10, 1)}}
+	s.Activate(ran)
+	s.RecordFailure("boom", ran)
+	if s.LastRunResult() != RunFailed {
+		t.Fatal("after a failure")
+	}
+	s.Advance(ran.Add(time.Hour))
+	if s.LastRunResult() != RunOK {
+		t.Fatal("after a success")
+	}
+}
+
+func TestWeekendRule(t *testing.T) {
+	utc := func(y int, m time.Month, d, h int) time.Time { return time.Date(y, m, d, h, 0, 0, 0, time.UTC) }
+	monthly := func(day int, rule WeekendRule, start Date, tz string) Recurrence {
+		r := Recurrence{Frequency: FrequencyMonthly, Interval: 1, DayOfMonth: day, SendHour: 9, TimeZone: tz, StartDate: start, Weekend: rule}
+		if err := r.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	pf := WeekendPreviousFriday
+	tests := []struct {
+		name         string
+		r            Recurrence
+		after        time.Time
+		nominal, run time.Time
+	}{
+		{"first day on a Sunday moves into the previous month", monthly(1, pf, NewDate(2026, 1, 1), "UTC"), utc(2026, 1, 15, 0), utc(2026, 2, 1, 9), utc(2026, 1, 30, 9)},
+		{"between the moved run and its day, still that occurrence", monthly(1, pf, NewDate(2026, 1, 1), "UTC"), utc(2026, 1, 31, 10), utc(2026, 2, 1, 9), utc(2026, 1, 30, 9)},
+		{"after its day, the next one", monthly(1, pf, NewDate(2026, 1, 1), "UTC"), utc(2026, 2, 1, 10), utc(2026, 3, 1, 9), utc(2026, 2, 27, 9)},
+		{"first day on a Saturday moves into the previous year", monthly(1, pf, NewDate(2027, 1, 1), "UTC"), utc(2027, 12, 15, 0), utc(2028, 1, 1, 9), utc(2027, 12, 31, 9)},
+		{"first day on a Friday stays", monthly(1, pf, NewDate(2026, 12, 1), "UTC"), utc(2026, 12, 15, 0), utc(2027, 1, 1, 9), utc(2027, 1, 1, 9)},
+		{"31st in February is the 28th, a Saturday", monthly(31, pf, NewDate(2026, 1, 1), "UTC"), utc(2026, 2, 1, 0), utc(2026, 2, 28, 9), utc(2026, 2, 27, 9)},
+		{"last day of February in a leap year, a Tuesday", monthly(0, pf, NewDate(2028, 1, 1), "UTC"), utc(2028, 2, 1, 0), utc(2028, 2, 29, 9), utc(2028, 2, 29, 9)},
+		{"last day of February 2027, a Sunday", monthly(0, pf, NewDate(2027, 1, 1), "UTC"), utc(2027, 2, 1, 0), utc(2027, 2, 28, 9), utc(2027, 2, 26, 9)},
+		{"last day of October 2026, a Saturday", monthly(0, pf, NewDate(2026, 1, 1), "UTC"), utc(2026, 10, 1, 0), utc(2026, 10, 31, 9), utc(2026, 10, 30, 9)},
+		{"rule none runs on the weekend", monthly(1, WeekendNone, NewDate(2026, 1, 1), "UTC"), utc(2026, 1, 15, 0), utc(2026, 2, 1, 9), utc(2026, 2, 1, 9)},
+		// Sun 29 Mar 2026 09:00 BST (08:00 UTC) moves to Fri 27 Mar 09:00 GMT (09:00 UTC).
+		{"moved across a daylight-saving change", monthly(29, pf, NewDate(2026, 1, 1), "Europe/London"), utc(2026, 3, 1, 0), utc(2026, 3, 29, 8), utc(2026, 3, 27, 9)},
+		{"in the business zone", monthly(1, pf, NewDate(2026, 1, 1), "Africa/Johannesburg"), utc(2026, 10, 20, 0), utc(2026, 11, 1, 7), utc(2026, 10, 30, 7)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			nominal, ok := tc.r.NextAfter(tc.after)
+			if !ok || !nominal.Equal(tc.nominal) {
+				t.Fatalf("NextAfter = %v %v, want %v", nominal.UTC(), ok, tc.nominal)
+			}
+			if got := tc.r.RunTime(nominal); !got.Equal(tc.run) {
+				t.Fatalf("RunTime = %v, want %v", got.UTC(), tc.run)
+			}
+		})
+	}
+
+	// Validate: weekly and once never move; an unknown rule is refused; "" is none.
+	weekly := Recurrence{Frequency: FrequencyWeekly, Weekday: time.Saturday, TimeZone: "UTC", StartDate: NewDate(2026, 10, 1), Weekend: pf}
+	if err := weekly.Validate(); err != nil || weekly.Weekend != WeekendNone {
+		t.Fatalf("weekly: %v %q", err, weekly.Weekend)
+	}
+	if next, _ := weekly.NextAfter(utc(2026, 10, 1, 0)); weekly.RunTime(next).Weekday() != time.Saturday {
+		t.Fatalf("weekly moved: %v", next)
+	}
+	bad := Recurrence{Frequency: FrequencyMonthly, TimeZone: "UTC", StartDate: NewDate(2026, 10, 1), Weekend: "monday-after"}
+	if err := bad.Validate(); !errors.Is(err, ErrValidation) {
+		t.Fatalf("unknown rule: %v", err)
+	}
+	plain := Recurrence{Frequency: FrequencyMonthly, TimeZone: "UTC", StartDate: NewDate(2026, 10, 1)}
+	if err := plain.Validate(); err != nil || plain.Weekend != WeekendNone {
+		t.Fatalf("empty rule: %v %q", err, plain.Weekend)
+	}
+	// DefaultWeekendRule: day-of-month recurrences only, never overriding a choice.
+	for _, tc := range []struct {
+		r    Recurrence
+		want WeekendRule
+	}{
+		{Recurrence{Frequency: FrequencyMonthly}, pf},
+		{Recurrence{Frequency: FrequencyQuarterly}, pf},
+		{Recurrence{Frequency: FrequencyYearly}, pf},
+		{Recurrence{Frequency: FrequencyMonthly, Weekend: WeekendNone}, WeekendNone},
+		{Recurrence{Frequency: FrequencyWeekly}, ""},
+		{Recurrence{Frequency: FrequencyOnce}, ""},
+	} {
+		r := tc.r
+		r.DefaultWeekendRule()
+		if r.Weekend != tc.want {
+			t.Errorf("%s/%q → %q, want %q", tc.r.Frequency, tc.r.Weekend, r.Weekend, tc.want)
+		}
+	}
+}
+
+// TestWeekendRuleProperties: a moved run is never later than its nominal time, at most two
+// days (and a daylight-saving hour) earlier, on a weekday, and in order.
+func TestWeekendRuleProperties(t *testing.T) {
+	const weekendLead = 2*24*time.Hour + 2*time.Hour
+	zones := []string{"UTC", "Africa/Johannesburg", "Europe/London", "America/New_York", "Australia/Sydney"}
+	freqs := []Frequency{FrequencyMonthly, FrequencyQuarterly, FrequencyYearly}
+	seed := uint64(20261016)
+	next := func(n int) int { // a small deterministic generator (no shared state)
+		seed = seed*6364136223846793005 + 1442695040888963407
+		return int((seed >> 33) % uint64(n))
+	}
+	for range 300 {
+		r := Recurrence{
+			Frequency: freqs[next(len(freqs))], Interval: 1 + next(3), DayOfMonth: next(32), SendHour: next(24), SendMinute: next(60),
+			TimeZone: zones[next(len(zones))], StartDate: NewDate(2020+next(20), time.Month(1+next(12)), 1+next(28)), Weekend: WeekendPreviousFriday,
+		}
+		if err := r.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		loc, _ := time.LoadLocation(r.TimeZone)
+		nominal := r.StartDate.Time(time.UTC).AddDate(0, 0, -1)
+		var prevRun time.Time
+		for range 40 {
+			n, ok := r.NextAfter(nominal)
+			if !ok {
+				t.Fatalf("%+v ended", r)
+			}
+			run := r.RunTime(n)
+			if run.After(n) || n.Sub(run) > weekendLead {
+				t.Fatalf("%+v: nominal %v run %v", r, n, run)
+			}
+			if wd := run.In(loc).Weekday(); wd == time.Saturday || wd == time.Sunday {
+				t.Fatalf("%+v: runs on %v %v", r, wd, run)
+			}
+			if !prevRun.IsZero() && !run.After(prevRun) {
+				t.Fatalf("%+v: run %v not after %v", r, run, prevRun)
+			}
+			prevRun, nominal = run, n
+		}
+	}
+}
+
+func TestScheduleWeekendRun(t *testing.T) {
+	r := Recurrence{Frequency: FrequencyMonthly, Interval: 1, DayOfMonth: 1, SendHour: 9, TimeZone: "UTC", StartDate: NewDate(2026, 1, 1), Weekend: WeekendPreviousFriday}
+	s := Schedule{Recurrence: r, Lines: []ScheduleLine{{ProductID: "p", Quantity: 1000}}}
+	s.Activate(time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC))
+	if s.Period() != NewDate(2026, 11, 1) || s.RunDate() != NewDate(2026, 10, 30) || !s.NextRunAt.Equal(time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("period %v run %v at %v", s.Period(), s.RunDate(), s.NextRunAt)
+	}
+	// Activated after the moved run of November but before its nominal day (a new schedule,
+	// a resume, an edit or a rule switched on): November is not skipped, it runs now.
+	sat := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	late := Schedule{Recurrence: r}
+	late.Activate(sat)
+	if late.Period() != NewDate(2026, 11, 1) || !late.NextRunAt.Equal(sat) || !late.IsDue(sat) {
+		t.Fatalf("late: period %v next run %v", late.Period(), late.NextRunAt)
+	}
+	paused := Schedule{Recurrence: r, Status: ScheduleActive}
+	paused.Activate(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)) // Thursday
+	_ = paused.Pause(time.Date(2026, 10, 29, 13, 0, 0, 0, time.UTC))
+	if err := paused.Resume(sat); err != nil || paused.Period() != NewDate(2026, 11, 1) || !paused.NextRunAt.Equal(sat) {
+		t.Fatalf("resumed on Saturday: %v period %v at %v", err, paused.Period(), paused.NextRunAt)
+	}
+	// Issue date: the scheduled run date, never after today.
+	for _, tc := range []struct{ today, want Date }{
+		{NewDate(2026, 10, 30), NewDate(2026, 10, 30)}, // on time
+		{NewDate(2026, 12, 2), NewDate(2026, 10, 30)},  // caught up late: dated its run day
+		{NewDate(2026, 10, 20), NewDate(2026, 10, 20)}, // Run now ahead of time: today
+	} {
+		if got := s.IssueDate(tc.today); got != tc.want {
+			t.Errorf("IssueDate(%v) = %v, want %v", tc.today, got, tc.want)
+		}
+	}
+	if up := s.UpcomingRuns(3); len(up) != 3 || up[0].Day() != 30 || up[1].Day() != 1 || up[2] != time.Date(2027, 1, 1, 9, 0, 0, 0, time.UTC) {
+		t.Fatalf("upcoming = %v", up)
+	}
+	if (&Schedule{}).UpcomingRuns(3) != nil {
+		t.Fatal("ended schedule has no upcoming runs")
+	}
+	c := Customer{Name: "Acme", Currency: "ZAR"}
+	products := map[string]Product{"p": {ID: "p", Name: "Support", Description: "Support for {period}", Prices: map[CurrencyCode]int64{"ZAR": 100}, Active: true}}
+	d, err := s.BuildDraft(c, products, 0, s.IssueDate(NewDate(2026, 10, 30)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.IssueDate != NewDate(2026, 10, 30) || d.Lines[0].Description != "Support for November 2026" {
+		t.Fatalf("draft issued %v: %q", d.IssueDate, d.Lines[0].Description)
+	}
+	retired := products["p"]
+	retired.Active = false
+	if _, err := s.BuildDraft(c, map[string]Product{"p": retired}, 0, NewDate(2026, 10, 30)); !errors.Is(err, ErrInactive) || !strings.Contains(err.Error(), `"Support" is no longer available`) {
+		t.Fatalf("inactive product: %v", err)
+	}
+	s.Advance(s.NextRunAt)
+	if s.Period() != NewDate(2026, 12, 1) || !s.NextRunAt.Equal(time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("advanced to %v at %v", s.Period(), s.NextRunAt)
+	}
+}
+
+func TestPeriodKeyAndStart(t *testing.T) {
+	d := NewDate(2026, 11, 15)
+	tests := []struct {
+		f     Frequency
+		key   string
+		start Date
+	}{
+		{FrequencyMonthly, "2026-11", NewDate(2026, 11, 1)},
+		{FrequencyQuarterly, "2026-Q4", NewDate(2026, 10, 1)},
+		{FrequencyYearly, "2026", NewDate(2026, 1, 1)},
+		{FrequencyWeekly, "2026-11-15", d},
+		{FrequencyOnce, "2026-11-15", d},
+	}
+	for _, tc := range tests {
+		r := Recurrence{Frequency: tc.f}
+		if got := r.PeriodKey(d); got != tc.key {
+			t.Errorf("%s key = %q, want %q", tc.f, got, tc.key)
+		}
+		if got := r.PeriodStart(d); got != tc.start {
+			t.Errorf("%s start = %v, want %v", tc.f, got, tc.start)
+		}
+	}
+	if (Recurrence{Frequency: FrequencyQuarterly}).PeriodKey(NewDate(2026, 3, 31)) != "2026-Q1" {
+		t.Fatal("Q1")
+	}
+}
+
+// TestActivateFrom: an unrun occurrence whose time has passed is kept when the schedule is
+// (re)activated, even when the edit moves its day within the period; a future one is not
+// pulled forward.
+func TestActivateFrom(t *testing.T) {
+	monthly := func(day int) Recurrence {
+		return Recurrence{Frequency: FrequencyMonthly, Interval: 1, DayOfMonth: day, SendHour: 9, TimeZone: "UTC", StartDate: NewDate(2026, 1, 1), Weekend: WeekendNone}
+	}
+	failed := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 15, 11, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name    string
+		r       Recurrence
+		pending time.Time
+		period  Date
+		runAt   time.Time
+	}{
+		{"same day, failed this morning", monthly(15), failed, NewDate(2026, 10, 15), now},
+		{"day moved earlier in the month", monthly(10), failed, NewDate(2026, 10, 10), now},
+		{"day moved later in the month", monthly(20), failed, NewDate(2026, 10, 20), time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)},
+		{"overdue by months (downtime)", monthly(15), time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 8, 15), now},
+		{"pending still ahead: not pulled forward", monthly(1), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 11, 1), time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
+		{"nothing pending", monthly(15), time.Time{}, NewDate(2026, 11, 15), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := Schedule{Recurrence: tc.r, FailureCount: 2, LastError: "x"}
+			s.ActivateFrom(tc.pending, now)
+			if s.Status != ScheduleActive || s.Period() != tc.period || !s.NextRunAt.Equal(tc.runAt) || s.FailureCount != 0 {
+				t.Fatalf("period %v run %v (%+v)", s.Period(), s.NextRunAt, s)
+			}
+		})
 	}
 }

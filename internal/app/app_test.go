@@ -385,12 +385,106 @@ func TestScheduleFailureAndControls(t *testing.T) {
 	if !errors.Is(err, domain.ErrNoPriceForCurrency) {
 		t.Fatalf("no EUR price: %v", err)
 	}
-	if _, err := h.svc.PreviewRecurrence(domain.Recurrence{Frequency: "x"}, 3); !errors.Is(err, domain.ErrValidation) {
+	if _, err := h.svc.PreviewRecurrence(h.ctx, domain.Recurrence{Frequency: "x"}, 3); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("preview validation")
 	}
-	pv := must(h.svc.PreviewRecurrence(domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Monday, StartDate: domain.NewDate(2026, 8, 1)}, 100))
-	if len(pv) != 24 {
-		t.Fatalf("preview capped at 24: %d", len(pv))
+	pv := must(h.svc.PreviewRecurrence(h.ctx, domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Monday, StartDate: domain.NewDate(2026, 8, 1)}, 100))
+	if len(pv.Runs) != 24 {
+		t.Fatalf("preview capped at 24: %d", len(pv.Runs))
+	}
+}
+
+// TestPreviewRecurrenceTimeZone: a preview is computed in, and names, the zone saving the
+// recurrence would use — the business time zone unless the recurrence names its own.
+func TestPreviewRecurrenceTimeZone(t *testing.T) {
+	h := newHarness(t).seed() // business time zone Africa/Johannesburg (UTC+2)
+	h.clock.Set(time.Date(2026, 10, 16, 6, 0, 0, 0, time.UTC))
+	fridays := domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Friday, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)}
+	tests := []struct {
+		name    string
+		zone    string
+		wantTZ  string
+		wantUTC time.Time
+	}{
+		{"business zone when none given", "", "Africa/Johannesburg", time.Date(2026, 10, 16, 7, 0, 0, 0, time.UTC)},
+		{"the recurrence's own zone", "UTC", "UTC", time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)},
+		{"London before the clocks change", "Europe/London", "Europe/London", time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := fridays
+			r.TimeZone = tc.zone
+			pv := must(h.svc.PreviewRecurrence(h.ctx, r, 3))
+			if pv.TimeZone != tc.wantTZ || len(pv.Runs) != 3 || !pv.Runs[0].Equal(tc.wantUTC) {
+				t.Fatalf("preview = %s %v, want %s %v", pv.TimeZone, pv.Runs, tc.wantTZ, tc.wantUTC)
+			}
+		})
+	}
+	if _, err := h.svc.PreviewRecurrence(h.ctx, domain.Recurrence{Frequency: domain.FrequencyWeekly, TimeZone: "Mars/Olympus", StartDate: domain.NewDate(2026, 10, 1)}, 3); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("unknown zone: %v", err)
+	}
+}
+
+// TestScheduleReadsShowProducts: reading a schedule (get and list) names each line's
+// product from the look-up — not from the stored description — with its state and its
+// current price in the customer's currency.
+func TestScheduleReadsShowProducts(t *testing.T) {
+	h := newHarness(t).seed()
+	h.clock.Set(time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC))
+	fixed := int64(60000)
+	usdOnly := must(h.svc.CreateProduct(h.ctx, domain.Product{SKU: "USD-ONLY", Name: "Dollar thing", Prices: map[domain.CurrencyCode]int64{"USD": 1000}, Active: true}))
+	retired := must(h.svc.CreateProduct(h.ctx, domain.Product{SKU: "OLD", Name: "Old support plan", Prices: map[domain.CurrencyCode]int64{"ZAR": 25000}, Active: true}))
+	gone := must(h.svc.CreateProduct(h.ctx, domain.Product{SKU: "GONE", Name: "Gone", Prices: map[domain.CurrencyCode]int64{"ZAR": 100}, Active: true}))
+	d := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "Acme monthly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 21, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
+		Lines: []domain.ScheduleLine{
+			{ProductID: h.usersP.ID, Quantity: 14000},
+			{ProductID: h.integP.ID, Quantity: 1000, UnitPrice: &fixed},
+			{ProductID: usdOnly.ID, Quantity: 1000, UnitPrice: &fixed},
+			{ProductID: retired.ID, Quantity: 1000},
+			{ProductID: gone.ID, Quantity: 1000},
+		},
+	}))
+	retired.Active = false
+	must(h.svc.UpdateProduct(h.ctx, retired))
+	if err := h.svc.DeleteProduct(h.ctx, gone.ID); err != nil { // the fake allows it; MariaDB refuses (FK)
+		t.Fatal(err)
+	}
+	price := func(v int64) *int64 { return &v }
+	want := []domain.ScheduleLineProduct{
+		{Name: "Stock system users", State: domain.ProductActive, UnitPrice: price(19294)},
+		{Name: "Integration subscription", State: domain.ProductActive, UnitPrice: price(55000)}, // fixed price stays on the line
+		{Name: "Dollar thing", State: domain.ProductActive},                                      // no ZAR price
+		{Name: "Old support plan", State: domain.ProductInactive, UnitPrice: price(25000)},
+		{State: domain.ProductMissing},
+	}
+	got := must(h.svc.GetSchedule(h.ctx, d.Schedule.ID))
+	list, _ := must3(h.svc.ListSchedules(h.ctx, ports.ScheduleFilter{}))
+	if len(list) != 1 {
+		t.Fatalf("list = %d", len(list))
+	}
+	for name, views := range map[string][]domain.ScheduleLineProduct{"get": got.LineProducts, "list": list[0].LineProducts} {
+		if len(views) != len(want) {
+			t.Fatalf("%s: %d views, want %d", name, len(views), len(want))
+		}
+		for i, w := range want {
+			v := views[i]
+			if v.Name != w.Name || v.State != w.State || (v.UnitPrice == nil) != (w.UnitPrice == nil) || (v.UnitPrice != nil && *v.UnitPrice != *w.UnitPrice) {
+				t.Errorf("%s line %d = %+v, want %+v", name, i, v, w)
+			}
+		}
+	}
+	if got.Schedule.Lines[0].Description != "" || got.Schedule.Lines[1].UnitPrice == nil || *got.Schedule.Lines[1].UnitPrice != fixed {
+		t.Fatalf("stored lines changed: %+v", got.Schedule.Lines)
+	}
+	// An e-mail schedule has no lines and needs no product look-up.
+	e := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "Statement", Kind: domain.ScheduleEmail, EmailScope: domain.EmailStatement,
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, StartDate: domain.NewDate(2026, 9, 1)},
+	}))
+	if ge := must(h.svc.GetSchedule(h.ctx, e.Schedule.ID)); len(ge.LineProducts) != 0 {
+		t.Fatalf("e-mail schedule views = %+v", ge.LineProducts)
 	}
 }
 
@@ -1382,4 +1476,400 @@ func TestNumberFormatOfNewAndExistingDeployments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScheduleEmailDefaults(t *testing.T) {
+	h := newHarness(t)
+	d := must(h.svc.ScheduleEmailDefaults(h.ctx)) // no business profile yet: the templates
+	for name, tmpl := range map[string]domain.EmailTemplate{"invoice": d.Invoice, "unsent": d.Unsent, "outstanding": d.Outstanding, "statement": d.Statement} {
+		if tmpl.Subject == "" || tmpl.Body == "" || len(tmpl.Placeholders) == 0 {
+			t.Errorf("%s = %+v", name, tmpl)
+		}
+	}
+}
+
+// TestScheduleWeekendRule: a run moved to the Friday before is for its nominal period,
+// issued on the day it runs, never runs twice and is not skipped on catch-up.
+func TestScheduleWeekendRule(t *testing.T) {
+	h := newHarness(t).seed() // business zone Africa/Johannesburg (UTC+2)
+	h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+	support := must(h.svc.CreateProduct(h.ctx, domain.Product{SKU: "SUP", Name: "Support", Description: "Support for {period}", Prices: map[domain.CurrencyCode]int64{"ZAR": 100000}, Active: true}))
+	d := must(h.svc.CreateSchedule(h.ctx, domain.Schedule{
+		CustomerID: h.customer.ID, Name: "Support monthly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: support.ID, Quantity: 1000}},
+	}))
+	id := d.Schedule.ID
+	if d.Schedule.Recurrence.Weekend != domain.WeekendPreviousFriday {
+		t.Fatalf("new monthly schedule rule = %q", d.Schedule.Recurrence.Weekend)
+	}
+	// 1 Nov 2026 is a Sunday: it runs Fri 30 Oct 09:00 SAST; 1 Dec Tue; 1 Jan 2027 Fri; 1 Feb Mon.
+	wantUpcoming := []time.Time{
+		time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC), time.Date(2026, 12, 1, 7, 0, 0, 0, time.UTC),
+		time.Date(2027, 1, 1, 7, 0, 0, 0, time.UTC), time.Date(2027, 2, 1, 7, 0, 0, 0, time.UTC),
+	}
+	for i, w := range wantUpcoming {
+		if !d.Upcoming[i].Equal(w) {
+			t.Fatalf("upcoming[%d] = %v, want %v", i, d.Upcoming[i].UTC(), w)
+		}
+	}
+	h.clock.Set(time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC))
+	tests := []struct {
+		name      string
+		at        time.Time
+		issued    int
+		wantIssue []domain.Date // issue dates of the invoices raised, oldest first
+	}{
+		{"moved run on Friday", time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC), 1, []domain.Date{domain.NewDate(2026, 10, 30)}},
+		{"again the same day: nothing", time.Date(2026, 10, 30, 7, 1, 0, 0, time.UTC), 0, nil},
+		{"on the nominal Sunday: nothing", time.Date(2026, 11, 1, 7, 0, 0, 0, time.UTC), 0, nil},
+		{"server back on 2 Feb: Dec, Jan and Feb caught up", time.Date(2027, 2, 2, 7, 0, 0, 0, time.UTC), 3, []domain.Date{domain.NewDate(2026, 12, 1), domain.NewDate(2027, 1, 1), domain.NewDate(2027, 2, 1)}},
+	}
+	seen := 0
+	for _, tc := range tests {
+		h.clock.Set(tc.at)
+		if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != tc.issued || res.Failed != 0 {
+			t.Fatalf("%s: %+v", tc.name, res)
+		}
+		invs, n := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{CustomerID: h.customer.ID, Page: ports.Page{Limit: 50}}))
+		if n != seen+tc.issued {
+			t.Fatalf("%s: %d invoices", tc.name, n)
+		}
+		slices.SortFunc(invs, func(a, b domain.Invoice) int { return strings.Compare(a.Number, b.Number) })
+		for i, w := range tc.wantIssue {
+			if inv := invs[seen+i]; inv.IssueDate != w {
+				t.Fatalf("%s: invoice %s issued %v, want %v", tc.name, inv.Number, inv.IssueDate, w)
+			}
+		}
+		seen = n
+	}
+	got := must(h.svc.GetSchedule(h.ctx, id))
+	var periods []string
+	for _, r := range got.Runs {
+		periods = append(periods, r.Period.String())
+	}
+	if strings.Join(periods, " ") != "2027-02-01 2027-01-01 2026-12-01 2026-11-01" {
+		t.Fatalf("run periods = %v", periods)
+	}
+	first := must(h.svc.GetInvoice(h.ctx, got.Runs[3].InvoiceID))
+	if first.Invoice.Lines[0].Description != "Support for November 2026" {
+		t.Fatalf("November invoice raised in October reads %q", first.Invoice.Lines[0].Description)
+	}
+
+	// An update that names no rule keeps the stored one; an explicit none is kept.
+	upd := *got.Schedule
+	upd.Recurrence.Weekend = ""
+	d = must(h.svc.UpdateSchedule(h.ctx, upd))
+	if d.Schedule.Recurrence.Weekend != domain.WeekendPreviousFriday {
+		t.Fatalf("update dropped the rule: %q", d.Schedule.Recurrence.Weekend)
+	}
+	upd = *d.Schedule
+	upd.Recurrence.Weekend = domain.WeekendNone
+	if d = must(h.svc.UpdateSchedule(h.ctx, upd)); d.Schedule.Recurrence.Weekend != domain.WeekendNone {
+		t.Fatalf("none not kept: %q", d.Schedule.Recurrence.Weekend)
+	}
+	// A preview without a rule gets the default; with none it runs on the weekend day.
+	h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+	rec := domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)}
+	if pv := must(h.svc.PreviewRecurrence(h.ctx, rec, 1)); !pv.Runs[0].Equal(wantUpcoming[0]) || pv.Weekend != domain.WeekendPreviousFriday {
+		t.Fatalf("preview default = %v", pv.Runs)
+	}
+	rec.Weekend = domain.WeekendNone
+	if pv := must(h.svc.PreviewRecurrence(h.ctx, rec, 1)); !pv.Runs[0].Equal(time.Date(2026, 11, 1, 7, 0, 0, 0, time.UTC)) {
+		t.Fatalf("preview none = %v", pv.Runs)
+	}
+}
+
+// TestWeekendRuleNeverSkips: an occurrence whose weekend-moved run time has passed while its
+// nominal day is still ahead runs as soon as the schedule is activated — after a rule switch,
+// a late creation, an edit after a failed Friday run, or a resume on Saturday — and one that
+// already ran early is not raised again.
+func TestWeekendRuleNeverSkips(t *testing.T) {
+	fri := time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC) // 09:00 SAST; 1 Nov 2026 is a Sunday
+	sat := time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC)
+	monthly := func(rule domain.WeekendRule, start domain.Date) domain.Recurrence {
+		return domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, SendHour: 9, StartDate: start, Weekend: rule}
+	}
+	tests := []struct {
+		name  string
+		setup func(h *harness) string // returns the schedule id, leaves the clock on Saturday
+		want  int                     // invoices for November after the runner's pass
+	}{
+		{"none switched to previous-friday on Saturday", func(h *harness) string {
+			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly(domain.WeekendNone, domain.NewDate(2026, 10, 1)))))
+			h.clock.Set(sat)
+			upd := *d.Schedule
+			upd.Recurrence.Weekend = domain.WeekendPreviousFriday
+			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
+		}, 1},
+		{"created on Saturday, starting 1 November", func(h *harness) string {
+			h.clock.Set(sat)
+			return must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 11, 1))))).Schedule.ID
+		}, 1},
+		{"Friday run failed, edited on Saturday", func(h *harness) string {
+			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
+			b := h.bank
+			b.IsDefault, b.Active = false, false
+			b = must(h.svc.UpdateBankAccount(h.ctx, b))
+			h.clock.Set(fri)
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Failed != 1 {
+				t.Fatalf("Friday run should fail: %+v", res)
+			}
+			b.IsDefault, b.Active = true, true
+			must(h.svc.UpdateBankAccount(h.ctx, b))
+			h.clock.Set(sat)
+			upd := *must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
+			upd.Name = "Edited"
+			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
+		}, 1},
+		{"paused Thursday, resumed Saturday", func(h *harness) string {
+			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
+			h.clock.Set(time.Date(2026, 10, 29, 8, 0, 0, 0, time.UTC))
+			must(h.svc.PauseSchedule(h.ctx, d.Schedule.ID))
+			h.clock.Set(sat)
+			return must(h.svc.ResumeSchedule(h.ctx, d.Schedule.ID)).Schedule.ID
+		}, 1},
+		{"ran early on Friday, edited on Saturday: not again", func(h *harness) string {
+			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
+			h.clock.Set(fri)
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != 1 {
+				t.Fatalf("Friday run: %+v", res)
+			}
+			h.clock.Set(sat)
+			upd := *must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
+			upd.Name = "Edited"
+			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
+		}, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t).seed()
+			id := tc.setup(h)
+			got := must(h.svc.GetSchedule(h.ctx, id)).Schedule
+			if got.Period() != domain.NewDate(2026, 11, 1) {
+				t.Fatalf("pending period %v, want 2026-11-01 (November skipped)", got.Period())
+			}
+			must(h.svc.RunDueSchedules(h.ctx, 10))
+			invs, n := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{CustomerID: h.customer.ID}))
+			if n != tc.want {
+				t.Fatalf("%d invoices, want %d", n, tc.want)
+			}
+			if d := invs[0].IssueDate; d != domain.NewDate(2026, 10, 30) { // its scheduled run day (before today)
+				t.Fatalf("issued %v", d)
+			}
+			after := must(h.svc.GetSchedule(h.ctx, id))
+			if after.Schedule.Period() != domain.NewDate(2026, 12, 1) || len(after.Runs) != 1 || after.Runs[0].Period != domain.NewDate(2026, 11, 1) {
+				t.Fatalf("after the pass: period %v runs %+v", after.Schedule.Period(), after.Runs)
+			}
+		})
+	}
+}
+
+func (h *harness) weekendSchedule(r domain.Recurrence) domain.Schedule {
+	return domain.Schedule{CustomerID: h.customer.ID, Name: "Monthly", Recurrence: r, Lines: []domain.ScheduleLine{{ProductID: h.usersP.ID, Quantity: 1000}}}
+}
+
+// TestScheduleIssueDateAndInactiveProduct: Run now ahead of the scheduled day dates the
+// invoice today, not in the future; a line whose product was deactivated fails the run with
+// the reason instead of invoicing it.
+func TestScheduleIssueDateAndInactiveProduct(t *testing.T) {
+	h := newHarness(t).seed()
+	h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+	d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 15, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)})))
+	must(h.svc.RunScheduleNow(h.ctx, d.Schedule.ID))
+	if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != 1 {
+		t.Fatalf("run now: %+v", res)
+	}
+	invs, _ := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{}))
+	if invs[0].IssueDate != domain.NewDate(2026, 10, 20) {
+		t.Fatalf("run now issued %v, want today", invs[0].IssueDate)
+	}
+	p := h.usersP
+	p.Active = false
+	must(h.svc.UpdateProduct(h.ctx, p))
+	must(h.svc.RunScheduleNow(h.ctx, d.Schedule.ID))
+	if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Failed != 1 || res.Issued != 0 {
+		t.Fatalf("inactive product: %+v", res)
+	}
+	got := must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
+	if got.LastRunResult() != domain.RunFailed || !strings.Contains(got.LastError, `"Stock system users" is no longer available`) {
+		t.Fatalf("failure not recorded clearly: %q", got.LastError)
+	}
+	if _, n := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{})); n != 1 {
+		t.Fatalf("an inactive product was invoiced: %d invoices", n)
+	}
+}
+
+// TestScheduleEmailDefaultsRender: every suggested text, put through the real invoice and
+// statement e-mail paths of its schedule type, leaves no placeholder unfilled; the
+// recurring-invoice texts follow the business's own invoice e-mail texts once it sets them.
+func TestScheduleEmailDefaultsRender(t *testing.T) {
+	h := newHarness(t).seed()
+	h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+	d := must(h.svc.ScheduleEmailDefaults(h.ctx))
+	if d.Invoice.Subject != domain.DefaultScheduleEmails().Invoice.Subject {
+		t.Fatalf("built-in business texts must not replace the template: %q", d.Invoice.Subject)
+	}
+	// An issued, never e-mailed invoice for the e-mail schedules to send.
+	inv := must(h.svc.CreateInvoice(h.ctx, h.referenceInput()))
+	must(h.svc.IssueInvoice(h.ctx, inv.ID, domain.Date{}))
+	monthly := domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 25, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)}
+	tests := []struct {
+		name  string
+		kind  domain.ScheduleKind
+		scope domain.EmailScope
+		tmpl  domain.EmailTemplate
+	}{
+		{"recurring invoice", domain.ScheduleInvoice, "", d.Invoice},
+		{"unsent invoices", domain.ScheduleEmail, domain.EmailUnsent, d.Unsent},
+		{"outstanding invoices", domain.ScheduleEmail, domain.EmailOutstanding, d.Outstanding},
+		{"statement", domain.ScheduleEmail, domain.EmailStatement, d.Statement},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := domain.Schedule{
+				CustomerID: h.customer.ID, Name: tc.name, Kind: tc.kind, EmailScope: tc.scope, Recurrence: monthly,
+				AutoSend: true, EmailSubject: tc.tmpl.Subject, EmailBody: tc.tmpl.Body,
+			}
+			if tc.kind == domain.ScheduleInvoice {
+				sc.Lines = []domain.ScheduleLine{{ProductID: h.usersP.ID, Quantity: 1000}}
+			}
+			before := len(h.store.Emails())
+			c := must(h.svc.CreateSchedule(h.ctx, sc))
+			must(h.svc.RunScheduleNow(h.ctx, c.Schedule.ID))
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Failed != 0 {
+				t.Fatalf("run: %+v", res)
+			}
+			ems := h.store.Emails()
+			if len(ems) <= before {
+				t.Fatal("nothing queued")
+			}
+			for _, m := range ems[before:] {
+				if strings.Contains(m.Subject+m.Body, "{{") || !strings.Contains(m.Body, "Dear Acme Commercial Spares") || !strings.HasSuffix(m.Body, "Example Software Consulting") {
+					t.Fatalf("rendered:\n%s\n%s", m.Subject, m.Body)
+				}
+			}
+			must(h.svc.PauseSchedule(h.ctx, c.Schedule.ID))
+		})
+	}
+	// The business's own invoice e-mail texts become the recurring-invoice suggestion.
+	bs := must(h.svc.GetBusiness(h.ctx))
+	bs.Profile.EmailSubject, bs.Profile.EmailBody = "Your invoice {{invoice_number}}", "Hello {{customer_name}}"
+	must(h.svc.UpdateBusiness(h.ctx, bs.Profile, 0))
+	d2 := must(h.svc.ScheduleEmailDefaults(h.ctx))
+	if d2.Invoice.Subject != "Your invoice {{invoice_number}}" || d2.Invoice.Body != "Hello {{customer_name}}" || d2.Unsent.Subject != d.Unsent.Subject || d2.Statement.Body != d.Statement.Body {
+		t.Fatalf("defaults with business texts = %+v", d2)
+	}
+}
+
+// TestEditOrResumeKeepsUnrunPeriod: an occurrence that has not run is not lost when the
+// schedule is edited or resumed after its time — except after a user's pause, where missed
+// periods are skipped by design — and moving the day within a billed period never bills it
+// twice.
+func TestEditOrResumeKeepsUnrunPeriod(t *testing.T) {
+	sast := func(m time.Month, d, h int) time.Time { return time.Date(2026, m, d, h-2, 0, 0, 0, time.UTC) } // SAST = UTC+2
+	tests := []struct {
+		name     string
+		downtime bool // the server is down from creation: September is not run first
+		act      func(t *testing.T, h *harness, id string)
+		periods  []string // run periods after the runner's last pass, newest first
+	}{
+		{"failed on the 15th (inactive product), fixed and edited at 11:00", false, func(t *testing.T, h *harness, id string) {
+			p := h.usersP
+			p.Active = false
+			p = must(h.svc.UpdateProduct(h.ctx, p))
+			h.clock.Set(sast(10, 15, 9))
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Failed != 1 {
+				t.Fatalf("should fail: %+v", res)
+			}
+			p.Active = true
+			must(h.svc.UpdateProduct(h.ctx, p))
+			h.clock.Set(sast(10, 15, 11))
+			editName(t, h, id, "Edited")
+		}, []string{"2026-10-15"}},
+		{"auto-paused after five failures, then resumed", false, func(t *testing.T, h *harness, id string) {
+			b := h.bank
+			b.IsDefault, b.Active = false, false
+			b = must(h.svc.UpdateBankAccount(h.ctx, b))
+			h.clock.Set(sast(10, 15, 9))
+			for range domain.MaxScheduleFailures {
+				must(h.svc.RunDueSchedules(h.ctx, 10))
+				h.clock.Advance(time.Hour)
+			}
+			if got := must(h.svc.GetSchedule(h.ctx, id)).Schedule; !got.PausedByFailures() {
+				t.Fatalf("not auto-paused: %+v", got)
+			}
+			b.IsDefault, b.Active = true, true
+			must(h.svc.UpdateBankAccount(h.ctx, b))
+			editName(t, h, id, "Edited while paused") // keeps the failure state
+			h.clock.Set(sast(10, 16, 10))
+			must(h.svc.ResumeSchedule(h.ctx, id))
+		}, []string{"2026-10-15"}},
+		{"paused by the user, resumed after the 15th: skipped", false, func(t *testing.T, h *harness, id string) {
+			h.clock.Set(sast(10, 14, 10))
+			must(h.svc.PauseSchedule(h.ctx, id))
+			h.clock.Set(sast(10, 16, 10))
+			must(h.svc.ResumeSchedule(h.ctx, id))
+		}, nil},
+		{"server down since August, edited before the runner caught up", true, func(t *testing.T, h *harness, id string) {
+			h.clock.Set(sast(10, 16, 10))
+			editName(t, h, id, "Edited")
+		}, []string{"2026-10-15", "2026-09-15"}},
+		{"day moved within a billed month: no second invoice, next month raised", false, func(t *testing.T, h *harness, id string) {
+			h.clock.Set(sast(10, 15, 9))
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != 1 {
+				t.Fatalf("October: %+v", res)
+			}
+			h.clock.Set(sast(10, 16, 10))
+			upd := *must(h.svc.GetSchedule(h.ctx, id)).Schedule
+			upd.Recurrence.DayOfMonth = 20 // 20 Oct is still October
+			must(h.svc.UpdateSchedule(h.ctx, upd))
+			h.clock.Set(sast(10, 20, 9))
+			if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != 0 {
+				t.Fatalf("October billed twice: %+v", res)
+			}
+			h.clock.Set(sast(11, 20, 9))
+		}, []string{"2026-11-20", "2026-10-15"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t).seed()
+			h.clock.Set(sast(8, 20, 10)) // created 20 Aug: first run 15 Sep
+			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 15, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)})))
+			if !tc.downtime {
+				h.clock.Set(sast(9, 15, 9))
+				if res := must(h.svc.RunDueSchedules(h.ctx, 10)); res.Issued != 1 { // September, so only later periods are in question
+					t.Fatalf("September: %+v", res)
+				}
+			}
+			tc.act(t, h, d.Schedule.ID)
+			must(h.svc.RunDueSchedules(h.ctx, 10))
+			var got []string
+			for _, r := range must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Runs {
+				got = append(got, r.Period.String())
+			}
+			want := tc.periods
+			if !tc.downtime {
+				want = append(slices.Clone(want), "2026-09-15")
+			}
+			if strings.Join(got, " ") != strings.Join(want, " ") {
+				t.Fatalf("run periods = %v, want %v", got, want)
+			}
+			_, n := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{}))
+			if n != len(want) {
+				t.Fatalf("%d invoices for %d periods", n, len(want))
+			}
+		})
+	}
+}
+
+func editName(t *testing.T, h *harness, id, name string) {
+	t.Helper()
+	upd := *must(h.svc.GetSchedule(h.ctx, id)).Schedule
+	upd.Name = name
+	must(h.svc.UpdateSchedule(h.ctx, upd))
 }

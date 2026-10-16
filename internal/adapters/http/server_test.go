@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -350,6 +351,23 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	if len(sched.Upcoming) != 5 || sched.Schedule.Lines[1].UnitPrice == nil || *sched.Schedule.Lines[1].UnitPrice != "550.00" || sched.Schedule.Recurrence.SendTime != "09:00" {
 		t.Fatalf("schedule = %+v", sched)
 	}
+	// Each line names its product from the look-up and its current price in the customer's
+	// currency; the stored description stays empty.
+	checkLines := func(what string, ls []httpapi.ScheduleLine) {
+		t.Helper()
+		if len(ls) != 2 || ls[0].ProductName != "Stock system users" || ls[0].ProductStatus != "active" || ls[0].Description != "" ||
+			ls[0].ProductUnitPrice == nil || *ls[0].ProductUnitPrice != "192.94" || ls[0].UnitPrice != nil ||
+			ls[1].ProductName != "Integration" || ls[1].ProductUnitPrice == nil || *ls[1].ProductUnitPrice != "550.00" {
+			t.Fatalf("%s lines = %+v", what, ls)
+		}
+	}
+	checkLines("created", sched.Schedule.Lines)
+	if sched.Schedule.Recurrence.WeekendRule != "previous-friday" {
+		t.Fatalf("a new monthly schedule moves weekend runs by default: %q", sched.Schedule.Recurrence.WeekendRule)
+	}
+	if sched.Schedule.LastRunResult != "" || sched.Schedule.LastRunAt != nil {
+		t.Fatalf("a new schedule has not run: %+v", sched.Schedule)
+	}
 	id := sched.Schedule.Id
 	c.ok(c.do("POST", "/api/v1/schedules/"+id+"/pause", nil, &sched), 200, "pause")
 	c.ok(c.do("POST", "/api/v1/schedules/"+id+"/resume", nil, &sched), 200, "resume")
@@ -361,14 +379,39 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	if sched.Schedule.Name != "Renamed" {
 		t.Fatal("rename")
 	}
+	checkLines("read", sched.Schedule.Lines)
 	var scheds httpapi.ScheduleList
 	c.ok(c.do("GET", "/api/v1/schedules?status=active", nil, &scheds), 200, "list schedules")
+	if len(scheds.Items) != 1 {
+		t.Fatalf("schedules = %+v", scheds)
+	}
+	checkLines("listed", scheds.Items[0].Lines)
 	var preview httpapi.RunPreview
 	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "weekly", "interval": 1, "dayOfMonth": 0, "weekday": 5, "sendTime": "08:30", "startDate": "2026-09-01"}, &preview), 200, "preview")
-	if len(preview.Runs) != 6 || preview.Runs[0].Weekday() != time.Friday {
-		t.Fatalf("preview = %v", preview.Runs)
+	if len(preview.Runs) != 6 || preview.Runs[0].Weekday() != time.Friday || preview.TimeZone != "Africa/Johannesburg" || preview.Runs[0].Hour() != 6 || preview.Runs[0].Minute() != 30 {
+		t.Fatalf("preview in the business zone = %s %v", preview.TimeZone, preview.Runs)
+	}
+	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "weekly", "interval": 1, "dayOfMonth": 0, "weekday": 5, "sendTime": "08:30", "timeZone": "UTC", "startDate": "2026-09-01"}, &preview), 200, "preview UTC")
+	if preview.TimeZone != "UTC" || preview.Runs[0].Hour() != 8 || preview.WeekendRule != "none" { // weekly never moves
+		t.Fatalf("preview in UTC = %s %v", preview.TimeZone, preview.Runs)
 	}
 	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "weekly", "interval": 1, "dayOfMonth": 0, "weekday": 5, "sendTime": "25:00", "startDate": "2026-09-01"}, &p), 422, "bad time")
+	// Monthly on the first: with the weekend rule no run is on a Saturday or Sunday in the business zone.
+	jhb, _ := time.LoadLocation("Africa/Johannesburg")
+	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 1, "weekday": 0, "sendTime": "09:00", "startDate": "2026-01-01", "weekendRule": "previous-friday"}, &preview), 200, "preview previous-friday")
+	for _, r := range preview.Runs {
+		if wd := r.In(jhb).Weekday(); wd == time.Saturday || wd == time.Sunday {
+			t.Fatalf("preview runs on a weekend: %v", preview.Runs)
+		}
+	}
+	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 1, "weekday": 0, "sendTime": "09:00", "startDate": "2026-01-01", "weekendRule": "monday-after"}, &p), 422, "unknown weekend rule")
+	var defaults httpapi.ScheduleEmailDefaults
+	c.ok(c.do("GET", "/api/v1/schedules/defaults", nil, &defaults), 200, "schedule defaults")
+	if defaults.Invoice.Subject != "Invoice {{invoice_number}} from {{business_name}}" || !strings.Contains(defaults.Outstanding.Body, "reminder") ||
+		!strings.Contains(defaults.Statement.Subject, "{{date}}") || slices.Contains(defaults.Statement.Placeholders, "{{invoice_number}}") ||
+		!slices.Contains(defaults.Unsent.Placeholders, "{{due_date}}") {
+		t.Fatalf("defaults = %+v", defaults)
+	}
 
 	var dash httpapi.Dashboard
 	c.ok(c.do("GET", "/api/v1/dashboard", nil, &dash), 200, "dashboard")

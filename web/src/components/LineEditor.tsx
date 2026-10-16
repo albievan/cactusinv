@@ -10,10 +10,17 @@ export interface EditLine {
   /** From the product — not editable (no free-text lines). */
   description: string
   quantity: string
-  /** The product's unit price in the document currency (display and preview only). */
+  /** The unit price shown and used for the preview: the fixed price if any, else the product's. */
   unitPrice: string
   discountPercent: string
+  /** Schedules: the product's state as the server read it; inactive or missing means choose another. */
+  productStatus?: 'active' | 'inactive' | 'missing'
+  /** Schedules: a fixed unit price stored on the line (kept on save unless another product is chosen). */
+  priceOverride?: string
 }
+
+/** unavailable: the line's product was deactivated or no longer exists. */
+const unavailable = (l: EditLine) => l.productStatus === 'inactive' || l.productStatus === 'missing'
 
 export const newLine = (): EditLine => ({ key: uuid(), productId: '', productName: '', description: '', quantity: '1', unitPrice: '', discountPercent: '' })
 
@@ -26,11 +33,16 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
 }) {
   const update = (key: string, patch: Partial<EditLine>) => onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   let total = 0n
-  let complete = true
+  let problem = ''
   for (const l of lines) {
-    const a = l.productId ? lineAmount(l, minorUnits) : null
-    if (a === null) complete = false
-    else total += a
+    if (!l.productId || l.productStatus === 'missing') {
+      problem = 'Choose a product for every line'
+      break
+    }
+    const a = lineAmount(l, minorUnits)
+    if (a !== null) total += a
+    else if (!l.unitPrice) problem ||= `No ${currency} price for a product — choose another`
+    else problem ||= 'Check the quantities and discounts'
   }
   return (
     <div className="card space-y-3 p-0">
@@ -44,7 +56,7 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
       </div>
       <ul className="divide-y divide-cream-200">
         {lines.map((l, i) => {
-          const amount = l.productId ? lineAmount(l, minorUnits) : null
+          const amount = l.productId && l.productStatus !== 'missing' ? lineAmount(l, minorUnits) : null
           return (
             <li key={l.key} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6rem_8rem_6rem_8rem_2.5rem] md:items-start">
               <div>
@@ -54,10 +66,17 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
                   label={`Product for line ${i + 1}`}
                   onPick={(p) => {
                     const price = p.prices.find((x) => x.currency === currency)?.unitPrice ?? ''
-                    update(l.key, { productId: p.id ?? '', productName: p.name, description: p.description || p.name, unitPrice: price })
+                    // A fixed price belongs to its product: kept when the same product is chosen again.
+                    const keep = p.id === l.productId && l.priceOverride !== undefined
+                    update(l.key, {
+                      productId: p.id ?? '', productName: p.name, description: p.description || p.name, productStatus: p.active ? 'active' : 'inactive',
+                      unitPrice: keep ? (l.priceOverride ?? price) : price, priceOverride: keep ? l.priceOverride : undefined,
+                    })
                   }}
                 />
                 {l.description && l.description !== l.productName && <p className="mt-1 text-xs text-slate-500">{l.description}</p>}
+                {unavailable(l) && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{l.productStatus === 'inactive' ? `${l.productName}: product` : 'Product'} no longer available — choose another.</p>}
+                {l.productId && !unavailable(l) && !l.unitPrice && <p role="alert" className="mt-1 text-xs font-medium text-red-700">No {currency} price for this product — choose another product.</p>}
               </div>
               <label className="text-xs text-slate-500 md:text-right">
                 <span className="md:sr-only">Qty</span>
@@ -66,6 +85,7 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
               <div className="text-sm md:pt-2.5 md:text-right">
                 <span className="text-xs text-slate-500 md:hidden">Unit price </span>
                 <span className="tabular-nums">{l.unitPrice ? `${l.unitPrice}` : '—'}</span>
+                {l.priceOverride !== undefined && <span className="block text-xs text-slate-500">fixed price</span>}
               </div>
               <label className="text-xs text-slate-500">
                 <span className="md:sr-only">Disc %</span>
@@ -85,7 +105,7 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
         </button>
         <div className="text-right">
           <div className="text-xs text-slate-500">Preview — the server computes the final total</div>
-          <div className="text-lg font-bold tabular-nums text-brand-900">{complete ? `${currency} ${fromMinor(total, minorUnits)}` : 'Choose a product for every line'}</div>
+          <div className="text-lg font-bold tabular-nums text-brand-900">{problem || `${currency} ${fromMinor(total, minorUnits)}`}</div>
         </div>
       </div>
     </div>

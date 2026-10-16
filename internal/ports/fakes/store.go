@@ -381,6 +381,19 @@ func (r customers) List(_ context.Context, f ports.CustomerFilter) ([]domain.Cus
 	return out, total, err
 }
 
+func (r customers) GetMany(_ context.Context, ids []string) (map[string]domain.Customer, error) {
+	out := map[string]domain.Customer{}
+	err := r.s.do(func(st *state) error {
+		for _, id := range ids {
+			if c, ok := st.customers[id]; ok {
+				out[id] = c
+			}
+		}
+		return nil
+	})
+	return out, err
+}
+
 func (r customers) Get(_ context.Context, id string) (domain.Customer, error) {
 	var out domain.Customer
 	err := r.s.do(func(st *state) error {
@@ -924,7 +937,7 @@ func (r schedules) ClaimDue(_ context.Context, now time.Time, limit int) ([]*dom
 func (r schedules) InsertRun(_ context.Context, run domain.ScheduleRun) error {
 	return r.s.do(func(st *state) error {
 		for _, x := range st.runs {
-			if x.ScheduleID == run.ScheduleID && x.Period == run.Period {
+			if x.ScheduleID == run.ScheduleID && x.PeriodKey == run.PeriodKey {
 				return domain.ErrConflict
 			}
 		}

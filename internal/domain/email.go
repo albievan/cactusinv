@@ -178,8 +178,9 @@ type TemplateData struct {
 }
 
 // RenderTemplate substitutes {{invoice_number}}, {{customer_name}}, {{attention}},
-// {{total}}, {{due_date}}, {{issue_date}} and {{business_name}}. Unknown placeholders are
-// left as written.
+// {{total}}, {{due_date}}, {{issue_date}}, {{date}} (the same as {{issue_date}}: the
+// invoice's issue date or the statement's as-at date) and {{business_name}}. Unknown
+// placeholders are left as written.
 func RenderTemplate(tmpl string, d TemplateData) string {
 	return strings.NewReplacer(
 		"{{invoice_number}}", d.InvoiceNumber,
@@ -188,6 +189,7 @@ func RenderTemplate(tmpl string, d TemplateData) string {
 		"{{total}}", d.Total,
 		"{{due_date}}", d.DueDate,
 		"{{issue_date}}", d.IssueDate,
+		"{{date}}", d.IssueDate,
 		"{{business_name}}", d.BusinessName,
 	).Replace(tmpl)
 }

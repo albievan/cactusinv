@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcmariadb "github.com/testcontainers/testcontainers-go/modules/mariadb"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
 	"github.com/albievan/cactusinv/internal/ports/fakes"
+	"github.com/albievan/cactusinv/migrations"
 )
 
 var (
@@ -95,7 +97,13 @@ func must[T any](v T, err error) T {
 
 func setup(t *testing.T) *env {
 	t.Helper()
-	e := &env{ctx: context.Background(), store: reset(t), clock: &fakes.Clock{T: time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC)}, mailer: &fakes.Mailer{}}
+	return seedEnv(reset(t))
+}
+
+// seedEnv creates the reference business, currencies, bank account, products and customer
+// through the use cases on store (whatever schema it is migrated to).
+func seedEnv(store *mariadb.Store) *env {
+	e := &env{ctx: context.Background(), store: store, clock: &fakes.Clock{T: time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC)}, mailer: &fakes.Mailer{}}
 	e.svc = app.New(app.Deps{Tx: e.store, Clock: e.clock, IDs: idgen.UUIDv7{}, Mailer: e.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
 	must(e.svc.UpdateBusiness(e.ctx, domain.BusinessProfile{Name: "Example Software Consulting", TimeZone: "Africa/Johannesburg", NumberFormat: "{code}/{seq}/{yy}"}, 1195))
 	must(e.svc.CreateCurrency(e.ctx, "ZAR", "South African Rand", "R", 2, true))
@@ -478,5 +486,149 @@ func TestLegacyInvoiceEventsAreBackfilled(t *testing.T) {
 	}
 	if v := must(svc.VerifyAudit(ctx)); !v.OK || v.Entries != 3 {
 		t.Fatalf("verify = %+v", v)
+	}
+}
+
+// TestScheduleWeekendRulePersistence: migration 00016 stores the weekend rule (existing
+// rows: none), and a run moved to the Friday before is claimed, issued that day and
+// recorded for its nominal period.
+func TestScheduleWeekendRulePersistence(t *testing.T) {
+	e := setup(t)
+	var def string
+	if err := testDB.QueryRowContext(e.ctx, `SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'schedules' AND COLUMN_NAME = 'weekend_rule'`).Scan(&def); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Trim(def, "'") != "none" {
+		t.Fatalf("existing schedules must default to none, column default %q", def)
+	}
+	e.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
+	d := must(e.svc.CreateSchedule(e.ctx, domain.Schedule{
+		CustomerID: e.customer.ID, Name: "Monthly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 1, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 1000}},
+	}))
+	got := must(e.svc.GetSchedule(e.ctx, d.Schedule.ID)).Schedule
+	if got.Recurrence.Weekend != domain.WeekendPreviousFriday || !got.NextRunAt.Equal(time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC)) ||
+		got.Period() != domain.NewDate(2026, 11, 1) {
+		t.Fatalf("round trip: rule %q, next run %v, period %v", got.Recurrence.Weekend, got.NextRunAt, got.Period())
+	}
+	if _, err := testDB.ExecContext(e.ctx, `UPDATE schedules SET weekend_rule = 'monday-after' WHERE id = ?`, got.ID); err == nil {
+		t.Fatal("an unknown weekend rule must be refused by the CHECK constraint")
+	}
+	e.clock.Set(time.Date(2026, 10, 30, 7, 0, 0, 0, time.UTC))
+	if res := must(e.svc.RunDueSchedules(e.ctx, 10)); res.Issued != 1 {
+		t.Fatalf("moved run: %+v", res)
+	}
+	if res := must(e.svc.RunDueSchedules(e.ctx, 10)); res.Issued != 0 {
+		t.Fatalf("ran twice: %+v", res)
+	}
+	invs, _ := must3(e.svc.ListInvoices(e.ctx, ports.InvoiceFilter{}))
+	runs := must(e.svc.GetSchedule(e.ctx, got.ID)).Runs
+	if len(invs) != 1 || invs[0].IssueDate != domain.NewDate(2026, 10, 30) || len(runs) != 1 || runs[0].Period != domain.NewDate(2026, 11, 1) {
+		t.Fatalf("invoices %+v, runs %+v", invs, runs)
+	}
+	upd := *must(e.svc.GetSchedule(e.ctx, got.ID)).Schedule
+	upd.Recurrence.Weekend = domain.WeekendNone
+	if s := must(e.svc.UpdateSchedule(e.ctx, upd)).Schedule; s.Recurrence.Weekend != domain.WeekendNone {
+		t.Fatalf("none not stored: %q", s.Recurrence.Weekend)
+	}
+}
+
+func TestCustomersGetMany(t *testing.T) {
+	e := setup(t)
+	other := must(e.svc.CreateCustomer(e.ctx, domain.Customer{Code: "US", Name: "Acme Inc", Email: "ap@acme.example", Currency: "USD", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true}))
+	repo := e.store.Repos().Customers
+	got := must(repo.GetMany(e.ctx, []string{e.customer.ID, other.ID, e.customer.ID, "missing"}))
+	if len(got) != 2 || got[e.customer.ID].Currency != "ZAR" || got[other.ID].Name != "Acme Inc" || len(got[e.customer.ID].CC) != 2 {
+		t.Fatalf("GetMany = %+v", got)
+	}
+	if none := must(repo.GetMany(e.ctx, nil)); len(none) != 0 {
+		t.Fatalf("no ids: %+v", none)
+	}
+}
+
+// TestScheduleRunPeriodKey: migration 00017 keys runs by billing period — existing runs are
+// backfilled from their schedule's frequency, a month billed twice before keeps both runs
+// (the later one under its date) — and moving the day within a billed month raises no
+// second invoice while the next month is still raised.
+func TestScheduleRunPeriodKey(t *testing.T) {
+	ctx := context.Background()
+	e := setup(t)
+	monthly := must(e.svc.CreateSchedule(e.ctx, domain.Schedule{
+		CustomerID: e.customer.ID, Name: "Monthly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 15, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 1000}},
+	})).Schedule
+	weekly := must(e.svc.CreateSchedule(e.ctx, domain.Schedule{
+		CustomerID: e.customer.ID, Name: "Weekly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Monday, SendHour: 9, StartDate: domain.NewDate(2026, 8, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 1000}},
+	})).Schedule
+	// Back to schema 16 (before the period key), where runs were keyed by their date.
+	provider, err := goose.NewProvider(goose.DialectMySQL, testDB, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.DownTo(ctx, 16); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []struct{ id, period string }{
+		{monthly.ID, "2026-09-15"}, {monthly.ID, "2026-09-20"}, // September billed twice under the old key
+		{monthly.ID, "2026-10-15"}, {weekly.ID, "2026-09-07"}, {weekly.ID, "2026-09-14"},
+	} {
+		if _, err := testDB.ExecContext(ctx, `INSERT INTO schedule_runs (schedule_id, period, invoice_id, at) VALUES (?, ?, ?, NOW())`, r.id, r.period, "00000000-0000-0000-0000-000000000000"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mariadb.MigrateTo(ctx, testDB, 17); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := testDB.QueryContext(ctx, `SELECT s.name, r.period, r.period_key FROM schedule_runs r JOIN schedules s ON s.id = r.schedule_id ORDER BY s.name, r.period`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var name, key string
+		var period time.Time
+		if err := rows.Scan(&name, &period, &key); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, name+" "+period.Format(time.DateOnly)+"="+key)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	want := "Monthly 2026-09-15=2026-09 Monthly 2026-09-20=2026-09-20 Monthly 2026-10-15=2026-10 Weekly 2026-09-07=2026-09-07 Weekly 2026-09-14=2026-09-14"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("backfill:\n got %v\nwant %v", got, want)
+	}
+
+	// At head: October ran (backfilled); moving the day to the 20th raises no second October
+	// invoice, and November is raised on the 20th.
+	if err := mariadb.Migrate(ctx, testDB, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.DeleteSchedule(e.ctx, weekly.ID); err != nil { // only the monthly one runs below
+		t.Fatal(err)
+	}
+	e.clock.Set(time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC))
+	upd := *must(e.svc.GetSchedule(e.ctx, monthly.ID)).Schedule
+	upd.Recurrence.DayOfMonth = 20
+	upd.Recurrence.StartDate = domain.NewDate(2026, 10, 1)
+	must(e.svc.UpdateSchedule(e.ctx, upd))
+	e.clock.Set(time.Date(2026, 10, 20, 7, 0, 0, 0, time.UTC))
+	if res := must(e.svc.RunDueSchedules(e.ctx, 10)); res.Issued != 0 {
+		t.Fatalf("October billed again: %+v", res)
+	}
+	e.clock.Set(time.Date(2026, 11, 20, 7, 0, 0, 0, time.UTC))
+	if res := must(e.svc.RunDueSchedules(e.ctx, 10)); res.Issued != 1 {
+		t.Fatalf("November not raised once: %+v", res)
+	}
+	runs := must(e.svc.GetSchedule(e.ctx, monthly.ID)).Runs
+	if runs[0].Period != domain.NewDate(2026, 11, 20) || runs[0].PeriodKey != "2026-11" {
+		t.Fatalf("latest run = %+v", runs[0])
 	}
 }

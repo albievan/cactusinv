@@ -543,6 +543,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Suggested e-mail subject and body for a new schedule of each type, with the placeholders the server fills for that type. */
+        get: operations["getScheduleDefaults"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/schedules/{id}": {
         parameters: {
             query?: never;
@@ -1435,7 +1452,7 @@ export interface components {
             /** @enum {string} */
             frequency: "once" | "weekly" | "monthly" | "quarterly" | "yearly";
             interval: number;
-            /** @description 0 = last day of the month. */
+            /** @description 0 = last day of the month; 1 = first day; a day past the month's end means its last day. */
             dayOfMonth: number;
             /** @description 0 = Sunday. */
             weekday: number;
@@ -1447,11 +1464,25 @@ export interface components {
             startDate: string;
             /** Format: date */
             endDate?: string;
+            /**
+             * @description Monthly, quarterly and yearly: when the day falls on a Saturday or Sunday, previous-friday runs on the Friday before (the first of a month can move into the previous month) and none runs on that day. The run keeps the period of its day. Omitted on create: previous-friday; omitted on update: unchanged. Weekly and once are always none.
+             * @enum {string}
+             */
+            weekendRule?: "previous-friday" | "none";
         };
         /** @description A product from the look-up. A product description may contain {month}, {year} or {period}. */
         ScheduleLine: {
             productId: string;
             readonly description?: string;
+            /** @description The product's current name, read from the product look-up when the schedule is read (never from description). Empty when the product no longer exists. */
+            readonly productName?: string;
+            /**
+             * @description The product's state when the schedule is read — inactive (deactivated) or missing (no longer in the look-up) means choose another product.
+             * @enum {string}
+             */
+            readonly productStatus?: "active" | "inactive" | "missing";
+            /** @description The product's current unit price in the customer's currency, for display and preview. Absent when the product has no price in that currency or no longer exists. Not stored; unitPrice is the override. */
+            readonly productUnitPrice?: string;
             quantity: components["schemas"]["Decimal"];
             /** @description Omit to use the product's price in the customer's currency at run time. */
             unitPrice?: string;
@@ -1486,8 +1517,16 @@ export interface components {
             emailBody: string;
             /** Format: date-time */
             readonly nextRunAt?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When the schedule last ran successfully.
+             */
             readonly lastRunAt?: string;
+            /**
+             * @description Outcome of the latest run — failed while failed runs are recorded since the last success (see failureCount, lastError), ok once it has run and nothing failed since; absent when it never ran.
+             * @enum {string}
+             */
+            readonly lastRunResult?: "ok" | "failed";
             readonly failureCount?: number;
             readonly lastError?: string;
             version: number;
@@ -1501,6 +1540,7 @@ export interface components {
         };
         ScheduleDetail: {
             schedule: components["schemas"]["Schedule"];
+            /** @description Next runs; show them in schedule.recurrence.timeZone. */
             upcoming: string[];
             runs: components["schemas"]["ScheduleRun"][];
         };
@@ -1508,8 +1548,30 @@ export interface components {
             items: components["schemas"]["Schedule"][];
             total: number;
         };
+        EmailTemplate: {
+            readonly subject: string;
+            readonly body: string;
+            /** @description The placeholders the server fills for this type of e-mail. */
+            readonly placeholders: string[];
+        };
+        ScheduleEmailDefaults: {
+            invoice: components["schemas"]["EmailTemplate"];
+            unsent: components["schemas"]["EmailTemplate"];
+            outstanding: components["schemas"]["EmailTemplate"];
+            statement: components["schemas"]["EmailTemplate"];
+        };
         RunPreview: {
             runs: string[];
+            /**
+             * @description The weekend rule the runs were computed with — the recurrence's own, or the default a new schedule would get.
+             * @enum {string}
+             */
+            weekendRule: "previous-friday" | "none";
+            /**
+             * @description The IANA time zone the runs were computed in — the recurrence's own, or the business time zone when it names none. Show the runs in this zone.
+             * @example UTC
+             */
+            timeZone: string;
         };
         CurrencyTotal: {
             currency: string;
@@ -2837,6 +2899,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getScheduleDefaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One template per schedule type. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleEmailDefaults"];
                 };
             };
             default: components["responses"]["Problem"];

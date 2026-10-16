@@ -47,6 +47,21 @@ func (r customerRepo) Get(ctx context.Context, id string) (domain.Customer, erro
 	return toCustomer(c), nil
 }
 
+func (r customerRepo) GetMany(ctx context.Context, ids []string) (map[string]domain.Customer, error) {
+	out := map[string]domain.Customer{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.ListCustomersByIDs(ctx, ids)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	for _, c := range rows {
+		out[c.ID] = toCustomer(c)
+	}
+	return out, nil
+}
+
 func (r customerRepo) Create(ctx context.Context, c domain.Customer) error {
 	return mapErr(r.q.InsertCustomer(ctx, sqlcgen.InsertCustomerParams{
 		ID: c.ID, Code: c.Code, Name: c.Name, Email: c.Email, Cc: joinList(c.CC), Attention: c.Attention,

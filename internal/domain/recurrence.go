@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -19,6 +20,18 @@ const (
 // maxOccurrenceScan bounds the search for the next occurrence.
 const maxOccurrenceScan = 5000
 
+// WeekendRule says when a day-of-month run that falls on a weekend fires.
+type WeekendRule string
+
+// Weekend rules.
+const (
+	// WeekendNone runs on the day itself.
+	WeekendNone WeekendRule = "none"
+	// WeekendPreviousFriday runs on the Friday before: a Saturday 1 day, a Sunday 2 days
+	// earlier (the first of a month can move into the previous month).
+	WeekendPreviousFriday WeekendRule = "previous-friday"
+)
+
 // Recurrence describes when a schedule fires, in the schedule's own time zone.
 type Recurrence struct {
 	Frequency  Frequency
@@ -29,7 +42,21 @@ type Recurrence struct {
 	SendMinute int
 	TimeZone   string
 	StartDate  Date
-	EndDate    Date // zero = no end
+	EndDate    Date        // zero = no end
+	Weekend    WeekendRule // monthly, quarterly, yearly; "" = none (see DefaultWeekendRule)
+}
+
+// dayBased reports whether the recurrence picks a day of the month.
+func (r Recurrence) dayBased() bool {
+	return r.Frequency == FrequencyMonthly || r.Frequency == FrequencyQuarterly || r.Frequency == FrequencyYearly
+}
+
+// DefaultWeekendRule gives a new recurrence that names no weekend rule the default: a
+// day-of-month recurrence moves weekend runs to the Friday before.
+func (r *Recurrence) DefaultWeekendRule() {
+	if r.Weekend == "" && r.dayBased() {
+		r.Weekend = WeekendPreviousFriday
+	}
 }
 
 // Validate checks a recurrence's invariants.
@@ -59,6 +86,14 @@ func (r *Recurrence) Validate() error {
 	}
 	if _, err := time.LoadLocation(r.TimeZone); err != nil {
 		return invalid("timeZone", "unknown IANA time zone")
+	}
+	switch r.Weekend {
+	case "", WeekendNone, WeekendPreviousFriday:
+	default:
+		return invalid("weekendRule", "must be previous-friday or none")
+	}
+	if r.Weekend == "" || !r.dayBased() {
+		r.Weekend = WeekendNone
 	}
 	if r.StartDate.IsZero() {
 		return invalid("startDate", "is required")
@@ -155,16 +190,92 @@ func (r Recurrence) NextAfter(t time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// Upcoming lists up to n occurrences strictly after t.
+// PeriodKey names the billing period of an occurrence nominally on d: its month
+// ("2026-10") for monthly, its calendar quarter ("2026-Q4") for quarterly, its year
+// ("2026") for yearly, and the date ("2026-10-15") for weekly and once. A schedule raises
+// at most one invoice per key, so moving the day or the start date after a run cannot bill
+// the same period twice.
+func (r Recurrence) PeriodKey(d Date) string {
+	switch r.Frequency {
+	case FrequencyMonthly:
+		return fmt.Sprintf("%04d-%02d", d.Year, int(d.Month))
+	case FrequencyQuarterly:
+		return fmt.Sprintf("%04d-Q%d", d.Year, (int(d.Month)-1)/3+1)
+	case FrequencyYearly:
+		return fmt.Sprintf("%04d", d.Year)
+	default:
+		return d.String()
+	}
+}
+
+// PeriodStart is the first day of the billing period (see PeriodKey) of the date d.
+func (r Recurrence) PeriodStart(d Date) Date {
+	switch r.Frequency {
+	case FrequencyMonthly:
+		return NewDate(d.Year, d.Month, 1)
+	case FrequencyQuarterly:
+		return NewDate(d.Year, time.Month((int(d.Month)-1)/3*3+1), 1)
+	case FrequencyYearly:
+		return NewDate(d.Year, time.January, 1)
+	default:
+		return d
+	}
+}
+
+// RunDate is the local date an occurrence nominally on d fires: d itself, or under
+// WeekendPreviousFriday the Friday before when d is a Saturday or Sunday.
+func (r Recurrence) RunDate(d Date) Date {
+	if r.Weekend != WeekendPreviousFriday || !r.dayBased() {
+		return d
+	}
+	switch d.Time(time.UTC).Weekday() {
+	case time.Saturday:
+		return d.AddDays(-1)
+	case time.Sunday:
+		return d.AddDays(-2)
+	default:
+		return d
+	}
+}
+
+// RunTime is when the occurrence whose nominal instant is nominal (as NextAfter returns
+// it) fires, after the weekend rule.
+func (r Recurrence) RunTime(nominal time.Time) time.Time {
+	d := r.LocalDate(nominal)
+	if rd := r.RunDate(d); rd != d {
+		return r.At(rd)
+	}
+	return nominal
+}
+
+// Upcoming lists the run times of the next n occurrences nominally after t, as a schedule
+// activated at t would run them: a run the weekend rule moved before t runs at t.
 func (r Recurrence) Upcoming(t time.Time, n int) []time.Time {
 	var out []time.Time
+	if n <= 0 {
+		return out
+	}
+	nominal, ok := r.NextAfter(t)
+	if !ok {
+		return out
+	}
+	run := r.RunTime(nominal)
+	if run.Before(t) {
+		run = t
+	}
+	return append([]time.Time{run}, r.RunsAfter(nominal, n-1)...)
+}
+
+// RunsAfter lists the run times of up to n occurrences nominally after nominal.
+func (r Recurrence) RunsAfter(nominal time.Time, n int) []time.Time {
+	var out []time.Time
 	for len(out) < n {
-		next, ok := r.NextAfter(t)
+		next, ok := r.NextAfter(nominal)
 		if !ok {
 			break
 		}
-		out = append(out, next)
-		t = next
+		out = append(out, r.RunTime(next))
+		nominal = next
 	}
 	return out
 }

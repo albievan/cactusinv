@@ -244,6 +244,7 @@ type Schedule struct {
 	Kind           string
 	EmailScope     string
 	EmailDelayDays int32
+	WeekendRule    string
 }
 
 type ScheduleLine struct {
@@ -261,6 +262,7 @@ type ScheduleRun struct {
 	Period     time.Time
 	InvoiceID  string
 	At         time.Time
+	PeriodKey  string
 }
 
 type Session struct {

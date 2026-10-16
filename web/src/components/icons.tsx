@@ -39,3 +39,8 @@ export const IconBuilding = base(<><path d="M4 21V5l8-2v18M12 7l8 3v11M3 21h18" 
 export const IconBank = base(<><path d="M3 9l9-5 9 5M4 9h16" /><path d="M6 9v8M10 9v8M14 9v8M18 9v8M3 20h18" /></>)
 export const IconServer = base(<><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" /></>)
 export const IconArchive = base(<><rect x="3" y="4" width="18" height="5" rx="1" /><path d="M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9M10 13h4" /></>)
+export const IconEdit = base(<><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>)
+export const IconPause = base(<><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></>)
+export const IconPlay = base(<path d="M7 4.5v15l12-7.5z" />)
+export const IconBolt = base(<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" />)
+export const IconTrash = base(<><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>)

@@ -44,7 +44,17 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Dashboard** — outstanding and overdue per currency, invoiced vs paid over 12 months, who
   owes the most, what is scheduled next and recent activity.
 - **Recurring invoice workflows** — raise a predefined invoice on a schedule, then e-mail it
-  straight away or a set number of days later.
+  straight away or a set number of days later. Lines use the product's current price in the
+  customer's currency unless a fixed price is set; run times are shown in the schedule's time
+  zone (the business time zone unless the schedule sets its own), e.g. "Fri 16 Oct 2026, 09:00 UTC".
+  The Schedules page lists each schedule's type, last run (and whether it failed) and next run,
+  with Edit, Pause/Resume, Run now and Delete beside it; Run now and Delete ask first.
+  Monthly, quarterly and yearly schedules run on the first day, the last day or a chosen day
+  (a day past the month's end means its last day); by default a run that falls on a Saturday or
+  Sunday is sent on the Friday before — still for its own month (schedules made before v1.6.2
+  keep running on the day itself until you change them). A new schedule starts with a suggested
+  e-mail subject and body for its type; invoice schedules show the disclaimer every invoice
+  prints and where to change it.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
