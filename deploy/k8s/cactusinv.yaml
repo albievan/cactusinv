@@ -84,6 +84,10 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: mariadb, app.kubernetes.io/part-of: cactusinv }
     spec:
+      # No pod talks to the Kubernetes API. Without this the token is mounted at
+      # /var/run/secrets/kubernetes.io inside the read-only /run/secrets volume, and runc
+      # cannot create that mount point: the container never starts (k3s, Albie 2026-10-16).
+      automountServiceAccountToken: false
       containers:
         - name: mariadb
           image: mariadb:11
@@ -132,6 +136,10 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: cactusinv, app.kubernetes.io/part-of: cactusinv }
     spec:
+      # No pod talks to the Kubernetes API. Without this the token is mounted at
+      # /var/run/secrets/kubernetes.io inside the read-only /run/secrets volume, and runc
+      # cannot create that mount point: the container never starts (k3s, Albie 2026-10-16).
+      automountServiceAccountToken: false
       securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532 }
       containers:
         - name: cactusinv
@@ -195,6 +203,10 @@ spec:
     metadata:
       labels: { app.kubernetes.io/name: mailpit, app.kubernetes.io/part-of: cactusinv }
     spec:
+      # No pod talks to the Kubernetes API. Without this the token is mounted at
+      # /var/run/secrets/kubernetes.io inside the read-only /run/secrets volume, and runc
+      # cannot create that mount point: the container never starts (k3s, Albie 2026-10-16).
+      automountServiceAccountToken: false
       containers:
         - name: mailpit
           image: axllent/mailpit:v1.21

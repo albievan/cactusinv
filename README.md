@@ -132,6 +132,8 @@ On k3s the SSH user must be root or have passwordless `sudo` (`k3s ctr` and `k3s
 need root); the image is imported for the node's CPU without attestation manifests, checked
 on the node, and run with `imagePullPolicy: Never`. If a rollout is not ready within five
 minutes the script prints the pods, their events and the last log lines before it stops.
+A volume claim that already exists keeps its size (claims cannot shrink); the `K8S_*_STORAGE`
+sizes apply to new installs.
 
 On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Mailpit on
 `K8S_MAILPIT_NODE_PORT` (30025). The app's Service uses `externalTrafficPolicy: Local`, so

@@ -367,6 +367,7 @@ rollout() {
   kc -n "$K8S_NAMESPACE" get pods,pvc -o wide </dev/null || true
   kc -n "$K8S_NAMESPACE" describe pods -l "app.kubernetes.io/name=$name" </dev/null | sed -n '/^Events:/,$p' | tail -25 || true
   kc -n "$K8S_NAMESPACE" logs "deploy/$name" --all-containers --tail=40 </dev/null || true
+  kc -n "$K8S_NAMESPACE" logs "deploy/$name" --all-containers --previous --tail=40 </dev/null 2>/dev/null || true
   die "deploy/$name did not become ready (see above: ImagePullBackOff/ErrImageNeverPull = image not imported; Pending = volume or resources; CrashLoopBackOff = see its log)"
 }
 
@@ -462,6 +463,17 @@ YAML
   # The mariadb-dump CronJob and its script are retired: the app takes the backups now.
   kc -n "$K8S_NAMESPACE" delete cronjob cactusinv-backup --ignore-not-found
   kc -n "$K8S_NAMESPACE" delete configmap cactusinv-backup-script --ignore-not-found
+  # A volume claim cannot shrink: one that exists keeps its size (it may have been created
+  # larger, by hand or by an earlier .env).
+  local claim var size
+  for claim in mariadb-data:K8S_MARIADB_STORAGE invoices:K8S_INVOICES_STORAGE backups:K8S_BACKUP_STORAGE; do
+    var="${claim#*:}"; claim="${claim%%:*}"
+    size="$(kc -n "$K8S_NAMESPACE" get pvc "$claim" -o jsonpath='{.spec.resources.requests.storage}' 2>/dev/null </dev/null || true)"
+    if [[ -n "$size" && "$size" != "${!var}" ]]; then
+      info "volume ${claim} exists with ${size}: keeping it (${var}=${!var} applies to new installs)"
+      export "$var=$size"
+    fi
+  done
   render | kc apply -f -
   info "waiting for the rollout"
   rollout mariadb
