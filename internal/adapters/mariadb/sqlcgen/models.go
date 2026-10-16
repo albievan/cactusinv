@@ -299,8 +299,11 @@ type SystemState struct {
 }
 
 type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	CreatedAt    time.Time
+	ID                 string
+	Email              string
+	PasswordHash       string
+	CreatedAt          time.Time
+	DisabledAt         sql.NullTime
+	MustChangePassword bool
+	LastLoginAt        sql.NullTime
 }

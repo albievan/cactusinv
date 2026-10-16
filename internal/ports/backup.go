@@ -99,7 +99,7 @@ type StagedRestore struct {
 	LiveCounts map[string]int64
 	// SMTPPasswordEnc is the staged SMTP password ciphertext (nil when none).
 	SMTPPasswordEnc []byte
-	// UserIDs are the staged users' ids.
+	// UserIDs are the ids of the staged users who are active (can sign in).
 	UserIDs []string
 }
 

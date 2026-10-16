@@ -214,19 +214,3 @@ func TemplateDataFor(inv *Invoice, cur Currency, business BusinessProfile) Templ
 		BusinessName:  business.Name,
 	}
 }
-
-// User is an administrator who can sign in.
-type User struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	CreatedAt    time.Time
-}
-
-// Session is a signed-in browser session; only a hash of its token is stored.
-type Session struct {
-	TokenHash string
-	UserID    string
-	ExpiresAt time.Time
-	CreatedAt time.Time
-}

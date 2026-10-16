@@ -171,6 +171,11 @@ metadata:
   labels: { app.kubernetes.io/part-of: cactusinv }
 spec:
   type: NodePort
+  # Local keeps the client's address (no SNAT), so the sign-in rate limit counts each
+  # client on its own (ADR-011). The NodePort then answers only on the node running the
+  # pod: on a multi-node cluster open that node (kubectl get pod -o wide) or put an
+  # ingress in front.
+  externalTrafficPolicy: Local
   selector: { app.kubernetes.io/name: cactusinv }
   ports: [{ port: 80, targetPort: http, nodePort: ${K8S_NODE_PORT} }]
 ---

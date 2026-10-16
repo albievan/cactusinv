@@ -36,7 +36,7 @@ type RestorePreview struct {
 	LiveAuditOK bool
 	// InvoicesSince counts live invoices created after the backup: a restore removes them.
 	InvoicesSince int
-	// CanSignIn says whether the account staging the restore exists in the backup.
+	// CanSignIn says whether the account staging the restore is an active user in the backup.
 	CanSignIn bool
 	// SMTPPasswordCleared says the backup's e-mail server password cannot be decrypted here.
 	SMTPPasswordCleared bool
@@ -301,7 +301,7 @@ func (s *Service) preview(ctx context.Context) (RestorePreview, error) {
 }
 
 // canSignIn reports whether the actor staging a restore can sign in afterwards: a user
-// whose account is in the backup, or a system actor (the CLI operator), which has no
+// whose account is active in the backup, or a system actor (the CLI operator), which has no
 // account to lose.
 func canSignIn(a Actor, userIDs []string) bool {
 	return strings.HasPrefix(a.ID, "system") || slices.Contains(userIDs, a.ID)
@@ -326,7 +326,7 @@ func restoreWarnings(p RestorePreview) []string {
 		w = append(w, fmt.Sprintf("%d invoices were created after this backup was taken; restoring removes them (their numbers are not reused)", p.InvoicesSince))
 	}
 	if !p.CanSignIn {
-		w = append(w, "your account is not in this backup: after the restore you must sign in with an account that is")
+		w = append(w, "your account is not an active user in this backup: after the restore you must sign in with an account that is")
 	}
 	if p.SMTPPasswordCleared {
 		w = append(w, "the e-mail server password in this backup cannot be decrypted by this installation; it will be cleared and must be entered again")
@@ -374,11 +374,12 @@ func (s *Service) auditChain(ctx context.Context, r ports.Repos) ([]domain.Audit
 	}
 }
 
-// reauthenticate checks the signed-in actor's current password.
+// reauthenticate checks the signed-in actor's current password. A disabled actor is
+// unauthenticated.
 func (s *Service) reauthenticate(ctx context.Context, password string) error {
 	a := ActorFrom(ctx)
 	u, err := s.tx.Repos().Users.Get(ctx, a.ID)
-	if errors.Is(err, domain.ErrNotFound) {
+	if errors.Is(err, domain.ErrNotFound) || (err == nil && !u.Active()) {
 		return domain.ErrUnauthenticated
 	}
 	if err != nil {

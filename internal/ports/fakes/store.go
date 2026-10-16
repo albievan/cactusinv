@@ -1106,6 +1106,9 @@ func (r users) Get(_ context.Context, id string) (domain.User, error) {
 	return out, err
 }
 
+// Lock reads the user (the fake serialises nothing; the use cases' re-checks still run).
+func (r users) Lock(ctx context.Context, id string) (domain.User, error) { return r.Get(ctx, id) }
+
 func (r users) Create(_ context.Context, u domain.User) error {
 	return r.s.do(func(st *state) error {
 		for _, o := range st.users {
@@ -1118,16 +1121,56 @@ func (r users) Create(_ context.Context, u domain.User) error {
 	})
 }
 
-func (r users) UpdatePassword(_ context.Context, id, hash string) error {
+func (r users) UpdatePassword(_ context.Context, id, hash string, mustChange bool) error {
+	return r.update(id, func(u *domain.User) { u.PasswordHash, u.MustChangePassword = hash, mustChange })
+}
+
+func (r users) SetDisabled(_ context.Context, id string, at time.Time) error {
+	return r.update(id, func(u *domain.User) { u.DisabledAt = at })
+}
+
+func (r users) TouchLogin(_ context.Context, id string, at time.Time) error {
+	return r.update(id, func(u *domain.User) { u.LastLoginAt = at })
+}
+
+func (r users) update(id string, f func(*domain.User)) error {
 	return r.s.do(func(st *state) error {
 		u, ok := st.users[id]
 		if !ok {
 			return domain.ErrNotFound
 		}
-		u.PasswordHash = hash
+		f(&u)
 		st.users[id] = u
 		return nil
 	})
+}
+
+func (r users) List(_ context.Context) ([]domain.User, error) {
+	var out []domain.User
+	err := r.s.do(func(st *state) error {
+		for _, u := range st.users {
+			out = append(out, u)
+		}
+		slices.SortFunc(out, func(a, b domain.User) int { return strings.Compare(strings.ToLower(a.Email), strings.ToLower(b.Email)) })
+		return nil
+	})
+	return out, err
+}
+
+// LockActive returns the active users' ids. The fake serialises transactions, so there
+// is nothing to lock.
+func (r users) LockActive(_ context.Context) ([]string, error) {
+	var out []string
+	err := r.s.do(func(st *state) error {
+		for _, u := range st.users {
+			if u.Active() {
+				out = append(out, u.ID)
+			}
+		}
+		slices.Sort(out)
+		return nil
+	})
+	return out, err
 }
 
 func (r users) Count(_ context.Context) (int, error) {
@@ -1171,6 +1214,17 @@ func (r sessions) Delete(_ context.Context, tokenHash string) error {
 func (r sessions) DeleteAll(_ context.Context) error {
 	return r.s.do(func(st *state) error {
 		st.sessions = map[string]domain.Session{}
+		return nil
+	})
+}
+
+func (r sessions) DeleteForUser(_ context.Context, userID, exceptHash string) error {
+	return r.s.do(func(st *state) error {
+		for k, s := range st.sessions {
+			if s.UserID == userID && k != exceptHash {
+				delete(st.sessions, k)
+			}
+		}
 		return nil
 	})
 }

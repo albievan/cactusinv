@@ -13,6 +13,7 @@ import { ProductEditor, ProductList } from './features/products/Products'
 import { ScheduleDetailPage, ScheduleEditor, ScheduleList } from './features/schedules/Schedules'
 import { BusinessSettingsPage, CurrencySettingsPage, EmailSettingsPage, More } from './features/settings/Settings'
 import { BackupSettingsPage } from './features/settings/backup/Backup'
+import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, settingsNav } from './features/settings/settingsNav'
 
 export function AppRoutes() {
@@ -44,6 +45,7 @@ export function AppRoutes() {
           <Route path="business" element={<BusinessSettingsPage />} />
           <Route path="email" element={<EmailSettingsPage />} />
           <Route path="currencies" element={<CurrencySettingsPage />} />
+          <Route path="users" element={<UsersSettingsPage />} />
           <Route path="backup" element={<BackupSettingsPage />} />
           <Route path="*" element={<Navigate to={settingsHref(settingsNav[0]!)} replace />} />
         </Route>

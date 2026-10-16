@@ -56,7 +56,7 @@ func (h *handlers) Logout(ctx context.Context, _ LogoutRequestObject) (LogoutRes
 }
 
 func (h *handlers) ChangePassword(ctx context.Context, req ChangePasswordRequestObject) (ChangePasswordResponseObject, error) {
-	if err := h.svc.ChangePassword(ctx, currentUser(ctx).ID, req.Body.CurrentPassword, req.Body.NewPassword); err != nil {
+	if err := h.svc.ChangePassword(ctx, currentUser(ctx).ID, sessionToken(ctx), req.Body.CurrentPassword, req.Body.NewPassword); err != nil {
 		return nil, err
 	}
 	return ChangePassword204Response{}, nil
@@ -68,7 +68,7 @@ func (h *handlers) Me(ctx context.Context, _ MeRequestObject) (MeResponseObject,
 	if err != nil {
 		return nil, err
 	}
-	return Me200JSONResponse{Id: u.ID, Email: u.Email, AutomationPaused: held}, nil
+	return Me200JSONResponse{Id: u.ID, Email: u.Email, AutomationPaused: held, MustChangePassword: u.MustChangePassword}, nil
 }
 
 // ---- settings ----

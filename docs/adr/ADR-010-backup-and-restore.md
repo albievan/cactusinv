@@ -1,6 +1,6 @@
 # ADR-010 — Encrypted backup and restore in the application
 
-**Status:** accepted · **Date:** 2026-10-15 · Amends ADR-006, ADR-007 and ADR-009
+**Status:** accepted · **Date:** 2026-10-15 · Amends ADR-006, ADR-007 and ADR-009 · Amended by ADR-011
 
 ## Context
 Albie wants backup and restore under Settings. The first backups (ADR-007) were plaintext
@@ -149,3 +149,13 @@ the first and last name, not every name.
   `cactusinv backup create --out FILE`.
 - Format changes need a new `formatVersion`, a decoder for the old one, and a test.
 - `filippo.io/age` (BSD-3-Clause) is a new dependency.
+
+## Amendment — users (2026-10-16, ADR-011)
+- A session whose user must change their password cannot reach any backup or restore route
+  (403 `password-change-required`); the gate covers every API operation.
+- Applying a restore shares the sign-in rate limit (10 failed password attempts a minute
+  per client address).
+- "Can you sign in afterwards" in the preview now means: your account is an **active** user
+  in the backup. Restored users keep the disabled and must-change state they had in the
+  backup; a backup from before v1.6.0 is migrated like a live database (its non-e-mail
+  logins must change their password).

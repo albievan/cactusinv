@@ -43,6 +43,14 @@ var (
 	// COMMIT failed in a way that leaves it open whether it took effect); check before
 	// retrying.
 	ErrOutcomeUnknown = errors.New("outcome unknown")
+	// ErrForbidden means the signed-in user may not do this (e.g. disable or reset their
+	// own account).
+	ErrForbidden = errors.New("forbidden")
+	// ErrLastActiveUser means the change would leave no active user (ADR-011).
+	ErrLastActiveUser = errors.New("the last active user cannot be disabled")
+	// ErrPasswordChangeRequired means the session's user must change their password before
+	// doing anything else (ADR-011).
+	ErrPasswordChangeRequired = errors.New("password change required")
 	// ErrNotConfigured means a required setting or secret is missing (e.g. backup_key).
 	ErrNotConfigured = errors.New("not configured")
 )

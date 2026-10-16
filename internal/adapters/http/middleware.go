@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -133,8 +134,8 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 }
 
 // withAPIGuards applies the body limit and deadlines (per route, see limitsFor), the CSRF
-// check and session authentication to /api.
-func withAPIGuards(svc *app.Service, maxUpload int64, next http.Handler) http.Handler {
+// check, session authentication and, on password routes, the user's rate-limit bucket.
+func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Larger bodies and longer deadlines only once the request is authenticated; until
 		// then nothing reads the body of such a route.
@@ -162,6 +163,19 @@ func withAPIGuards(svc *app.Service, maxUpload int64, next http.Handler) http.Ha
 		}
 		if limits.long() {
 			applyLimits(w, r, limits)
+		}
+		if reauthPath(r) { // the signed-in user's own bucket (ADR-011)
+			key := "user:" + u.ID
+			if !limiter.reserve(key) {
+				tooManyAttempts(w)
+				return
+			}
+			att := attemptFrom(r.Context())
+			if att == nil {
+				att = &passwordAttempt{}
+				r = r.WithContext(context.WithValue(r.Context(), attemptKey{}, att))
+			}
+			defer func() { limiter.finish(key, att.failed.Load()) }()
 		}
 		ctx := context.WithValue(r.Context(), keyUser, u)
 		ctx = app.WithActor(ctx, app.Actor{ID: u.ID, Name: u.Email})
@@ -208,7 +222,10 @@ func withIdempotency(store ports.IdempotencyRepository, clock ports.Clock, next 
 		}
 		rec := &statusRecorder{ResponseWriter: w, capture: &bytes.Buffer{}}
 		next.ServeHTTP(rec, r)
-		if rec.status >= 500 || rec.status == 0 {
+		// A server error, or a request refused before it ran (signed out, or a password
+		// that must be changed first), is not the operation's answer: the key is freed so
+		// the same request can run once it is allowed.
+		if rec.status >= 500 || rec.status == 0 || rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden {
 			_ = store.Release(context.WithoutCancel(ctx), storeKey)
 			return
 		}
@@ -239,54 +256,128 @@ func replay(w http.ResponseWriter, r *http.Request, store ports.IdempotencyRepos
 	}
 }
 
-// loginLimiter allows a burst of attempts per client IP per window.
+// loginLimiter bounds password guessing (ADR-011). Every request to a route that checks a
+// password (reauthPath) takes a slot in its client address's bucket on arrival — and, once
+// signed in, in its user's bucket — so that slots in flight plus failures in the last
+// window never exceed max: at most max such requests per bucket reach the password check
+// per window, however many arrive at once. A request whose password was right (or that
+// never got to check one: no session, bad body) gives its slot back; a wrong password
+// turns it into a failure that expires after the window.
+//
+// The address is the TCP peer. Behind NAT, a reverse proxy or a NodePort without
+// externalTrafficPolicy: Local, many people share one address and share its bucket; the
+// per-user bucket keeps one signed-in user's guesses from using up everybody's.
 type loginLimiter struct {
 	mu      sync.Mutex
 	window  time.Duration
 	max     int
 	clock   ports.Clock
-	entries map[string][]time.Time
+	buckets map[string]*limitBucket
+}
+
+type limitBucket struct {
+	failures []time.Time
+	inflight int
 }
 
 func newLoginLimiter(clock ports.Clock) *loginLimiter {
-	return &loginLimiter{window: time.Minute, max: 10, clock: clock, entries: map[string][]time.Time{}}
+	return &loginLimiter{window: time.Minute, max: 10, clock: clock, buckets: map[string]*limitBucket{}}
 }
 
-func (l *loginLimiter) allow(ip string) bool {
+// reserve takes a slot in key's bucket, or reports that the bucket is full.
+func (l *loginLimiter) reserve(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.clock.Now()
-	kept := l.entries[ip][:0]
-	for _, t := range l.entries[ip] {
+	b := l.buckets[key]
+	if b == nil {
+		if len(l.buckets) >= 10000 { // bound memory under a spray of addresses
+			for k, o := range l.buckets {
+				if o.inflight == 0 {
+					delete(l.buckets, k)
+				}
+			}
+		}
+		b = &limitBucket{}
+		l.buckets[key] = b
+	}
+	kept := b.failures[:0]
+	for _, t := range b.failures {
 		if now.Sub(t) < l.window {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) >= l.max {
-		l.entries[ip] = kept
+	b.failures = kept
+	if len(b.failures)+b.inflight >= l.max {
 		return false
 	}
-	l.entries[ip] = append(kept, now)
-	if len(l.entries) > 10000 { // bound memory under a spray of addresses
-		l.entries = map[string][]time.Time{ip: l.entries[ip]}
-	}
+	b.inflight++
 	return true
 }
 
+// finish returns key's slot; failed records it as a failed password attempt.
+func (l *loginLimiter) finish(key string, failed bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.buckets[key]
+	if b == nil {
+		return
+	}
+	b.inflight--
+	if failed {
+		b.failures = append(b.failures, l.clock.Now())
+	}
+	if b.inflight <= 0 && len(b.failures) == 0 {
+		delete(l.buckets, key)
+	}
+}
+
+// passwordAttempt carries, for one request, whether a password was checked and wrong. The
+// response error handler sets it (wrongPassword); the limiter reads it when the request ends.
+type passwordAttempt struct{ failed atomic.Bool }
+
+type attemptKey struct{}
+
+func attemptFrom(ctx context.Context) *passwordAttempt {
+	a, _ := ctx.Value(attemptKey{}).(*passwordAttempt)
+	return a
+}
+
+// wrongPassword reports whether err means a password was checked and did not match: a
+// failed sign-in, or a wrong current password on a re-authenticated route.
+func wrongPassword(r *http.Request, err error) bool {
+	var ve *domain.ValidationError
+	if errors.As(err, &ve) {
+		return ve.Field == "currentPassword"
+	}
+	return r.URL.Path == "/api/v1/auth/login" && errors.Is(err, domain.ErrUnauthenticated)
+}
+
+func tooManyAttempts(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "60")
+	writeProblem(w, Problem{Type: problemType("rate-limited"), Title: "Too many password attempts", Status: http.StatusTooManyRequests, Detail: "Wait a minute, then try again."})
+}
+
+// middleware applies the per-address bucket (the per-user one is taken in withAPIGuards,
+// once the user is known).
 func (l *loginLimiter) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/login" && r.Method == http.MethodPost {
-			ip, _, err := net.SplitHostPort(r.RemoteAddr)
-			if err != nil {
-				ip = r.RemoteAddr
-			}
-			if !l.allow(ip) {
-				w.Header().Set("Retry-After", "60")
-				writeProblem(w, Problem{Type: problemType("rate-limited"), Title: "Too many sign-in attempts", Status: http.StatusTooManyRequests})
-				return
-			}
+		if !reauthPath(r) {
+			next.ServeHTTP(w, r)
+			return
 		}
-		next.ServeHTTP(w, r)
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+		key := "ip:" + ip
+		if !l.reserve(key) {
+			tooManyAttempts(w)
+			return
+		}
+		att := &passwordAttempt{}
+		defer func() { l.finish(key, att.failed.Load()) }()
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), attemptKey{}, att)))
 	})
 }
 

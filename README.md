@@ -46,6 +46,9 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
+- **Users** — Settings → Users: add users (every user is an administrator), reset a password,
+  disable and enable; users are never deleted, and nobody can disable themselves or the last
+  active user. A password someone else chose must be changed at the first sign-in.
 - **Mobile first** — designed for a phone, bottom navigation, large touch targets; scales
   up to a desktop layout. Installable as a home-screen app.
 
@@ -58,7 +61,14 @@ git clone https://github.com/albievan/cactusinv.git && cd cactusinv
 ./deploy.sh --install --dockerdesktop
 ```
 
-Open <http://localhost:8080> and sign in as **`admin` / `admin`**, then change the password under **More → Change password** (or from the command line):
+Open <http://localhost:8080> and sign in as **`admin` / `admin`**. You are asked to choose a
+new password straight away; nothing else works until you have (the server enforces it). Then
+add the people who need to sign in under **Settings → Users**.
+
+Upgrading from v1.5.0 or earlier: the default administrator (`admin`, or whatever
+`CACTUSINV_DEFAULT_ADMIN_USER` was) is asked for a new password at its next sign-in, even if
+it was changed before (the upgrade cannot tell). Locked out? Set a password on
+the server — it works for any user and ends that user's sessions:
 
 ```bash
 echo 'a-long-new-password' | docker compose exec -T app /cactusinv admin set-password admin
@@ -98,7 +108,12 @@ TARGET   --dockerdesktop | --k3s | --k8s
 | `./deploy.sh --restore cactusinv-20261001-020000.sql.gz --dockerdesktop` | restore an old plaintext dump (whole database replaced; with a warning) |
 
 On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Mailpit on
-`K8S_MAILPIT_NODE_PORT` (30025).
+`K8S_MAILPIT_NODE_PORT` (30025). The app's Service uses `externalTrafficPolicy: Local`, so
+the sign-in rate limit sees each client's own address; the port then answers only on the
+node that runs the app (on a single-node k3s, that node). On a multi-node cluster open that
+node (`kubectl get pod -o wide`) or put an ingress in front. Behind NAT or a proxy, clients
+share one address and so share its limit of 10 failed password attempts a minute; a
+signed-in user also has a limit of their own.
 
 ## Configuration — `.env`
 
@@ -117,6 +132,27 @@ All defaults live in [`.env`](.env) (no secrets in it):
 | `BACKUP_MAX_UPLOAD_MB` | `256` | largest backup file that can be uploaded for a restore |
 | `K8S_*` | | namespace, NodePorts, storage class and sizes, registry |
 | `TZ` | `Africa/Johannesburg` | time zone for backups; the business time zone is set in the app |
+
+## Users
+
+Settings → Users (on a phone: More → Users) lists everyone who can sign in, with their status
+and last sign-in. There are no roles: every user can do everything.
+
+- **Add user** — the login is the person's e-mail address; you choose a first password and
+  give it to them. Existing logins such as `admin` keep working.
+- **Reset password** — gives someone a temporary password and signs them out everywhere.
+- **Disable / Enable** — a disabled user cannot sign in and is signed out at once; nothing they
+  did is removed. Users are never deleted. You cannot disable yourself or the last active user.
+- Adding, resetting, disabling and enabling ask for **your own password** again; wrong
+  attempts are recorded in the audit log and limited to 10 a minute per address (shared with
+  sign-in).
+- A password chosen by someone else (a new user, a reset, the default `admin`) must be changed
+  at the next sign-in: until then only the change-password screen and Sign out work.
+- Changing your own password signs out your other sessions (other browsers and phones).
+- A failed sign-in always says the same thing; the reason (unknown login, wrong password,
+  disabled user) is in the audit log.
+- On the server, `cactusinv admin set-password <login>` (password on stdin) is the way back in
+  if every password is forgotten; `cactusinv admin create <login>` adds a user.
 
 ## Backup and restore
 
@@ -137,7 +173,7 @@ restore. No secret is in a backup.
 - **Restore** (Settings → Backup & restore → Restore… on a stored backup, or Restore from file
   for a downloaded one): the backup is decrypted, checked and loaded into a separate staging
   database first, and a preview shows what restoring changes — invoices created since the
-  backup, whether your account is in it, warnings. Applying it needs your password and the word
+  backup, whether your account is an active user in it, warnings. Applying it needs your password and the word
   `RESTORE`; it replaces the data in one transaction, never reuses invoice numbers, signs
   everyone out, and **pauses automatic e-mails and schedules** until you check the Outbox and
   resume (a banner on every page). With `backup_key` set up, the current data is saved first

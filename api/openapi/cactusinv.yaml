@@ -13,6 +13,10 @@ info:
     - Mutations require the header `X-Requested-With: cactusinv` (CSRF) and accept an
       `Idempotency-Key` header; repeating a key replays the first response.
     - Authentication is a session cookie set by `POST /auth/login`.
+    - Every user is an administrator (ADR-011). While a user must change their password
+      (`Me.mustChangePassword`), their session reaches only `GET /auth/me`,
+      `POST /auth/password` and `POST /auth/logout`; every other operation answers
+      `403` with the problem type `password-change-required`.
 servers:
   - url: /api/v1
 
@@ -30,6 +34,7 @@ tags:
   - name: audit
   - name: statements
   - name: backups
+  - name: users
 
 paths:
   /auth/login:
@@ -76,6 +81,10 @@ paths:
     post:
       tags: [auth]
       operationId: changePassword
+      description: |
+        Changes your own password. Clears the must-change flag and signs you out of every
+        other session (this one stays). Shares the sign-in rate limit. Exempt from
+        Idempotency-Key (the body holds passwords).
       requestBody:
         required: true
         content:
@@ -1013,6 +1022,118 @@ paths:
         '204': { description: Automatic e-mails and schedules run again. }
         default: { $ref: '#/components/responses/Problem' }
 
+  /users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      responses:
+        '200':
+          description: Every user, disabled ones included, by login.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [users]
+      operationId: addUser
+      description: |
+        Adds an administrator with a password you choose; they must change it at their first
+        sign-in. Needs your current password (a wrong one is a 422 on `currentPassword` and is
+        audited). Shares the sign-in rate limit. Exempt from Idempotency-Key (the body holds
+        passwords).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NewUserRequest' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /users/{id}/reset-password:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [users]
+      operationId: resetUserPassword
+      description: |
+        Gives another user a password you choose; they must change it at their next sign-in
+        and are signed out everywhere. Not for yourself (403 `forbidden`; use
+        POST /auth/password). Needs your current password; shares the sign-in rate limit;
+        exempt from Idempotency-Key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200':
+          description: Reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /users/{id}/disable:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [users]
+      operationId: disableUser
+      description: |
+        Stops a user from signing in and signs them out everywhere. Users are never deleted.
+        You cannot disable yourself (403 `forbidden`) or the last active user (409
+        `last-active-user`). Needs your current password; shares the sign-in rate limit;
+        exempt from Idempotency-Key. Disabling a disabled user changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReauthRequest' }
+      responses:
+        '200':
+          description: Disabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+  /users/{id}/enable:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [users]
+      operationId: enableUser
+      description: |
+        Lets a disabled user sign in again with their existing password. Needs your current
+        password; shares the sign-in rate limit; exempt from Idempotency-Key. Enabling an
+        active user changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReauthRequest' }
+      responses:
+        '200':
+          description: Enabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+        default: { $ref: '#/components/responses/Problem' }
+
 components:
   parameters:
     Id:
@@ -1169,13 +1290,51 @@ components:
         over90: { $ref: '#/components/schemas/Decimal' }
     Me:
       type: object
-      required: [id, email, automationPaused]
+      required: [id, email, automationPaused, mustChangePassword]
       properties:
         id: { type: string }
         email: { type: string }
+        mustChangePassword:
+          type: boolean
+          description: The password was chosen by someone else (or is the default); until it is changed with POST /auth/password, nothing else is allowed.
         automationPaused:
           type: boolean
           description: Automatic e-mails and schedules are paused after a restore until resumed (POST /automation/resume).
+
+    User:
+      type: object
+      required: [id, email, createdAt, active, mustChangePassword]
+      properties:
+        id: { type: string }
+        email: { type: string, description: The login. An e-mail address for every user added in the app. }
+        createdAt: { type: string, format: date-time }
+        active: { type: boolean, description: False once disabled; a disabled user cannot sign in. }
+        disabledAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        lastLoginAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        mustChangePassword: { type: boolean, description: Must change the password at the next sign-in. }
+    UserList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/User' } }
+    NewUserRequest:
+      type: object
+      required: [email, password, currentPassword]
+      properties:
+        email: { type: string, maxLength: 254, description: One e-mail address; it is the new user's login. }
+        password: { type: string, minLength: 12, maxLength: 200, description: A first password; the user must change it at the first sign-in. }
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
+    ResetPasswordRequest:
+      type: object
+      required: [password, currentPassword]
+      properties:
+        password: { type: string, minLength: 12, maxLength: 200, description: A temporary password; the user must change it at the next sign-in. }
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
+    ReauthRequest:
+      type: object
+      required: [currentPassword]
+      properties:
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
 
     BusinessSettings:
       type: object

@@ -52,6 +52,21 @@ func problemFor(err error) Problem {
 		return Problem{Type: problemType("validation"), Title: "Invalid input", Status: http.StatusUnprocessableEntity, Detail: ve.Error(), Field: ve.Field}
 	case errors.Is(err, domain.ErrValidation):
 		return Problem{Type: problemType("validation"), Title: "Invalid input", Status: http.StatusUnprocessableEntity, Detail: err.Error()}
+	case errors.Is(err, domain.ErrPasswordChangeRequired):
+		return Problem{
+			Type: problemType("password-change-required"), Title: "Change your password first", Status: http.StatusForbidden,
+			Detail: "Your password was set by someone else. Choose your own password to continue.",
+		}
+	case errors.Is(err, domain.ErrLastActiveUser):
+		return Problem{
+			Type: problemType("last-active-user"), Title: "The last active user cannot be disabled", Status: http.StatusConflict,
+			Detail: "Add or enable another user first, so someone can still sign in.",
+		}
+	case errors.Is(err, domain.ErrForbidden):
+		return Problem{
+			Type: problemType("forbidden"), Title: "Not allowed for your own account", Status: http.StatusForbidden,
+			Detail: "You cannot disable yourself or reset your own password here; change your own password instead.",
+		}
 	case errors.Is(err, domain.ErrUnauthenticated):
 		return Problem{Type: problemType("unauthenticated"), Title: "Sign in required", Status: http.StatusUnauthorized}
 	case errors.Is(err, domain.ErrNotFound):
@@ -99,6 +114,9 @@ func writeProblem(w http.ResponseWriter, p Problem) {
 // responseErrorHandler renders handler errors as problems and logs unexpected ones.
 func responseErrorHandler(log *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
 	return func(w http.ResponseWriter, r *http.Request, err error) {
+		if att := attemptFrom(r.Context()); att != nil && wrongPassword(r, err) {
+			att.failed.Store(true) // counted by the password rate limit
+		}
 		p := problemFor(err)
 		if p.Status >= http.StatusInternalServerError {
 			log.ErrorContext(r.Context(), "request failed", "request_id", requestID(r.Context()), "err", err)

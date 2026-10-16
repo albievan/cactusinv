@@ -193,7 +193,8 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
 
 ## 4. Data (MariaDB 11)
 
-Tables: `business_profile` (single row), `users`, `sessions`, `currencies`,
+Tables: `business_profile` (single row), `users` (with `disabled_at`, `must_change_password`,
+`last_login_at`; never deleted), `sessions`, `currencies`,
 `bank_accounts`, `customers`, `products`, `product_prices`, `invoice_sequences`,
 `invoices`, `invoice_lines`, `invoice_events`, `schedules`, `schedule_lines`,
 `schedule_runs`, `email_outbox`, `idempotency_keys`.
@@ -210,7 +211,8 @@ Tables: `business_profile` (single row), `users`, `sessions`, `currencies`,
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` |
+| Auth | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` |
+| Users | `GET/POST /users`, `POST /users/{id}/reset-password`, `/disable`, `/enable` (§13) |
 | Settings | `GET/PUT /settings/business` |
 | Currencies | `GET/POST /currencies`, `PUT /currencies/{code}` |
 | Bank accounts | `GET/POST /bank-accounts`, `GET/PUT/DELETE /bank-accounts/{id}` |
@@ -223,7 +225,11 @@ Tables: `business_profile` (single row), `users`, `sessions`, `currencies`,
 | Ops | `GET /healthz`, `GET /readyz`, `GET /metrics` (not under `/api`) |
 
 Errors: `application/problem+json` with `type` URIs `https://cactusinv/problems/<code>`.
-Mutations require header `X-Requested-With: cactusinv` (CSRF) and accept `Idempotency-Key`.
+Mutations require header `X-Requested-With: cactusinv` (CSRF) and accept `Idempotency-Key`
+(except the routes whose bodies carry a password or passphrase, which are never
+fingerprinted). Every operation passes the session gate (`sessionGate`, a strict-server
+middleware calling `app.SessionAllows`): a user who must change their password reaches only
+`me`, `changePassword` and `logout`.
 
 ## 6. Configuration & secrets
 
@@ -262,11 +268,12 @@ contract. Feature folders under `web/src/features/{dashboard,invoices,customers,
 schedules,settings,auth}`. Mobile layout: sticky top bar, bottom tab bar (Home, Invoices,
 Customers, Products, More), full-screen forms with a sticky action bar. ≥ `md`: side nav,
 tables. Settings has sub-pages — `/settings/business`, `/settings/email`,
-`/settings/currencies` (`/settings` opens the first) — listed once in
+`/settings/currencies`, `/settings/users`, `/settings/backup` (`/settings` opens the first) — listed once in
 `features/settings/settingsNav.ts`: the side nav nests them under Settings while a settings
 route is open, the phone More page lists them, and each settings page links its siblings.
 The app is light-only: Tailwind `darkMode: 'class'` (the class is never set) and no `dark:`
-classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in the binary and served with SPA fallback.
+classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in the binary and served with SPA fallback. While
+`Me.mustChangePassword` is set, `AuthProvider` shows only the forced change-password screen.
 
 ## 9. Statements, e-mail schedules, SMTP and the disclaimer
 
@@ -356,3 +363,33 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   `GROUP BY` queries, the top debtors, upcoming schedule runs and e-mails, and the latest
   audit entries. The web chart is a dependency-free SVG column chart with a validated
   two-colour categorical palette, hover tooltips and a table view.
+
+## 13. Users (ADR-011)
+
+- Every user is an administrator; no roles. The login is `users.email` (case-insensitive by
+  collation); users added in the app must use one e-mail address (`domain.ValidateNewLogin`),
+  older logins such as `admin` keep working. Passwords: 12–200 characters, Argon2id.
+- **Use cases** (`internal/app/users.go`, `auth.go`): `ListUsers`, `AddUser`,
+  `ResetUserPassword`, `DisableUser`, `EnableUser` — each needs the actor's current password
+  (`reauthUser`; a wrong one is audited `user.reauth_failed`). `DisableUser` locks the active
+  users (`UserRepository.LockActive`, `SELECT … FOR UPDATE`) and decides with
+  `domain.CheckCanDisable`: never yourself, never the last active user.
+- **Must change password**: set for users added or reset by an administrator, the default
+  administrator, and (migration `00015`) every pre-existing login that is not an e-mail
+  address. `app.SessionAllows` limits such a session to `me`, `changePassword`, `logout`;
+  `ChangePassword` clears the flag, refuses the same password, and signs out the user's other
+  sessions (`SessionRepository.DeleteForUser`).
+- **Sessions** end on disable and reset; `Authenticate` refuses a disabled user. `Login`
+  verifies the password before looking at the disabled flag (same answer, same time) and
+  records the reason in `auth.login_failed`, and `last_login_at` on success; its transaction
+  locks the user row and starts no session if the user was disabled or the password changed
+  since it was checked.
+- **HTTP**: the password rate limit covers every route that checks a password
+  (`reauthPath`): sign-in, password change, user management and restore apply. A request
+  reserves a slot on arrival in its address's bucket (`loginLimiter.middleware`) and, signed
+  in, its user's bucket (`withAPIGuards`); in flight + failures ≤ 10 per minute. Only a
+  wrong password (marked by the response error handler) counts as a failure. The Argon2
+  adapter runs at most `argon2.DefaultConcurrency` (4) hashes at once. Problems: `forbidden` 403, `last-active-user` 409,
+  `password-change-required` 403.
+- **CLI**: `cactusinv admin create|set-password <login>` (password on stdin) — shell access is
+  the authority, so those passwords are not flagged; `set-password` ends the user's sessions.

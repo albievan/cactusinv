@@ -52,7 +52,7 @@ func NewHandler(o Options) http.Handler {
 	}
 	m := newMetrics(o.Registry)
 	h := &handlers{svc: o.Service, clock: o.Clock, cookies: cookieConfig{secure: o.CookieSecure}, version: o.Version, build: o.Build, maxUpload: o.MaxUploadBytes}
-	strict := NewStrictHandlerWithOptions(h, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(h, []StrictMiddlewareFunc{sessionGate}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestErrorHandler,
 		ResponseErrorHandlerFunc: responseErrorHandler(o.Logger),
 	})
@@ -69,7 +69,7 @@ func NewHandler(o Options) http.Handler {
 
 	limiter := newLoginLimiter(o.Clock)
 	root := http.NewServeMux()
-	root.Handle("/api/", limiter.middleware(withAPIGuards(o.Service, o.MaxUploadBytes, withIdempotency(o.Service.Idempotency(), o.Clock, api))))
+	root.Handle("/api/", limiter.middleware(withAPIGuards(o.Service, o.MaxUploadBytes, limiter, withIdempotency(o.Service.Idempotency(), o.Clock, api))))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

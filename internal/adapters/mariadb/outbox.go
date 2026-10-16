@@ -123,7 +123,10 @@ func emailKind(k domain.EmailKind) domain.EmailKind {
 type userRepo struct{ q *sqlcgen.Queries }
 
 func toUser(u sqlcgen.User) domain.User {
-	return domain.User{ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, CreatedAt: u.CreatedAt.UTC()}
+	return domain.User{
+		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, CreatedAt: u.CreatedAt.UTC(),
+		DisabledAt: fromNullTime(u.DisabledAt), MustChangePassword: u.MustChangePassword, LastLoginAt: fromNullTime(u.LastLoginAt),
+	}
 }
 
 func (r userRepo) GetByEmail(ctx context.Context, email string) (domain.User, error) {
@@ -142,13 +145,50 @@ func (r userRepo) Get(ctx context.Context, id string) (domain.User, error) {
 	return toUser(u), nil
 }
 
-func (r userRepo) Create(ctx context.Context, u domain.User) error {
-	return mapErr(r.q.InsertUser(ctx, sqlcgen.InsertUserParams{ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, CreatedAt: u.CreatedAt.UTC()}))
+func (r userRepo) Lock(ctx context.Context, id string) (domain.User, error) {
+	u, err := r.q.LockUser(ctx, id)
+	if err != nil {
+		return domain.User{}, mapErr(err)
+	}
+	return toUser(u), nil
 }
 
-func (r userRepo) UpdatePassword(ctx context.Context, id, hash string) error {
-	n, err := r.q.UpdateUserPassword(ctx, sqlcgen.UpdateUserPasswordParams{PasswordHash: hash, ID: id})
+func (r userRepo) List(ctx context.Context) ([]domain.User, error) {
+	rows, err := r.q.ListUsers(ctx)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]domain.User, len(rows))
+	for i, u := range rows {
+		out[i] = toUser(u)
+	}
+	return out, nil
+}
+
+func (r userRepo) Create(ctx context.Context, u domain.User) error {
+	return mapErr(r.q.InsertUser(ctx, sqlcgen.InsertUserParams{
+		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, CreatedAt: u.CreatedAt.UTC(), MustChangePassword: u.MustChangePassword,
+	}))
+}
+
+func (r userRepo) UpdatePassword(ctx context.Context, id, hash string, mustChange bool) error {
+	n, err := r.q.UpdateUserPassword(ctx, sqlcgen.UpdateUserPasswordParams{PasswordHash: hash, MustChangePassword: mustChange, ID: id})
 	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r userRepo) SetDisabled(ctx context.Context, id string, at time.Time) error {
+	n, err := r.q.SetUserDisabled(ctx, sqlcgen.SetUserDisabledParams{DisabledAt: nullTime(at), ID: id})
+	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r userRepo) TouchLogin(ctx context.Context, id string, at time.Time) error {
+	n, err := r.q.TouchUserLogin(ctx, sqlcgen.TouchUserLoginParams{LastLoginAt: nullTime(at), ID: id})
+	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r userRepo) LockActive(ctx context.Context) ([]string, error) {
+	ids, err := r.q.LockActiveUsers(ctx)
+	return ids, mapErr(err)
 }
 
 func (r userRepo) Count(ctx context.Context) (int, error) {
@@ -178,6 +218,10 @@ func (r sessionRepo) Delete(ctx context.Context, tokenHash string) error {
 
 func (r sessionRepo) DeleteAll(ctx context.Context) error {
 	return mapErr(r.q.DeleteAllSessions(ctx))
+}
+
+func (r sessionRepo) DeleteForUser(ctx context.Context, userID, exceptHash string) error {
+	return mapErr(r.q.DeleteUserSessions(ctx, sqlcgen.DeleteUserSessionsParams{UserID: userID, TokenHash: exceptHash}))
 }
 
 func (r sessionRepo) DeleteExpired(ctx context.Context, now time.Time) error {

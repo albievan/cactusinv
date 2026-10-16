@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -93,6 +94,20 @@ func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	return err
 }
 
+const deleteUserSessions = `-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?
+`
+
+type DeleteUserSessionsParams struct {
+	UserID    string
+	TokenHash string
+}
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, arg DeleteUserSessionsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUserSessions, arg.UserID, arg.TokenHash)
+	return err
+}
+
 const getIdempotencyKey = `-- name: GetIdempotencyKey :one
 SELECT idem_key, fingerprint, status, body, created_at FROM idempotency_keys WHERE idem_key = ?
 `
@@ -127,7 +142,7 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, created_at FROM users WHERE id = ?
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -138,12 +153,15 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.MustChangePassword,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at FROM users WHERE email = ?
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE email = ?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -154,6 +172,9 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Email,
 		&i.PasswordHash,
 		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.MustChangePassword,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
@@ -203,14 +224,15 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 }
 
 const insertUser = `-- name: InsertUser :exec
-INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)
+INSERT INTO users (id, email, password_hash, created_at, must_change_password) VALUES (?, ?, ?, ?, ?)
 `
 
 type InsertUserParams struct {
-	ID           string
-	Email        string
-	PasswordHash string
-	CreatedAt    time.Time
+	ID                 string
+	Email              string
+	PasswordHash       string
+	CreatedAt          time.Time
+	MustChangePassword bool
 }
 
 func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
@@ -219,21 +241,140 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
 		arg.Email,
 		arg.PasswordHash,
 		arg.CreatedAt,
+		arg.MustChangePassword,
 	)
 	return err
 }
 
+const listUsers = `-- name: ListUsers :many
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users ORDER BY email, id
+`
+
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.CreatedAt,
+			&i.DisabledAt,
+			&i.MustChangePassword,
+			&i.LastLoginAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockActiveUsers = `-- name: LockActiveUsers :many
+SELECT id FROM users WHERE disabled_at IS NULL ORDER BY id FOR UPDATE
+`
+
+// LockActiveUsers locks every active user row: disabling serialises on it, so the last
+// active user can never be disabled by two requests at once (ADR-011).
+func (q *Queries) LockActiveUsers(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, lockActiveUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockUser = `-- name: LockUser :one
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE id = ? FOR UPDATE
+`
+
+func (q *Queries) LockUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRowContext(ctx, lockUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.DisabledAt,
+		&i.MustChangePassword,
+		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const setUserDisabled = `-- name: SetUserDisabled :execrows
+UPDATE users SET disabled_at = ? WHERE id = ?
+`
+
+type SetUserDisabledParams struct {
+	DisabledAt sql.NullTime
+	ID         string
+}
+
+func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setUserDisabled, arg.DisabledAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const touchUserLogin = `-- name: TouchUserLogin :execrows
+UPDATE users SET last_login_at = ? WHERE id = ?
+`
+
+type TouchUserLoginParams struct {
+	LastLoginAt sql.NullTime
+	ID          string
+}
+
+func (q *Queries) TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchUserLogin, arg.LastLoginAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateUserPassword = `-- name: UpdateUserPassword :execrows
-UPDATE users SET password_hash = ? WHERE id = ?
+UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?
 `
 
 type UpdateUserPasswordParams struct {
-	PasswordHash string
-	ID           string
+	PasswordHash       string
+	MustChangePassword bool
+	ID                 string
 }
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	result, err := q.db.ExecContext(ctx, updateUserPassword, arg.PasswordHash, arg.MustChangePassword, arg.ID)
 	if err != nil {
 		return 0, err
 	}

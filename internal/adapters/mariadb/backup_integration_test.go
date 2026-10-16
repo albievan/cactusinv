@@ -132,6 +132,19 @@ func (b *backupEnv) wipe(t *testing.T) {
 	b.store = reset(t)
 }
 
+// leading cuts each row of got to the width of the matching row of want: columns that
+// later migrations appended are compared separately.
+func leading(got, want [][]any) [][]any {
+	if len(got) != len(want) {
+		return got
+	}
+	out := make([][]any, len(got))
+	for i := range got {
+		out[i] = got[i][:min(len(got[i]), len(want[i]))]
+	}
+	return out
+}
+
 func withoutAudit(rows map[string][][]any) map[string][][]any {
 	out := map[string][][]any{}
 	for k, v := range rows {
@@ -318,7 +331,12 @@ func TestOlderSchemaBackupRestoresIntoHead(t *testing.T) {
 	b := withBackups(t, e)
 	must(b.svc.UpdateBusiness(ctx, domain.BusinessProfile{Name: "Old Co", TimeZone: "Africa/Johannesburg"}, 500))
 	must(b.svc.CreateCurrency(ctx, "ZAR", "South African Rand", "R", 2, true))
-	b.operator(t)
+	// The operator as a v1.4.0 database holds it (schema 12 has no user-management columns).
+	b.op = domain.User{ID: "u-operator", Email: "albie@example.com", PasswordHash: "hash:" + operatorPassword, CreatedAt: b.clock.Now().UTC()}
+	if _, err := testDB.ExecContext(ctx, "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)", b.op.ID, b.op.Email, b.op.PasswordHash, b.op.CreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	b.opCtx = app.WithActor(ctx, app.Actor{ID: b.op.ID, Name: b.op.Email})
 	// At schema 12 the snapshot has no system_state or backup_runs (excluded anyway).
 	name := b.backup(t)
 	if n, _ := domain.ParseBackupName(name); n.Schema != 12 {
@@ -336,9 +354,14 @@ func TestOlderSchemaBackupRestoresIntoHead(t *testing.T) {
 	}
 	_, _, after := snapshotRows(t, ctx)
 	for table, rows := range withoutAudit(before) {
-		if !reflect.DeepEqual(after[table], rows) {
+		if !reflect.DeepEqual(leading(after[table], rows), rows) {
 			t.Errorf("table %s differs", table)
 		}
+	}
+	// Columns added after schema 12 got their migration's values: the operator's login is
+	// an e-mail address, so it is not flagged must-change (00015).
+	if u := must(b.store.Repos().Users.Get(ctx, b.op.ID)); u.MustChangePassword || !u.Active() {
+		t.Fatalf("restored operator = %+v", u)
 	}
 	if v := must(b.svc.VerifyAudit(ctx)); !v.OK {
 		t.Fatalf("chain = %+v", v)

@@ -55,7 +55,8 @@ export function More() {
   )
 }
 
-function ChangePassword() {
+/** ChangePassword changes the signed-in user's own password (other sessions are signed out). */
+export function ChangePassword() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [msg, setMsg] = useState('')
@@ -68,7 +69,7 @@ function ChangePassword() {
       await unwrap(api.POST('/auth/password', { body: { currentPassword: current, newPassword: next } }))
       setCurrent('')
       setNext('')
-      setMsg('Password changed.')
+      setMsg('Password changed. Your other sessions were signed out.')
     } catch (x) {
       setErr(x as Error)
     }
@@ -78,7 +79,7 @@ function ChangePassword() {
       <h2 className="font-semibold">Change password</h2>
       <ErrorBanner error={err} />
       <Field label="Current password">{(f) => <input id={f} type="password" autoComplete="current-password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} required />}</Field>
-      <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} className="input" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
+      <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} maxLength={200} className="input" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
       <div className="flex items-center justify-end gap-3">
         {msg && <span className="text-sm text-green-700">{msg}</span>}
         <button className="btn-primary">Change password</button>

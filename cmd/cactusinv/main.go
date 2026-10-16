@@ -136,7 +136,7 @@ func openDB(ctx context.Context, cfg config) (*mariadbDB, error) {
 func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger) (*app.Service, func(), error) {
 	deps := app.Deps{
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
-		Hasher: argon2.Hasher{}, Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
+		Hasher: argon2.New(argon2.DefaultConcurrency), Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
 	}
 	dc, err := dbConfig(ctx, cfg)
 	if err != nil {
@@ -221,7 +221,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 			return err
 		}
 		if created {
-			log.Warn("created the default administrator — sign in and change its password", "login", cfg.DefaultAdminUser)
+			log.Warn("created the default administrator — it must choose a new password at the first sign-in", "login", cfg.DefaultAdminUser)
 		}
 	}
 
@@ -290,6 +290,7 @@ func adminCommand(ctx context.Context, cfg config, args []string) error {
 		return err
 	}
 	defer closeSvc()
+	ctx = app.WithActor(ctx, app.ActorOperator) // the audit trail names the shell, not "System"
 	if args[0] == "create" {
 		_, err = svc.CreateUser(ctx, args[1], pw)
 		return err

@@ -324,12 +324,27 @@ type EmailRepository interface {
 	CountSending(ctx context.Context, now time.Time) (int, error)
 }
 
-// UserRepository stores administrators.
+// UserRepository stores administrators (ADR-011). Logins compare case-insensitively.
 type UserRepository interface {
 	GetByEmail(ctx context.Context, email string) (domain.User, error)
 	Get(ctx context.Context, id string) (domain.User, error)
+	// Lock reads a user FOR UPDATE: inside WithinTx it serialises with every change to
+	// that user (password, disabled) until the transaction ends.
+	Lock(ctx context.Context, id string) (domain.User, error)
+	// List returns every user, disabled ones included, ordered by login.
+	List(ctx context.Context) ([]domain.User, error)
+	// Create stores a new user with its MustChangePassword flag; a login that exists in
+	// any letter case is ErrConflict.
 	Create(ctx context.Context, u domain.User) error
-	UpdatePassword(ctx context.Context, id, hash string) error
+	// UpdatePassword replaces the hash and sets the must-change flag in one statement.
+	UpdatePassword(ctx context.Context, id, hash string, mustChange bool) error
+	// SetDisabled disables the user at the given time, or enables them when at is zero.
+	SetDisabled(ctx context.Context, id string, at time.Time) error
+	// TouchLogin records a successful sign-in.
+	TouchLogin(ctx context.Context, id string, at time.Time) error
+	// LockActive returns the ids of the active users, locking their rows until the
+	// transaction ends (SELECT … FOR UPDATE): call inside WithinTx before disabling.
+	LockActive(ctx context.Context) ([]string, error)
 	Count(ctx context.Context) (int, error)
 }
 
@@ -341,6 +356,9 @@ type SessionRepository interface {
 	DeleteExpired(ctx context.Context, now time.Time) error
 	// DeleteAll signs everybody out (after a restore).
 	DeleteAll(ctx context.Context) error
+	// DeleteForUser signs a user out everywhere except the session whose token hash is
+	// exceptHash ("" signs them out everywhere).
+	DeleteForUser(ctx context.Context, userID, exceptHash string) error
 }
 
 // IdempotencyRecord is a stored response for an Idempotency-Key.

@@ -5,10 +5,30 @@ SELECT * FROM users WHERE email = ?;
 SELECT * FROM users WHERE id = ?;
 
 -- name: InsertUser :exec
-INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?);
+INSERT INTO users (id, email, password_hash, created_at, must_change_password) VALUES (?, ?, ?, ?, ?);
 
 -- name: UpdateUserPassword :execrows
-UPDATE users SET password_hash = ? WHERE id = ?;
+UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?;
+
+-- name: LockUser :one
+SELECT * FROM users WHERE id = ? FOR UPDATE;
+
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY email, id;
+
+-- name: SetUserDisabled :execrows
+UPDATE users SET disabled_at = ? WHERE id = ?;
+
+-- name: TouchUserLogin :execrows
+UPDATE users SET last_login_at = ? WHERE id = ?;
+
+-- LockActiveUsers locks every active user row: disabling serialises on it, so the last
+-- active user can never be disabled by two requests at once (ADR-011).
+-- name: LockActiveUsers :many
+SELECT id FROM users WHERE disabled_at IS NULL ORDER BY id FOR UPDATE;
+
+-- name: DeleteUserSessions :exec
+DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?;
 
 -- name: InsertSession :exec
 INSERT INTO sessions (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?);

@@ -19,6 +19,29 @@ type Hasher struct {
 	Memory  uint32 // KiB
 	Time    uint32
 	Threads uint8
+	// slots bounds how many hashes run at once (nil: unbounded); see New.
+	slots chan struct{}
+}
+
+// DefaultConcurrency is how many Argon2 computations New lets run at once: each takes
+// 64 MiB, so a burst of sign-ins from many addresses cannot exhaust memory.
+const DefaultConcurrency = 4
+
+// New returns a Hasher with the default parameters that runs at most maxConcurrent
+// hashes at a time (DefaultConcurrency when < 1); further callers wait their turn.
+func New(maxConcurrent int) Hasher {
+	if maxConcurrent < 1 {
+		maxConcurrent = DefaultConcurrency
+	}
+	return Hasher{slots: make(chan struct{}, maxConcurrent)}
+}
+
+func (h Hasher) acquire() func() {
+	if h.slots == nil {
+		return func() {}
+	}
+	h.slots <- struct{}{}
+	return func() { <-h.slots }
 }
 
 var _ ports.PasswordHasher = Hasher{}
@@ -43,6 +66,7 @@ func (h Hasher) params() (uint32, uint32, uint8) {
 // Hash implements ports.PasswordHasher.
 func (h Hasher) Hash(password string) (string, error) {
 	m, t, p := h.params()
+	defer h.acquire()()
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("argon2.Hash: %w", err)
@@ -53,7 +77,7 @@ func (h Hasher) Hash(password string) (string, error) {
 }
 
 // Verify implements ports.PasswordHasher in constant time.
-func (Hasher) Verify(hash, password string) (bool, error) {
+func (h Hasher) Verify(hash, password string) (bool, error) {
 	parts := strings.Split(hash, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, errors.New("argon2.Verify: unsupported hash format")
@@ -76,6 +100,8 @@ func (Hasher) Verify(hash, password string) (bool, error) {
 	if err != nil || len(want) != keyLen {
 		return false, errors.New("argon2.Verify: bad key")
 	}
+	release := h.acquire()
 	got := argon2.IDKey([]byte(password), salt, t, m, p, keyLen)
+	release()
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }

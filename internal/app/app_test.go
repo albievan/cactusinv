@@ -722,16 +722,16 @@ func TestAuth(t *testing.T) {
 	if _, err := h.svc.Authenticate(h.ctx, token); !errors.Is(err, domain.ErrUnauthenticated) {
 		t.Fatal("logged out")
 	}
-	if err := h.svc.ChangePassword(h.ctx, u.ID, "wrong", "another long password"); !errors.Is(err, domain.ErrValidation) {
+	if err := h.svc.ChangePassword(h.ctx, u.ID, "", "wrong", "another long password"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("wrong current password")
 	}
-	if err := h.svc.ChangePassword(h.ctx, u.ID, "correct horse battery", "short"); !errors.Is(err, domain.ErrValidation) {
+	if err := h.svc.ChangePassword(h.ctx, u.ID, "", "correct horse battery", "short"); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("short new password")
 	}
-	if err := h.svc.ChangePassword(h.ctx, u.ID, "correct horse battery", "a fresh long password"); err != nil {
+	if err := h.svc.ChangePassword(h.ctx, u.ID, "", "correct horse battery", "a fresh long password"); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.svc.ChangePassword(h.ctx, "nobody", "x", "a fresh long password"); !errors.Is(err, domain.ErrNotFound) {
+	if err := h.svc.ChangePassword(h.ctx, "nobody", "", "x", "a fresh long password"); !errors.Is(err, domain.ErrNotFound) {
 		t.Fatal("unknown user")
 	}
 	if err := h.svc.SetPassword(h.ctx, "albie@example.com", "another long password"); err != nil {

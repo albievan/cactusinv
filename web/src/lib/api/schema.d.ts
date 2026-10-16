@@ -61,6 +61,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @description Changes your own password. Clears the must-change flag and signs you out of every
+         *     other session (this one stays). Shares the sign-in rate limit. Exempt from
+         *     Idempotency-Key (the body holds passwords).
+         */
         post: operations["changePassword"];
         delete?: never;
         options?: never;
@@ -866,6 +871,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listUsers"];
+        put?: never;
+        /**
+         * @description Adds an administrator with a password you choose; they must change it at their first
+         *     sign-in. Needs your current password (a wrong one is a 422 on `currentPassword` and is
+         *     audited). Shares the sign-in rate limit. Exempt from Idempotency-Key (the body holds
+         *     passwords).
+         */
+        post: operations["addUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Gives another user a password you choose; they must change it at their next sign-in
+         *     and are signed out everywhere. Not for yourself (403 `forbidden`; use
+         *     POST /auth/password). Needs your current password; shares the sign-in rate limit;
+         *     exempt from Idempotency-Key.
+         */
+        post: operations["resetUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Stops a user from signing in and signs them out everywhere. Users are never deleted.
+         *     You cannot disable yourself (403 `forbidden`) or the last active user (409
+         *     `last-active-user`). Needs your current password; shares the sign-in rate limit;
+         *     exempt from Idempotency-Key. Disabling a disabled user changes nothing.
+         */
+        post: operations["disableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Lets a disabled user sign in again with their existing password. Needs your current
+         *     password; shares the sign-in rate limit; exempt from Idempotency-Key. Enabling an
+         *     active user changes nothing.
+         */
+        post: operations["enableUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -973,8 +1071,46 @@ export interface components {
         Me: {
             id: string;
             email: string;
+            /** @description The password was chosen by someone else (or is the default); until it is changed with POST /auth/password, nothing else is allowed. */
+            mustChangePassword: boolean;
             /** @description Automatic e-mails and schedules are paused after a restore until resumed (POST /automation/resume). */
             automationPaused: boolean;
+        };
+        User: {
+            id: string;
+            /** @description The login. An e-mail address for every user added in the app. */
+            email: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description False once disabled; a disabled user cannot sign in. */
+            active: boolean;
+            /** Format: date-time */
+            disabledAt?: string;
+            /** Format: date-time */
+            lastLoginAt?: string;
+            /** @description Must change the password at the next sign-in. */
+            mustChangePassword: boolean;
+        };
+        UserList: {
+            items: components["schemas"]["User"][];
+        };
+        NewUserRequest: {
+            /** @description One e-mail address; it is the new user's login. */
+            email: string;
+            /** @description A first password; the user must change it at the first sign-in. */
+            password: string;
+            /** @description Your own password. */
+            currentPassword: string;
+        };
+        ResetPasswordRequest: {
+            /** @description A temporary password; the user must change it at the next sign-in. */
+            password: string;
+            /** @description Your own password. */
+            currentPassword: string;
+        };
+        ReauthRequest: {
+            /** @description Your own password. */
+            currentPassword: string;
         };
         BusinessSettings: {
             name: string;
@@ -3182,6 +3318,145 @@ export interface operations {
                 };
                 content?: never;
             };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every user, disabled ones included, by login. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    addUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewUserRequest"];
+            };
+        };
+        responses: {
+            /** @description Added. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    resetUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Reset. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            403: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    disableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReauthRequest"];
+            };
+        };
+        responses: {
+            /** @description Disabled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            403: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    enableUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReauthRequest"];
+            };
+        };
+        responses: {
+            /** @description Enabled. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            422: components["responses"]["Problem"];
+            429: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

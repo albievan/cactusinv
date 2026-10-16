@@ -378,7 +378,7 @@ func (s *Stager) Staged(ctx context.Context) (ports.StagedRestore, error) {
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return ports.StagedRestore{}, fmt.Errorf("mariadb.Stager.Staged: %w", err)
 	}
-	rows, err := s.staging.QueryContext(ctx, "SELECT id FROM users ORDER BY id")
+	rows, err := s.staging.QueryContext(ctx, "SELECT id FROM users WHERE disabled_at IS NULL ORDER BY id")
 	if err != nil {
 		return ports.StagedRestore{}, fmt.Errorf("mariadb.Stager.Staged: %w", err)
 	}
