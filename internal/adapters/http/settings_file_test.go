@@ -100,6 +100,10 @@ func TestSettingsFileOverHTTP(t *testing.T) {
 	if p.Field != "passphrase" {
 		t.Fatalf("problem = %+v", p)
 	}
+	albie.ok(albie.do("POST", "/api/v1/settings/import?inspect=true", obj{"file": sealed, "passphrase": "correct horse battery staple"}, &res), 200, "inspect")
+	if res.InFile.Customers != 1 || res.InFile.Schedules != 1 || res.InFile.Business != 1 || res.Customers != (httpapi.ImportCounts{}) {
+		t.Fatalf("inspect = %+v", res)
+	}
 	albie.ok(albie.do("POST", "/api/v1/settings/import", obj{"file": sealed, "passphrase": "correct horse battery staple"}, &res), 200, "open")
 	if res.Customers.Unchanged != 1 || res.Schedules.Unchanged != 1 || res.Products.Unchanged != 1 {
 		t.Fatalf("protected check = %+v", res)

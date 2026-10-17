@@ -201,7 +201,6 @@ func TestSettingsImportIsAllOrNothing(t *testing.T) {
 		{"customer twice", app.SettingsFile{Customers: []domain.Customer{cust("AA", "a@b.example"), cust("aa", "c@d.example")}}, "customers[AA].code"},
 		{"minor units changed", app.SettingsFile{Currencies: []domain.Currency{good, {Code: "ZAR", Name: "Rand", MinorUnits: 0, Active: true}}}, "currencies[ZAR].minorUnits"},
 		{"unknown currency", app.SettingsFile{BankAccounts: []domain.BankAccount{{Currency: "GBP", Label: "L", BankName: "B", AccountNumber: "1", Active: true}}}, "bankAccounts[L]"},
-		{"unknown bank account", app.SettingsFile{Customers: []domain.Customer{func() domain.Customer { c := cust("ZZ", "z@z.example"); c.BankAccountID = "elsewhere"; return c }()}}, "customers[ZZ]"},
 		{"bank account in another currency", app.SettingsFile{BankAccounts: []domain.BankAccount{{ID: h.bank.ID, Currency: "USD", Label: "L", BankName: "B", AccountNumber: "1", Active: true}}}, "bankAccounts[L].currency"},
 		{"one account twice", app.SettingsFile{BankAccounts: []domain.BankAccount{
 			{ID: h.bank.ID, Currency: "ZAR", Label: "A", BankName: "B", AccountNumber: "999", Active: true},
@@ -227,6 +226,45 @@ func TestSettingsImportIsAllOrNothing(t *testing.T) {
 				t.Fatalf("partly imported: %d customers", n)
 			}
 		})
+	}
+}
+
+// A customer whose bank account is in another installation (and not in this import) gets
+// the currency default, with a warning; one listed in the file is matched by number.
+func TestImportedCustomersFindTheirBankAccount(t *testing.T) {
+	h := newHarness(t).seed()
+	cust := func(code, bank string) domain.Customer {
+		return domain.Customer{Code: code, Name: code, Email: "a@b.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, BankAccountID: bank, Active: true}
+	}
+	f := app.SettingsFile{
+		Customers:       []domain.Customer{cust("AA", "their-id-of-capitec"), cust("BB", "their-id-of-a-closed-account")},
+		BankAccountRefs: []domain.BankAccount{{ID: "their-id-of-capitec", Currency: "ZAR", AccountNumber: h.bank.AccountNumber}},
+	}
+	res := must(h.svc.ImportSettings(h.ctx, f, true))
+	if res.Customers.Created != 2 || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "Customer BB") {
+		t.Fatalf("import: %+v", res)
+	}
+	cs, _ := must3(h.svc.ListCustomers(h.ctx, ports.CustomerFilter{Query: "AA"}))
+	if len(cs) != 1 || cs[0].BankAccountID != h.bank.ID {
+		t.Fatalf("AA: %+v", cs)
+	}
+	cs, _ = must3(h.svc.ListCustomers(h.ctx, ports.CustomerFilter{Query: "BB"}))
+	if len(cs) != 1 || cs[0].BankAccountID != "" {
+		t.Fatalf("BB: %+v", cs)
+	}
+}
+
+// The stored SMTP password is never kept for an imported server on another host or account.
+func TestImportedEmailServerNeverGetsThisPassword(t *testing.T) {
+	h := newHarness(t).seed().withSMTPAndOverride()
+	file := must(h.svc.ExportSettings(h.ctx))
+	file.EmailServer.Host = "smtp.other.example"
+	res := must(h.svc.ImportSettings(h.ctx, app.SettingsFile{EmailServer: file.EmailServer}, true))
+	if len(res.Warnings) != 2 {
+		t.Fatalf("warnings: %v", res.Warnings)
+	}
+	if s := must(h.svc.GetSMTPSettings(h.ctx)); s.PasswordSet || s.Settings.Enabled {
+		t.Fatalf("password kept for another host: %+v", s)
 	}
 }
 

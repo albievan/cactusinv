@@ -5,12 +5,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Product } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { usePaged } from '../../lib/usePaged'
+import { Badge, ConfirmButton, Empty, ErrorBanner, ShowMore, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
 
 export function ProductList() {
   const [q, setQ] = useState('')
-  const { data, error, loading } = useAsync(() => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
+  const list = usePaged((offset, limit) => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit, offset } } })), [q])
+  const { data, error, loading } = list
   return (
     <Page title="Products" actions={<Can need="products.create"><Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search name or SKU" />
@@ -45,6 +47,7 @@ export function ProductList() {
           </table>
         </div>
       )}
+    <ShowMore list={list} />
     </Page>
   )
 }
@@ -114,7 +117,7 @@ export function ProductEditor() {
             <div key={i} className="grid grid-cols-[8rem_minmax(0,1fr)_2.75rem] gap-2">
               <select aria-label={`Currency ${i + 1}`} className="input" value={pr.currency} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, currency: e.target.value } : x)) })} required>
                 <option value="">Currency…</option>
-                {currencies.filter((c) => c.active && (c.code === pr.currency || !p.prices.some((x) => x.currency === c.code))).map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+                {currencies.filter((c) => c.code === pr.currency || (c.active && !p.prices.some((x) => x.currency === c.code))).map((c) => <option key={c.code} value={c.code}>{c.code}{c.active ? '' : ' (inactive)'}</option>)}
               </select>
               <input aria-label={`Unit cost ${i + 1}`} className="input" inputMode="decimal" placeholder="Unit cost, e.g. 192.94" value={pr.unitPrice} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} required />
               <button type="button" aria-label={`Remove price ${i + 1}`} className="btn-secondary px-0" disabled={p.prices.length === 1} onClick={() => set({ prices: p.prices.filter((_, j) => j !== i) })}>✕</button>

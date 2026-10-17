@@ -223,6 +223,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 	defer closeSvc()
+	svc.WarmUp()
 	if cfg.DefaultAdminUser != "" {
 		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, cfg.DefaultAdminPassword)
 		if err != nil {

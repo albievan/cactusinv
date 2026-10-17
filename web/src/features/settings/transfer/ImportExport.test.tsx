@@ -28,8 +28,9 @@ const sealed = { format: 'cactusinv-settings', formatVersion: 1, exportedAt: '20
 
 const counts = (created: number, updated: number, unchanged: number) => ({ created, updated, unchanged })
 const none = counts(0, 0, 0)
+const inFile = { business: 1, emailServer: 0, currencies: 1, bankAccounts: 0, products: 1, customers: 1, schedules: 0 }
 const result = (applied: boolean) => ({
-  applied, business: counts(0, 1, 0), emailServer: none, currencies: counts(0, 0, 1), bankAccounts: none, products: counts(1, 0, 0),
+  applied, inFile, business: counts(0, 1, 0), emailServer: none, currencies: counts(0, 0, 1), bankAccounts: none, products: counts(1, 0, 0),
   customers: counts(1, 0, 0), schedules: none,
   warnings: ['The next invoice sequence stays 20: the file has 10, and numbers already used are never given again.'],
 })
@@ -134,7 +135,7 @@ test('opens a protected file with its passphrase', async () => {
   routes({
     'POST /api/v1/settings/import': async (req) => {
       const body = (await req.json()) as { passphrase?: string; sections?: string[] }
-      bodies.push(body)
+      bodies.push({ ...body, ...(new URL(req.url).searchParams.get('inspect') ? { inspect: true } : {}) } as never)
       if (body.passphrase !== 'the right passphrase!') {
         return json({ type: 'x', title: 'Validation failed', status: 422, detail: 'passphrase: is wrong, or the file is damaged', field: 'passphrase' }, 422)()
       }
@@ -155,6 +156,7 @@ test('opens a protected file with its passphrase', async () => {
   expect(await screen.findByRole('checkbox', { name: /Customers \(1\)/ })).toBeChecked()
   expect(screen.getByRole('checkbox', { name: /Schedules/ })).toBeDisabled()
   await screen.findByRole('table', { name: 'What an import would change' })
+  expect(bodies[1]).toMatchObject({ inspect: true })
   expect(bodies[1]!.sections).toBeUndefined()
   expect(bodies[2]).toMatchObject({ passphrase: 'the right passphrase!', sections: ['currencies', 'products', 'customers', 'business'] })
 })

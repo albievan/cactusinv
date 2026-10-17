@@ -163,8 +163,10 @@ func sessionGate(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 func reauthPath(r *http.Request) bool {
 	p := r.URL.Path
 	if r.Method == http.MethodPut {
-		// Changing a group, or a user's groups (ADR-012).
-		return (strings.HasPrefix(p, "/api/v1/groups/") && !strings.Contains(strings.TrimPrefix(p, "/api/v1/groups/"), "/")) ||
+		// Changing a group, or a user's groups (ADR-012). Every PUT under /groups/ counts:
+		// the decoded path of an id with an escaped slash (x%2Fy) has more segments than the
+		// route, which must not slip past the limit.
+		return strings.HasPrefix(p, "/api/v1/groups/") ||
 			(strings.HasPrefix(p, "/api/v1/users/") && strings.HasSuffix(p, "/groups"))
 	}
 	if r.Method != http.MethodPost {

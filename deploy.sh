@@ -201,8 +201,8 @@ mounted_dir() {
   docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$1\"}}{{.Source}}{{end}}{{end}}" "$id" 2>/dev/null || true
 }
 
-# move_folder copies a mapped folder's files to its new host folder when that is empty, so
-# the backups and invoice PDFs move with the mapping. The old folder is left as it is.
+# move_folder copies a folder's files to its new host folder when that is empty, so the
+# backups and invoice PDFs move with the mapping. The old folder is left as it is.
 move_folder() {
   local old="$1" new="$2"
   [[ -n "$old" && "$old" != "$new" && -d "$old" ]] || return 0
@@ -215,16 +215,60 @@ move_folder() {
   fi
 }
 
-# apply_folder_mappings uses the host folders set in System Settings (cactusinv system
-# folders) for BACKUP_DIR and INVOICES_DIR, unless they are set in the environment. Before
-# the first install there is nothing to read, so .env applies.
+# folder_safe says whether a host folder may be mapped: it may not be, contain or lie in
+# the database or secrets folder, be the project folder or one above it, be the other
+# mapping, or hold files cactusInv did not write (the deploy re-owns a mapped folder for
+# the app). $1 is BACKUP_DIR or INVOICES_DIR, $2 the absolute folder, $3 the folder
+# mounted now (always allowed), $4 the other mapping's absolute folder.
+folder_safe() {
+  local key="$1" p="$2" now="$3" other="$4" d f name
+  [[ "$p" == "$now" ]] && return 0
+  for d in "$(abs_dir "$MARIADB_DATA_DIR")" "$(abs_dir "$SECRETS_DIR")"; do
+    if [[ "$p" == "$d" || "$p/" == "$d/"* || "$d/" == "$p/"* ]]; then
+      warn "$key: $p is or holds the database or secrets folder; not used"
+      return 1
+    fi
+  done
+  if [[ "$p" == "$ROOT" || "$ROOT/" == "$p/"* ]]; then
+    warn "$key: $p is the project folder or above it; not used"
+    return 1
+  fi
+  if [[ -n "$other" && ( "$p" == "$other" || "$p/" == "$other/"* || "$other/" == "$p/"* ) ]]; then
+    warn "$key: $p overlaps the other mapped folder $other; not used"
+    return 1
+  fi
+  [[ -d "$p" ]] || return 0
+  for f in "$p"/* "$p"/.[!.]*; do
+    [[ -e "$f" ]] || continue
+    name="${f##*/}"
+    case "$key:$name" in
+      BACKUP_DIR:cactusinv-* | BACKUP_DIR:.* | INVOICES_DIR:[0-9][0-9][0-9][0-9] | INVOICES_DIR:.*) ;;
+      *)
+        warn "$key: $p holds files cactusInv did not write ($name); choose an empty folder. Not used"
+        return 1
+        ;;
+    esac
+  done
+}
+
+# read_folder_mappings prints System Settings' folder mappings (cactusinv system folders):
+# from the running app, else from a one-off app container (the database is up).
+read_folder_mappings() {
+  if [[ -n "$(compose ps -q app 2>/dev/null || true)" ]]; then
+    compose exec -T app /cactusinv system folders </dev/null 2>/dev/null && return 0
+  fi
+  compose run --rm --no-deps -T app /cactusinv system folders </dev/null 2>/dev/null
+}
+
+# apply_folder_mappings uses the host folders set in System Settings for BACKUP_DIR and
+# INVOICES_DIR, unless they are set in the environment or are unsafe (folder_safe); .env
+# applies otherwise. A folder that changes (mapped, changed or cleared) gets the files of
+# the folder mounted until now when it is empty.
 apply_folder_mappings() {
-  local id lines line key val dest
-  id="$(compose ps -q app 2>/dev/null || true)"
-  [[ -n "$id" ]] || return 0
-  if ! lines="$(compose exec -T app /cactusinv system folders </dev/null 2>/dev/null)"; then
-    warn "could not read the folder mappings from System Settings; using .env"
-    return 0
+  local lines line key val backup="" invoices="" now_b now_i
+  if ! lines="$(read_folder_mappings)"; then
+    warn "could not read the folder mappings from System Settings (first install of this version?); using .env"
+    lines=""
   fi
   while IFS= read -r line; do
     # The same rule as the app (domain.ValidateHostDir): absolute or ./relative, no
@@ -236,22 +280,25 @@ apply_folder_mappings() {
       info "$key is set in the environment; System Settings' $val is not used"
       continue
     fi
-    dest=/data/backups
-    [[ "$key" == INVOICES_DIR ]] && dest=/data/invoices
-    info "System Settings map $dest to $val"
-    move_folder "$(mounted_dir "$dest")" "$(abs_dir "$val")"
-    export "$key=$val"
+    if [[ "$key" == BACKUP_DIR ]]; then backup="$val"; else invoices="$val"; fi
   done <<<"$lines"
+  now_b="$(mounted_dir /data/backups)" now_i="$(mounted_dir /data/invoices)"
+  if [[ -n "$backup" ]] && folder_safe BACKUP_DIR "$(abs_dir "$backup")" "$now_b" "$(abs_dir "${invoices:-$INVOICES_DIR}")"; then
+    info "System Settings map /data/backups to $backup"
+    BACKUP_DIR="$backup"
+  fi
+  if [[ -n "$invoices" ]] && folder_safe INVOICES_DIR "$(abs_dir "$invoices")" "$now_i" "$(abs_dir "$BACKUP_DIR")"; then
+    info "System Settings map /data/invoices to $invoices"
+    INVOICES_DIR="$invoices"
+  fi
+  export BACKUP_DIR INVOICES_DIR
+  move_folder "$now_b" "$(abs_dir "$BACKUP_DIR")"
+  move_folder "$now_i" "$(abs_dir "$INVOICES_DIR")"
 }
 
 docker_install() {
   docker_preflight
-  apply_folder_mappings
-  # The app shows the folders mapped now (System Settings).
-  export CACTUSINV_DEPLOY_TARGET=dockerdesktop CACTUSINV_HOST_PROJECT_DIR="$ROOT"
-  CACTUSINV_HOST_BACKUP_DIR="$(abs_dir "$BACKUP_DIR")" CACTUSINV_HOST_INVOICES_DIR="$(abs_dir "$INVOICES_DIR")"
-  export CACTUSINV_HOST_BACKUP_DIR CACTUSINV_HOST_INVOICES_DIR
-  mkdir -p "$MARIADB_DATA_DIR" "$INVOICES_DIR" "$BACKUP_DIR"
+  mkdir -p "$MARIADB_DATA_DIR"
   ensure_secrets_dir
   info "building cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"
   compose build app
@@ -260,6 +307,14 @@ docker_install() {
   compose up -d --wait --remove-orphans mariadb
   info "granting the restore staging database ${MARIADB_DATABASE}_restore"
   staging_grant_sql | compose exec -T mariadb sh -c "$MARIADB_ROOT_SQL"
+  # As the user (a one-off container would create them as root on Linux).
+  mkdir -p "$INVOICES_DIR" "$BACKUP_DIR"
+  apply_folder_mappings
+  # The app shows the folders mapped now (System Settings).
+  export CACTUSINV_DEPLOY_TARGET=dockerdesktop CACTUSINV_HOST_PROJECT_DIR="$ROOT"
+  CACTUSINV_HOST_BACKUP_DIR="$(abs_dir "$BACKUP_DIR")" CACTUSINV_HOST_INVOICES_DIR="$(abs_dir "$INVOICES_DIR")"
+  export CACTUSINV_HOST_BACKUP_DIR CACTUSINV_HOST_INVOICES_DIR
+  mkdir -p "$INVOICES_DIR" "$BACKUP_DIR"
   compose up -d --remove-orphans
   info "waiting for the app to become healthy"
   for _ in $(seq 1 90); do
@@ -286,7 +341,12 @@ docker_uninstall() {
 
 docker_delete_uninstall() {
   docker_preflight
+  local mb mi
+  mb="$(mounted_dir /data/backups)" mi="$(mounted_dir /data/invoices)"
   confirm "This deletes the database, all exported invoices, all backups and the secrets."
+  # Folders mapped in System Settings are the user's own (a NAS share): kept.
+  [[ -n "$mb" && "$mb" != "$(abs_dir "$BACKUP_DIR")" ]] && warn "the mapped backups folder $mb is kept; delete it yourself if you want"
+  [[ -n "$mi" && "$mi" != "$(abs_dir "$INVOICES_DIR")" ]] && warn "the mapped invoices folder $mi is kept; delete it yourself if you want"
   compose down --volumes --remove-orphans --rmi local || true
   # Files are owned by container users; delete them from inside a container.
   local d

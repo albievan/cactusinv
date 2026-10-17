@@ -112,7 +112,8 @@ function CurrencyView({ data, currency }: { data: DashboardData; currency: strin
 }
 
 function TopDebtors({ data }: { data: DashboardData }) {
-  const max = Math.max(1, ...data.topDebtors.map((d) => Number(d.outstanding)))
+  // Bars compare debtors within a currency only: a large JPY amount must not flatten USD.
+  const max = (cur: string) => Math.max(1, ...data.topDebtors.filter((d) => d.currency === cur).map((d) => Number(d.outstanding)))
   return (
     <section className="card">
       <h2 className="mb-3 text-lg font-semibold">Who owes the most</h2>
@@ -125,7 +126,7 @@ function TopDebtors({ data }: { data: DashboardData }) {
                 <span className="shrink-0 font-semibold tabular-nums">{d.currency} {groupAmount(d.outstanding)}</span>
               </div>
               <div className="mt-1 h-2 rounded-full bg-cream-200" aria-hidden="true">
-                <div className="h-2 rounded-full bg-brand-500" style={{ width: `${(Number(d.outstanding) / max) * 100}%` }} />
+                <div className="h-2 rounded-full bg-brand-500" style={{ width: `${(Number(d.outstanding) / max(d.currency)) * 100}%` }} />
               </div>
               <div className="text-xs text-slate-500">{d.openCount} unpaid</div>
             </li>

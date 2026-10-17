@@ -6,12 +6,20 @@ import { formatDateTime } from '../../lib/format'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
 
-const statuses = ['pending', 'failed', 'sent', 'cancelled'] as const
+const statuses = ['pending', 'sending', 'failed', 'sent', 'cancelled'] as const
+const PAGE = 100
 
 export function Outbox() {
   const can = useCan()
   const [status, setStatus] = useState<(typeof statuses)[number]>('pending')
-  const { data, error, loading, reload } = useAsync(() => unwrap(api.GET('/emails', { params: { query: { status, limit: 100 } } })), [status])
+  // Older messages page in with "Show more" (the list was capped at 100).
+  const [shown, setShown] = useState(PAGE)
+  const { data, error, loading, reload } = useAsync(async () => {
+    const pages = await Promise.all(
+      Array.from({ length: Math.ceil(shown / PAGE) }, (_, i) => unwrap(api.GET('/emails', { params: { query: { status, limit: PAGE, offset: i * PAGE } } }))),
+    )
+    return { items: pages.flatMap((p) => p.items), total: pages[0]?.total ?? 0 }
+  }, [status, shown])
   const [actionError, setActionError] = useState<Error | null>(null)
   const act = async (id: string, what: 'cancel' | 'retry') => {
     setActionError(null)
@@ -26,7 +34,7 @@ export function Outbox() {
     <Page title="Outbox">
       <div className="mb-3 flex gap-2 overflow-x-auto" role="tablist">
         {statuses.map((s) => (
-          <button key={s} role="tab" aria-selected={status === s} onClick={() => setStatus(s)} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300 hover:bg-cream-50'}`}>{s}</button>
+          <button key={s} role="tab" aria-selected={status === s} onClick={() => { setStatus(s); setShown(PAGE) }} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300 hover:bg-cream-50'}`}>{s}</button>
         ))}
       </div>
       <ErrorBanner error={actionError ?? error} />
@@ -52,6 +60,11 @@ export function Outbox() {
             </li>
           ))}
         </ul>
+      )}
+      {data && data.items.length < data.total && (
+        <button className="btn-secondary mt-3 w-full" onClick={() => setShown(shown + PAGE)} disabled={loading}>
+          Show more ({data.total - data.items.length} older)
+        </button>
       )}
     </Page>
   )

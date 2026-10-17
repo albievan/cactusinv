@@ -152,19 +152,15 @@ func (s *Service) deliverStatement(ctx context.Context, m *domain.EmailMessage) 
 	}
 	ctx, cancel := outcomeContext(ctx)
 	defer cancel()
-	return s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		cur, err := r.Emails.Lock(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		if !cur.Succeeded(s.now()) {
-			return nil // no longer ours (see EmailMessage.Succeeded)
-		}
-		if err := r.Emails.Update(ctx, cur); err != nil {
-			return err
-		}
-		return s.audit(ctx, r, "customer.statement_emailed", "customer", m.CustomerID, "to "+strings.Join(m.To, ", "))
-	})
+	if mine, err := s.recordSent(ctx, m.ID); err != nil {
+		return &sentButNotRecorded{err}
+	} else if !mine {
+		return nil
+	}
+	if err := s.auditNow(ctx, "customer.statement_emailed", "customer", m.CustomerID, "to "+strings.Join(m.To, ", ")); err != nil {
+		return &sentButNotRecorded{err}
+	}
+	return nil
 }
 
 // StatementSummary is one customer's statement position for the Statements overview.

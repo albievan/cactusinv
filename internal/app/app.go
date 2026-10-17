@@ -66,6 +66,9 @@ type Service struct {
 	backups  BackupDeps
 	zone     string
 	deploy   Deployment
+	// dummy is the hash checked for unknown logins (dummyHash).
+	dummyOnce sync.Once
+	dummy     string
 	// backupSlot admits one backup or restore operation at a time.
 	backupSlot chan struct{}
 	// exportRetry holds invoices whose archive export failed, until when they are skipped,
@@ -88,6 +91,11 @@ func New(d Deps) *Service {
 		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, backupSlot: make(chan struct{}, 1),
 	}
 }
+
+// WarmUp does the one-off work that would otherwise slow the first request that needs it:
+// the hash an unknown login is checked against (the first such login would take twice as
+// long and tell itself apart). The server calls it at start.
+func (s *Service) WarmUp() { _ = s.dummyHash() }
 
 // now is the current UTC time at the database's microsecond precision.
 func (s *Service) now() time.Time { return s.clock.Now().UTC().Truncate(time.Microsecond) }

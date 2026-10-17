@@ -97,6 +97,19 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 	if err != nil {
 		return nil, err
 	}
+	one := func(ok bool) int {
+		if ok {
+			return 1
+		}
+		return 0
+	}
+	inFile := SettingsSectionCounts{
+		Business: one(b.Business != nil), EmailServer: one(b.EmailServer != nil), Currencies: len(b.Currencies),
+		BankAccounts: len(b.BankAccounts), Products: len(b.Products), Customers: len(b.Customers), Schedules: len(b.Schedules),
+	}
+	if req.Params.Inspect {
+		return ImportSettings200JSONResponse{InFile: inFile, Warnings: []string{}}, nil
+	}
 	want := func(s SettingsSection) bool {
 		return len(req.Body.Sections) == 0 || slices.Contains(req.Body.Sections, s)
 	}
@@ -133,10 +146,11 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 			f.Currencies = append(f.Currencies, domain.Currency{Code: domain.CurrencyCode(c.Code), Name: c.Name, Symbol: c.Symbol, MinorUnits: c.MinorUnits, Active: c.Active})
 		}
 	}
+	for _, a := range b.BankAccounts {
+		f.BankAccountRefs = append(f.BankAccountRefs, fromAPIBank(a.Id, a))
+	}
 	if want(SettingsSectionBankAccounts) {
-		for _, a := range b.BankAccounts {
-			f.BankAccounts = append(f.BankAccounts, fromAPIBank(a.Id, a))
-		}
+		f.BankAccounts = f.BankAccountRefs
 	}
 	if want(SettingsSectionProducts) {
 		for i, p := range b.Products {
@@ -175,7 +189,7 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 	return ImportSettings200JSONResponse{
 		Applied: res.Applied, Business: counts(res.Business), EmailServer: counts(res.EmailServer),
 		Currencies: counts(res.Currencies), BankAccounts: counts(res.BankAccounts), Products: counts(res.Products),
-		Customers: counts(res.Customers), Schedules: counts(res.Schedules), Warnings: res.Warnings,
+		Customers: counts(res.Customers), Schedules: counts(res.Schedules), Warnings: res.Warnings, InFile: inFile,
 	}, nil
 }
 

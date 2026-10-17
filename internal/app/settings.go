@@ -35,6 +35,13 @@ func (s *Service) UpdateBusiness(ctx context.Context, p domain.BusinessProfile, 
 		return BusinessSettings{}, wrap("app.UpdateBusiness", err)
 	}
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		// Locked first (before the audit head, as when issuing), so an invoice issued
+		// meanwhile cannot be numbered again by a Set from a stale read.
+		if nextSequence != 0 {
+			if err := r.Sequences.Lock(ctx); err != nil {
+				return err
+			}
+		}
 		if err := r.Business.Save(ctx, p); err != nil {
 			return err
 		}

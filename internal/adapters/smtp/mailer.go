@@ -192,7 +192,10 @@ func Build(from *mail.Address, msg ports.Mail, now time.Time) ([]byte, error) {
 		return nil, err
 	}
 	qp := quotedprintable.NewWriter(part)
-	if _, err := qp.Write([]byte(strings.ReplaceAll(msg.Body, "\n", "\r\n"))); err != nil {
+	// CRLF line ends (a body from the API or an import) first become LF, or every line
+	// break would be doubled.
+	body := strings.ReplaceAll(strings.ReplaceAll(msg.Body, "\r\n", "\n"), "\r", "\n")
+	if _, err := qp.Write([]byte(strings.ReplaceAll(body, "\n", "\r\n"))); err != nil {
 		return nil, err
 	}
 	if err := qp.Close(); err != nil {

@@ -8,7 +8,7 @@ import { formatDate, formatInZone, todayISO } from '../../lib/format'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
-import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, Sheet, Spinner, StickyActions } from '../../components/ui'
+import { Badge, ConfirmButton, Empty, ErrorBanner, Field, NumberInput, Page, Sheet, Spinner, StickyActions } from '../../components/ui'
 import { IconBolt, IconEdit, IconPause, IconPlay, IconTrash } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 
@@ -428,7 +428,7 @@ export function ScheduleEditor() {
               </Field>
               {dayMode(r.dayOfMonth) === 'day' && (
                 <Field label="Day" hint="A day past the month's end runs on its last day.">
-                  {(f) => <input id={f} type="number" min={2} max={31} inputMode="numeric" className="input" value={r.dayOfMonth} onChange={(e) => setR({ dayOfMonth: Math.min(31, Math.max(2, Number(e.target.value) || 2)) })} />}
+                  {(f) => <NumberInput id={f} min={2} max={31} className="input" value={r.dayOfMonth} onChange={(n) => setR({ dayOfMonth: n })} />}
                 </Field>
               )}
               <Field label="If it falls on a weekend" hint="A run moved to the Friday before is still for its own month.">
@@ -484,7 +484,7 @@ export function ScheduleEditor() {
             </div>
             {s.autoSend && s.emailDelayDays > 0 && (
               <Field label="Days after raising">
-                {(f) => <input id={f} type="number" min={1} max={90} inputMode="numeric" className="input md:w-40" value={s.emailDelayDays} onChange={(e) => set({ emailDelayDays: Math.min(90, Math.max(1, Number(e.target.value) || 1)) })} />}
+                {(f) => <NumberInput id={f} min={1} max={90} className="input md:w-40" value={s.emailDelayDays} onChange={(n) => set({ emailDelayDays: n })} />}
               </Field>
             )}
             {preview && preview.runs.length > 0 && (

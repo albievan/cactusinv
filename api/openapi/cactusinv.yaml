@@ -241,6 +241,7 @@ paths:
         more).
       parameters:
         - { name: apply, in: query, schema: { type: boolean, default: false } }
+        - { name: inspect, in: query, schema: { type: boolean, default: false }, description: 'Only open the file and count what it holds (inFile); nothing is checked or imported.' }
       requestBody:
         required: true
         content:
@@ -1717,6 +1718,18 @@ components:
           type: array
           items: { $ref: '#/components/schemas/SettingsSection' }
           description: The sections to import; omitted means all.
+    SettingsSectionCounts:
+      type: object
+      description: How many items each section of the file holds (business and emailServer 0 or 1).
+      required: [business, emailServer, currencies, bankAccounts, products, customers, schedules]
+      properties:
+        business: { type: integer }
+        emailServer: { type: integer }
+        currencies: { type: integer }
+        bankAccounts: { type: integer }
+        products: { type: integer }
+        customers: { type: integer }
+        schedules: { type: integer }
     ImportCounts:
       type: object
       required: [created, updated, unchanged]
@@ -1726,7 +1739,7 @@ components:
         unchanged: { type: integer }
     SettingsImportResult:
       type: object
-      required: [applied, business, emailServer, currencies, bankAccounts, products, customers, schedules, warnings]
+      required: [applied, business, emailServer, currencies, bankAccounts, products, customers, schedules, warnings, inFile]
       properties:
         applied: { type: boolean, description: false for a check (nothing saved). }
         business: { $ref: '#/components/schemas/ImportCounts' }
@@ -1736,6 +1749,7 @@ components:
         products: { $ref: '#/components/schemas/ImportCounts' }
         customers: { $ref: '#/components/schemas/ImportCounts' }
         schedules: { $ref: '#/components/schemas/ImportCounts' }
+        inFile: { $ref: '#/components/schemas/SettingsSectionCounts' }
         warnings: { type: array, x-omitempty: false, items: { type: string } }
 
     Currency:

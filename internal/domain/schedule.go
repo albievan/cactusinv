@@ -226,6 +226,16 @@ func (s *Schedule) ActivateFrom(pending time.Time, billedUntil Date, now time.Ti
 		}
 	}
 	nominal, ok := s.Recurrence.NextAfter(from)
+	// An occurrence whose billing period starts inside billed time would be refused by its
+	// run record and skipped without billing: start with the first whose period is free
+	// (e.g. weekly billed to 19 October, changed to monthly on the 20th: November, not
+	// October, whose period began on the 1st).
+	for i := 0; ok && !billedUntil.IsZero() && i < 1000; i++ {
+		if start, _ := s.Recurrence.BillingPeriod(s.Recurrence.LocalDate(nominal)); !start.Before(billedUntil) {
+			break
+		}
+		nominal, ok = s.Recurrence.NextAfter(nominal)
+	}
 	if !ok {
 		s.end(now)
 		return

@@ -79,6 +79,13 @@ func (s *Service) DispatchEmails(ctx context.Context, limit int) (DispatchResult
 			return res, nil
 		}
 		if err := s.deliver(ctx, m); err != nil {
+			var sent *sentButNotRecorded
+			if errors.As(err, &sent) {
+				// The mail server accepted it: never retry (that would send it again).
+				res.Sent++
+				s.log.ErrorContext(ctx, "email sent but its outcome could not be recorded", "email_id", m.ID, "invoice_id", m.InvoiceID, "err", sent.err)
+				continue
+			}
 			res.Failed++
 			s.log.WarnContext(ctx, "email delivery failed", "email_id", m.ID, "invoice_id", m.InvoiceID, "attempt", m.Attempts, "err", err)
 			if rerr := s.recordEmailFailure(ctx, m.ID, err); rerr != nil {
@@ -133,32 +140,64 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
 		return err
 	}
 	// The mail server has the message: record that even if the app is shutting down,
-	// or it would be sent again after a restart (outcomeContext).
+	// or it would be sent again after a restart (outcomeContext). The message is marked
+	// sent on its own, first: a conflict on the invoice (a payment recorded meanwhile, a
+	// second message for it) must not undo that and send it again.
 	ctx, cancel := outcomeContext(ctx)
 	defer cancel()
-	return s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		cur, err := r.Emails.Lock(ctx, m.ID)
-		if err != nil {
-			return err
-		}
-		if !cur.Succeeded(s.now()) {
-			return nil // no longer ours (see EmailMessage.Succeeded)
-		}
-		if err := r.Emails.Update(ctx, cur); err != nil {
-			return err
-		}
-		inv, err := r.Invoices.Get(ctx, m.InvoiceID)
-		if err != nil {
-			return err
-		}
-		if err := inv.MarkSent(s.now()); err == nil {
-			if err := r.Invoices.Update(ctx, inv); err != nil {
+	if mine, err := s.recordSent(ctx, m.ID); err != nil {
+		return &sentButNotRecorded{err}
+	} else if !mine {
+		return nil // recorded by whoever reclaimed it
+	}
+	for range 3 { // another writer of the invoice row: read it again
+		err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+			inv, err := r.Invoices.Get(ctx, m.InvoiceID)
+			if err != nil {
 				return err
 			}
+			if inv.Status == domain.InvoiceIssued { // only the first e-mail changes the invoice
+				if err := inv.MarkSent(s.now()); err != nil {
+					return err
+				}
+				if err := r.Invoices.Update(ctx, inv); err != nil {
+					return err
+				}
+			}
+			return s.event(ctx, r, m.InvoiceID, "email_sent", "to "+strings.Join(m.To, ", "))
+		})
+		if !errors.Is(err, domain.ErrConflict) {
+			break
 		}
-		return s.event(ctx, r, m.InvoiceID, "email_sent", "to "+strings.Join(m.To, ", "))
-	})
+	}
+	if err != nil {
+		return &sentButNotRecorded{err}
+	}
+	return nil
 }
+
+// recordSent marks a message the mail server accepted as sent; mine is false when it is no
+// longer ours (see EmailMessage.Succeeded), so its events are not recorded twice.
+func (s *Service) recordSent(ctx context.Context, id string) (mine bool, err error) {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		cur, err := r.Emails.Lock(ctx, id)
+		if err != nil {
+			return err
+		}
+		if mine = cur.Succeeded(s.now()); !mine {
+			return nil
+		}
+		return r.Emails.Update(ctx, cur)
+	})
+	return mine && err == nil, err
+}
+
+// sentButNotRecorded is an error after the mail server accepted a message: it must never
+// be retried.
+type sentButNotRecorded struct{ err error }
+
+func (e *sentButNotRecorded) Error() string { return "sent, but recording it failed: " + e.err.Error() }
+func (e *sentButNotRecorded) Unwrap() error { return e.err }
 
 var errVoided = errors.New("invoice was voided")
 

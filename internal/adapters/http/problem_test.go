@@ -44,6 +44,9 @@ func TestReauthPath(t *testing.T) {
 		{"POST", "/api/v1/restores", false},
 		{"POST", "/api/v1/currencies", false},
 		{"POST", "/api/v1/auth/logout", false},
+		{"PUT", "/api/v1/groups/g1", true},
+		{"PUT", "/api/v1/groups/x%2Fy", true}, // an escaped slash is still the update route
+		{"PUT", "/api/v1/users/u1/groups", true},
 	}
 	for _, tt := range tests {
 		r, _ := http.NewRequestWithContext(context.Background(), tt.method, tt.path, nil)

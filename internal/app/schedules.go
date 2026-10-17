@@ -198,7 +198,15 @@ func (s *Service) CreateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 	sc.CreatedAt = s.now()
 	sc.Recurrence.DefaultWeekendRule()
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		return s.createSchedule(ctx, r, &sc, false)
+		if err := s.createSchedule(ctx, r, &sc, false); err != nil {
+			return err
+		}
+		// A new schedule with no run left would do nothing (an import may still copy an
+		// ended one).
+		if sc.Status == domain.ScheduleEnded {
+			return &domain.ValidationError{Field: "recurrence.startDate", Reason: "has no run left: its date and time (or its end date) have passed"}
+		}
+		return nil
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.CreateSchedule", err)
@@ -473,7 +481,8 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if err != nil {
 		return err
 	}
-	issueDate := sc.IssueDate(s.today(b))
+	// Dated in the schedule's own zone, as its run day is (not the business zone).
+	issueDate := sc.IssueDate(sc.Recurrence.LocalDate(s.now()))
 	content, err := sc.BuildDraft(c, products, b.VATRate, issueDate)
 	if err != nil {
 		return err
@@ -528,7 +537,7 @@ func (s *Service) runEmailOccurrence(ctx context.Context, r ports.Repos, sc *dom
 		sc.Advance(s.now())
 		return r.Schedules.Update(ctx, sc)
 	}
-	invs, _, err := r.Invoices.List(ctx, ports.InvoiceFilter{CustomerID: sc.CustomerID, Page: ports.Page{Limit: 200}})
+	invs, err := openInvoices(ctx, r, sc.CustomerID)
 	if err != nil {
 		return err
 	}
@@ -582,7 +591,7 @@ func checkScheduleAccess(ctx context.Context, sc domain.Schedule) error {
 	a := ActorFrom(ctx)
 	var need []domain.Permission
 	switch {
-	case sc.Kind == domain.ScheduleInvoice:
+	case sc.Kind == domain.ScheduleInvoice || sc.Kind == "": // "" is an invoice schedule (Validate)
 		need = append(need, domain.PermInvoicesCreate, domain.PermInvoicesIssue)
 		if sc.AutoSend {
 			need = append(need, domain.PermInvoicesSend)
@@ -609,4 +618,25 @@ func (s *Service) emailQueued(ctx context.Context, r ports.Repos, invoiceID stri
 		}
 	}
 	return false, nil
+}
+
+// openInvoices returns all of a customer's issued, sent and overdue invoices, a page at a
+// time (an e-mail schedule must reach the oldest unpaid ones, not only the newest 200).
+func openInvoices(ctx context.Context, r ports.Repos, customerID string) ([]domain.Invoice, error) {
+	var out []domain.Invoice
+	for _, st := range []domain.InvoiceStatus{domain.InvoiceIssued, domain.InvoiceSent, domain.InvoiceOverdue} {
+		page := ports.Page{Limit: 200}.Normalize()
+		for {
+			invs, total, err := r.Invoices.List(ctx, ports.InvoiceFilter{CustomerID: customerID, Status: st, Page: page})
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, invs...)
+			page.Offset += len(invs)
+			if len(invs) == 0 || page.Offset >= total {
+				break
+			}
+		}
+	}
+	return out, nil
 }

@@ -201,15 +201,16 @@ function Import() {
     }
   }
 
-  // A protected file is opened by checking all of it: the counts say what it holds.
+  // A protected file is opened on the server (inspect): it says what each section holds,
+  // without checking any, so a section the user may not import does not stop the rest.
   const open = async (e: FormEvent) => {
     e.preventDefault()
     if (!file) return
     setBusy(true)
     setErr(null)
     try {
-      const r = await run(false, file, pass)
-      const counts = Object.fromEntries(sections.map((s) => [s.key, r[s.key].created + r[s.key].updated + r[s.key].unchanged]))
+      const r = await unwrap(api.POST('/settings/import', { params: { query: { inspect: true } }, body: { file: file.data, passphrase: pass } }))
+      const counts = Object.fromEntries(sections.map((s) => [s.key, r.inFile[s.key]]))
       setChosen(new Set(sections.filter((s) => counts[s.key]! > 0).map((s) => s.key)))
       setOpened({ passphrase: pass, counts })
     } catch (x) {

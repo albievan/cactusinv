@@ -74,16 +74,15 @@ type BankDetails struct {
 }
 
 // ResolveBankAccount picks the account an invoice for customer c is paid into: the
-// customer's override when set, otherwise the currency's default (ADR-003).
+// customer's override when set and active, otherwise the currency's default (ADR-003). A
+// deactivated override falls back to the default, so deactivating an account never blocks
+// invoicing the customers pinned to it.
 func ResolveBankAccount(c Customer, accounts []BankAccount) (BankAccount, error) {
 	if c.BankAccountID != "" {
 		for _, a := range accounts {
-			if a.ID == c.BankAccountID {
+			if a.ID == c.BankAccountID && a.Active {
 				if a.Currency != c.Currency {
 					return BankAccount{}, ErrCurrencyMismatch
-				}
-				if !a.Active {
-					return BankAccount{}, ErrInactive
 				}
 				return a, nil
 			}

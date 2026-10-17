@@ -4,8 +4,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Invoice } from '../../lib/api/client'
 import { formatDate } from '../../lib/format'
 import { formatMoney } from '../../lib/money'
-import { useAsync } from '../../lib/useAsync'
-import { Badge, Empty, ErrorBanner, Page, SearchBox, Spinner } from '../../components/ui'
+import { usePaged } from '../../lib/usePaged'
+import { Badge, Empty, ErrorBanner, ShowMore, Page, SearchBox, Spinner } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
 import { InvoiceActions } from '../../components/InvoiceActions'
 
@@ -27,8 +27,8 @@ export function InvoiceList() {
   const setQ = (v: string) => setParams(v ? { q: v } : {}, { replace: true })
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState<Error | null>(null)
-  const { data, error, loading, reload } = useAsync(
-    () =>
+  const list = usePaged(
+    (offset, limit) =>
       unwrap(
         api.GET('/invoices', {
           params: {
@@ -36,13 +36,15 @@ export function InvoiceList() {
               q: q || undefined,
               status: filter === 'all' || filter === 'overdue' ? undefined : filter,
               overdue: filter === 'overdue' ? true : undefined,
-              limit: 200,
+              limit,
+              offset,
             },
           },
         }),
       ),
     [filter, q],
   )
+  const { data, error, loading, reload } = list
   return (
     <Page title="Invoices" actions={<Can need="invoices.create"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search number or customer" />
@@ -62,6 +64,7 @@ export function InvoiceList() {
           onError={(e) => { setNotice(''); setActionError(e) }}
         />
       )}
+    <ShowMore list={list} />
     </Page>
   )
 }

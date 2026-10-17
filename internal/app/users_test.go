@@ -653,3 +653,33 @@ func TestEnablingEndsLeftoverSessions(t *testing.T) {
 		t.Fatal("enabling a user does not revive a session from before")
 	}
 }
+
+// strictHasher refuses a malformed hash before hashing, as argon2 does.
+type strictHasher struct {
+	fakes.Hasher
+	malformed *int
+}
+
+func (h strictHasher) Verify(hash, pw string) (bool, error) {
+	ok, err := h.Hasher.Verify(hash, pw)
+	if err != nil {
+		*h.malformed++
+	}
+	return ok, err
+}
+
+// An unknown login is checked against a real hash, so it takes as long as a wrong
+// password (a malformed dummy hash answered at once and told which logins exist).
+func TestUnknownLoginRunsARealPasswordCheck(t *testing.T) {
+	h := newHarness(t)
+	n := 0
+	h.svc = app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: h.ids, Hasher: strictHasher{malformed: &n}})
+	for range 2 {
+		if _, _, err := h.svc.Login(h.ctx, "nobody@example.com", "whatever password"); !errors.Is(err, domain.ErrUnauthenticated) {
+			t.Fatal(err)
+		}
+	}
+	if n != 0 {
+		t.Fatalf("the dummy hash was refused %d times without hashing", n)
+	}
+}

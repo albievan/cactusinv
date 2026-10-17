@@ -55,6 +55,15 @@ func TestEditContinuesAfterTheBilledPeriod(t *testing.T) {
 			domain.NewDate(2026, 10, 23),
 		},
 		{
+			"weekly billed to 19 October, switched to monthly on the 20th",
+			domain.Recurrence{Frequency: domain.FrequencyWeekly, Weekday: time.Thursday, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1), Weekend: domain.WeekendNone},
+			time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC),
+			func(r *domain.Recurrence) { r.Frequency, r.DayOfMonth = domain.FrequencyMonthly, 20 },
+			// October's period (from the 1st) is partly billed, so its run would be refused:
+			// the first free period is November.
+			domain.NewDate(2026, 11, 20),
+		},
+		{
 			"monthly billed on the 15th, day moved to the 20th",
 			domain.Recurrence{Frequency: domain.FrequencyMonthly, DayOfMonth: 15, SendHour: 9, StartDate: domain.NewDate(2026, 10, 1), Weekend: domain.WeekendNone},
 			time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC),

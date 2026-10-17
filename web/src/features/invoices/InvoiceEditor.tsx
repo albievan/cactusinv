@@ -5,14 +5,18 @@ import { todayISO } from '../../lib/format'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
-import { ErrorBanner, Field, Page, Spinner, StickyActions } from '../../components/ui'
+import { ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { uuid } from '../../lib/uuid'
 
 export function InvoiceEditor() {
   const { id } = useParams()
   const nav = useNavigate()
   const { minor } = useCurrencies()
-  const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200 } } })).then((r) => r.items), [])
+  // The customer list is searched on the server: it used to stop at the first 200.
+  const [customerQuery, setCustomerQuery] = useState('')
+  const customerPage = useAsync(() => unwrap(api.GET('/customers', { params: { query: { q: customerQuery || undefined, limit: 100 } } })), [customerQuery])
+  const [picked, setPicked] = useState<Customer>()
+  const customers = { ...customerPage, data: customerPage.data && (picked && !customerPage.data.items.some((c) => c.id === picked.id) ? [picked, ...customerPage.data.items] : customerPage.data.items) }
   const business = useAsync(() => unwrap(api.GET('/settings/business')), [])
   const existing = useAsync(() => (id ? unwrap(api.GET('/invoices/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
   const [customerId, setCustomerId] = useState('')
@@ -28,6 +32,8 @@ export function InvoiceEditor() {
     const inv = existing.data?.invoice
     if (!inv) return
     setCustomerId(inv.customerId)
+    // The draft's customer, also when it is not among the first page of the list.
+    unwrap(api.GET('/customers/{id}', { params: { path: { id: inv.customerId } } })).then(setPicked).catch(() => {})
     setIssueDate(inv.issueDate)
     setNotes(inv.notes)
     setVatPercent(inv.vatPercent)
@@ -45,11 +51,16 @@ export function InvoiceEditor() {
   // A different customer may bill in another currency: every chosen product is priced again
   // in it, and a product with no price there is cleared so the user picks another.
   const changeCustomer = (next: string) => {
-    const nextCur = customers.data?.find((c) => c.id === next)?.currency ?? ''
+    const chosen = customers.data?.find((c) => c.id === next)
+    const nextCur = chosen?.currency ?? ''
+    setPicked(chosen)
     setCustomerId(next)
     if (!nextCur || nextCur === currency) return
     const picked = lines.filter((l) => l.productId)
     if (picked.length === 0) return
+    // The old prices are in the old currency: cleared at once, so a save before the new
+    // ones arrive lets the server price the lines instead of reading them in the new one.
+    setLines((cur) => cur.map((l) => ({ ...l, unitPrice: '' })))
     void Promise.all(picked.map((l) => unwrap(api.GET('/products/{id}', { params: { path: { id: l.productId } } })).catch(() => null))).then((products) =>
       setLines((cur) =>
         cur.map((l) => {
@@ -70,9 +81,14 @@ export function InvoiceEditor() {
     }
     setBusy(true)
     setError(null)
+    const inv = existing.data?.invoice
+    // Lines keep the unit price shown (the draft's own, or the product's when it was picked),
+    // and an edited draft keeps its parties and terms: otherwise saving any change re-priced
+    // the lines and reset them to the customer's current defaults.
     const body: Schemas['InvoiceInput'] = {
-      customerId, issueDate, header, notes, vatPercent: vat || '0', version: existing.data?.invoice.version,
-      lines: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, discountPercent: l.discountPercent || '0' })),
+      customerId, issueDate, header, notes, vatPercent: vat || '0', version: inv?.version,
+      ...(inv ? { billTo: inv.billTo, shipTo: inv.shipTo, paymentTerms: inv.paymentTerms } : {}),
+      lines: lines.map((l) => ({ productId: l.productId, quantity: l.quantity, discountPercent: l.discountPercent || '0', ...(l.unitPrice ? { unitPrice: l.unitPrice } : {}) })),
     }
     try {
       const inv = id ? await unwrap(api.PUT('/invoices/{id}', { params: { path: { id } }, body })) : await unwrap(api.POST('/invoices', { body }))
@@ -83,18 +99,24 @@ export function InvoiceEditor() {
     }
   }
 
-  if (customers.loading || (id && existing.loading)) return <Spinner />
+  if ((customers.loading && !customers.data) || (id && existing.loading)) return <Spinner />
   return (
     <Page title={id ? 'Edit draft' : 'New invoice'} back={id ? `/invoices/${id}` : '/invoices'}>
       <form onSubmit={submit} className="space-y-5">
         <ErrorBanner error={error ?? customers.error ?? existing.error} />
         <div className="card grid gap-4 md:grid-cols-3">
-          <Field label="Customer" hint={customer ? `Billed in ${customer.currency} · ${customer.paymentTerms.text}` : undefined}>
+          <Field
+            label="Customer"
+            hint={customer ? `Billed in ${customer.currency} · ${customer.paymentTerms.text}` : (customerPage.data?.total ?? 0) > (customerPage.data?.items.length ?? 0) ? 'Showing the first 100: search to find others.' : undefined}
+          >
             {(fid) => (
+              <>
+              {!id && <SearchBox value={customerQuery} onChange={setCustomerQuery} placeholder="Search customers" />}
               <select id={fid} className="input" value={customerId} onChange={(e) => changeCustomer(e.target.value)} disabled={!!id} required>
                 <option value="">Choose a customer…</option>
                 {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
               </select>
+              </>
             )}
           </Field>
           <Field label="Invoice date">{(fid) => <input id={fid} type="date" className="input" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required />}</Field>

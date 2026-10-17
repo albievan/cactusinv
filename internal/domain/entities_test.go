@@ -93,7 +93,7 @@ func TestResolveBankAccount(t *testing.T) {
 		{"currency default", "", "ZAR", all, "zar1", nil},
 		{"override", "zar2", "ZAR", all, "zar2", nil},
 		{"override other currency", "usd1", "ZAR", all, "", ErrCurrencyMismatch},
-		{"override inactive", "zar3", "ZAR", all, "", ErrInactive},
+		{"inactive override falls back", "zar3", "ZAR", all, "zar1", nil},
 		{"unknown override falls back", "gone", "ZAR", all, "zar1", nil},
 		{"usd customer", "", "USD", all, "usd1", nil},
 		{"no default", "", "EUR", all, "", ErrNoBankAccountForCurrency},

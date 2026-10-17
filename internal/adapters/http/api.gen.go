@@ -1433,9 +1433,12 @@ type SettingsImportResult struct {
 	Currencies   ImportCounts `json:"currencies"`
 	Customers    ImportCounts `json:"customers"`
 	EmailServer  ImportCounts `json:"emailServer"`
-	Products     ImportCounts `json:"products"`
-	Schedules    ImportCounts `json:"schedules"`
-	Warnings     []string     `json:"warnings"`
+
+	// InFile How many items each section of the file holds (business and emailServer 0 or 1).
+	InFile    SettingsSectionCounts `json:"inFile"`
+	Products  ImportCounts          `json:"products"`
+	Schedules ImportCounts          `json:"schedules"`
+	Warnings  []string              `json:"warnings"`
 }
 
 // SettingsSchedule A schedule in a settings file; its customer and products are named by code and SKU.
@@ -1451,6 +1454,17 @@ type SettingsSchedule struct {
 
 // SettingsSection defines model for SettingsSection.
 type SettingsSection string
+
+// SettingsSectionCounts How many items each section of the file holds (business and emailServer 0 or 1).
+type SettingsSectionCounts struct {
+	BankAccounts int `json:"bankAccounts"`
+	Business     int `json:"business"`
+	Currencies   int `json:"currencies"`
+	Customers    int `json:"customers"`
+	EmailServer  int `json:"emailServer"`
+	Products     int `json:"products"`
+	Schedules    int `json:"schedules"`
+}
 
 // StageRestoreRequest defines model for StageRestoreRequest.
 type StageRestoreRequest struct {
@@ -1705,6 +1719,9 @@ type PreviewScheduleParams struct {
 // ImportSettingsParams defines parameters for ImportSettings.
 type ImportSettingsParams struct {
 	Apply bool `form:"apply,omitempty" json:"apply,omitempty"`
+
+	// Inspect Only open the file and count what it holds (inFile); nothing is checked or imported.
+	Inspect bool `form:"inspect,omitempty" json:"inspect,omitempty"`
 }
 
 // SendStatementsJSONBody defines parameters for SendStatements.
@@ -4047,6 +4064,19 @@ func (siw *ServerInterfaceWrapper) ImportSettings(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "apply"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "apply", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "inspect" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "inspect", r.URL.Query(), &params.Inspect, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "inspect"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "inspect", Err: err})
 		}
 		return
 	}

@@ -10,6 +10,11 @@ import (
 )
 
 func TestSystemSettingsValidate(t *testing.T) {
+	for _, p := range []string{"/Users/albie/cactus-backups", "/Volumes/NAS", "/home/albie/x/y", "./data/archive", "/srv/cactus"} {
+		if _, err := domain.ValidateHostDir("f", p); err != nil {
+			t.Errorf("%s refused: %v", p, err)
+		}
+	}
 	ok := domain.SystemSettings{SessionIdle: 30 * time.Minute, SessionMax: 8 * time.Hour, BackupHostDir: " /Volumes/NAS/backups/ ", InvoicesHostDir: "./data/archive"}
 	if err := ok.Validate(); err != nil || ok.BackupHostDir != "/Volumes/NAS/backups" || ok.InvoicesHostDir != "./data/archive" {
 		t.Fatalf("valid: %v %+v", err, ok)
@@ -30,6 +35,13 @@ func TestSystemSettingsValidate(t *testing.T) {
 		{domain.SystemSettings{SessionMax: time.Hour, InvoicesHostDir: "/home/$USER"}, "invoicesHostDir"},
 		{domain.SystemSettings{SessionMax: time.Hour, InvoicesHostDir: "/a\nb"}, "invoicesHostDir"},
 		{domain.SystemSettings{SessionMax: time.Hour, InvoicesHostDir: "/" + strings.Repeat("a", 1024)}, "invoicesHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "./data/mariadb"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "./data"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "./secrets/x"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "/etc/cactus"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "/home/albie"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "/Volumes"}, "backupHostDir"},
+		{domain.SystemSettings{SessionMax: time.Hour, BackupHostDir: "/srv/a", InvoicesHostDir: "/srv/a"}, "invoicesHostDir"},
 	}
 	for _, b := range bad {
 		err := b.s.Validate()

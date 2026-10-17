@@ -14,8 +14,27 @@ import (
 	"github.com/albievan/cactusinv/internal/ports"
 )
 
-// dummyHash equalises login timing for unknown e-mail addresses.
-const dummyHash = "$argon2id$v=19$m=65536,t=3,p=2$c2FsdHNhbHRzYWx0c2FsdA$Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy"
+// dummyHash is checked for an unknown login, so it answers in the same time as a wrong
+// password. It is a real hash made by the configured hasher (once, on the first unknown
+// login): a malformed constant was refused before any hashing, leaking which logins exist.
+func (s *Service) dummyHash() string {
+	s.dummyOnce.Do(func() {
+		h, err := s.hasher.Hash(newTokenOrFixed())
+		if err != nil {
+			s.log.Error("could not make the hash that equalises sign-in timing", "err", err)
+			return
+		}
+		s.dummy = h
+	})
+	return s.dummy
+}
+
+func newTokenOrFixed() string {
+	if t, err := newToken(); err == nil {
+		return t
+	}
+	return "cactusinv-dummy-password"
+}
 
 // Login checks credentials and starts a session. It returns the session token for the
 // cookie (only its hash is stored) and its expiry. Every failure is the same
@@ -31,7 +50,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, ti
 	}
 	u, err := r.Users.GetByEmail(ctx, login)
 	if errors.Is(err, domain.ErrNotFound) {
-		_, _ = s.hasher.Verify(dummyHash, password)
+		_, _ = s.hasher.Verify(s.dummyHash(), password)
 		return "", time.Time{}, failed("", "unknown login")
 	}
 	if err != nil {
@@ -238,7 +257,16 @@ func (s *Service) ChangePassword(ctx context.Context, userID, keepToken, current
 	if keepToken != "" {
 		keep = HashToken(keepToken)
 	}
-	return wrap("app.ChangePassword", s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		// The current password was checked outside the transaction: a reset or disable that
+		// committed meanwhile must win, as in Login.
+		cur, err := r.Users.Lock(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		if !cur.Active() || cur.PasswordHash != u.PasswordHash {
+			return errLoginRaced
+		}
 		if err := r.Users.UpdatePassword(ctx, u.ID, hash, false); err != nil {
 			return err
 		}
@@ -246,7 +274,11 @@ func (s *Service) ChangePassword(ctx context.Context, userID, keepToken, current
 			return err
 		}
 		return s.audit(ctx, r, "user.password_changed", "user", u.ID, u.Email+" changed their password; other sessions signed out")
-	}))
+	})
+	if errors.Is(err, errLoginRaced) {
+		return wrap("app.ChangePassword", &domain.ValidationError{Field: "currentPassword", Reason: "the password was reset or the user disabled meanwhile; sign in again"})
+	}
+	return wrap("app.ChangePassword", err)
 }
 
 // SetPassword replaces a user's password from the server's command line (`cactusinv admin

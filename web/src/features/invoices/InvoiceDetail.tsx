@@ -3,7 +3,7 @@ import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, idempotencyKey, unwrap, type InvoiceDetail } from '../../lib/api/client'
 import { InvoiceActions } from '../../components/InvoiceActions'
-import { formatDate, formatDateTime } from '../../lib/format'
+import { formatDate, formatDateTime, todayISO } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner, StageTracker } from '../../components/ui'
@@ -16,6 +16,9 @@ export function InvoiceDetail() {
   const [busy, setBusy] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
   const [notice, setNotice] = useState('')
+  // A draft dated in the past is issued with a date the user picks: it used to be issued
+  // backdated silently (perhaps overdue at once, out of number order).
+  const [askDate, setAskDate] = useState(false)
 
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Invoice" back="/invoices"><ErrorBanner error={error} /></Page>
@@ -63,7 +66,18 @@ export function InvoiceDetail() {
         {inv.status === 'draft' && (
           <>
             <Can need="invoices.edit"><Link to={`/invoices/${id}/edit`} className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50">Edit</Link></Can>
-            <Can need="invoices.issue"><button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} })))}>Issue</button></Can>
+            <Can need="invoices.issue"><button className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-brand-800 ring-1 ring-cream-300 hover:bg-cream-50" disabled={busy} onClick={() => (inv.issueDate < todayISO() ? setAskDate(true) : act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} }))))}>Issue</button></Can>
+            <Sheet title="Issue with which date?" open={askDate} onClose={() => setAskDate(false)}>
+              <p className="text-sm text-slate-600">This draft is dated {formatDate(inv.issueDate)}. The due date follows from the date it is issued with.</p>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button className="btn-secondary" disabled={busy} onClick={() => { setAskDate(false); void act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} }))) }}>
+                  Keep {formatDate(inv.issueDate)}
+                </button>
+                <button className="btn-primary" disabled={busy} onClick={() => { setAskDate(false); void act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: { issueDate: todayISO() } }))) }}>
+                  Issue dated today
+                </button>
+              </div>
+            </Sheet>
             <Can need="invoices.delete"><ConfirmButton
               label="Delete draft"
               className="inline-flex h-8 items-center rounded-lg px-3 text-xs font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50"

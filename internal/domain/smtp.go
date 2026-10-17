@@ -46,6 +46,11 @@ func (s *SMTPSettings) Validate() error {
 	if s.Host == "" || strings.ContainsAny(s.Host, " /:") {
 		return invalid("host", "is required (a host name, e.g. smtp.gmail.com)")
 	}
+	// Go's SMTP client sends a password only over TLS (or to localhost): with "none" every
+	// e-mail would fail to sign in.
+	if s.TLS == "none" && s.Username != "" && !isLocalhost(s.Host) {
+		return invalid("tls", "a user name and password are only sent encrypted: choose STARTTLS or TLS, or leave the user name empty")
+	}
 	if s.Port == 0 {
 		return invalid("port", "is required")
 	}
@@ -56,6 +61,10 @@ func (s *SMTPSettings) Validate() error {
 		return invalid("from", "must be an e-mail address, optionally with a name")
 	}
 	return nil
+}
+
+func isLocalhost(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" // as net/smtp's PlainAuth
 }
 
 // EmailSenderWarnings says when the provider is known not to send as the Send-as address

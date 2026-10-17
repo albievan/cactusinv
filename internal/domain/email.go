@@ -3,6 +3,7 @@ package domain
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // EmailStatus is an outbox message's state (ADR-004).
@@ -67,6 +68,22 @@ type EmailMessage struct {
 	IdempotencyKey string
 }
 
+// MaxSubjectLength is the longest e-mail subject stored (bytes).
+const MaxSubjectLength = 300
+
+// truncateUTF8 shortens s to at most n bytes on a character boundary, ending in "…" when
+// it was cut.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n - len("…")
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return strings.TrimSpace(s[:cut]) + "…"
+}
+
 // NewEmailMessage validates and creates a pending outbox message to go out at sendAt
 // (now or later).
 func NewEmailMessage(id, invoiceID string, to, cc []string, subject, body string, sendAt, now time.Time, key string) (*EmailMessage, error) {
@@ -82,7 +99,10 @@ func NewEmailMessage(id, invoiceID string, to, cc []string, subject, body string
 		}
 	}
 	subject = strings.TrimSpace(subject)
-	if subject == "" || len(subject) > 300 || strings.ContainsAny(subject, "\r\n") {
+	// A subject template is at most 300 characters, but filled placeholders (a long
+	// customer name) can make it longer: shorten it rather than fail the invoice run.
+	subject = truncateUTF8(subject, MaxSubjectLength)
+	if subject == "" || strings.ContainsAny(subject, "\r\n") {
 		return nil, invalid("subject", "is required, single line, max 300 characters")
 	}
 	if len(body) > 20000 {

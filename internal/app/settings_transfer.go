@@ -26,6 +26,9 @@ type SettingsFile struct {
 	Products     []domain.Product
 	Customers    []domain.Customer
 	Schedules    []ScheduleImport
+	// BankAccountRefs are all the file's bank accounts, also when that section is not
+	// imported: customers' overrides are matched through them (never saved from here).
+	BankAccountRefs []domain.BankAccount
 }
 
 // ScheduleImport is a schedule in a settings file. Ids differ between installations, so
@@ -118,6 +121,13 @@ func (s *Service) ExportSettings(ctx context.Context) (SettingsFile, error) {
 func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool) (ImportResult, error) {
 	res := ImportResult{Applied: apply, Warnings: []string{}}
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		// The sequence before the audit head, in the order of every issuing path (no
+		// deadlock with an invoice being issued meanwhile).
+		if f.Business != nil && f.Business.NextSequence > 0 {
+			if err := r.Sequences.Lock(ctx); err != nil {
+				return err
+			}
+		}
 		if err := s.importCurrencies(ctx, r, f.Currencies, &res); err != nil {
 			return err
 		}
@@ -126,6 +136,9 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 			return err
 		}
 		if err := s.importProducts(ctx, r, f.Products, &res); err != nil {
+			return err
+		}
+		if err := s.matchBankRefs(ctx, r, f.BankAccountRefs, bankIDs, f.Customers, &res); err != nil {
 			return err
 		}
 		if err := s.importCustomers(ctx, r, f.Customers, bankIDs, &res); err != nil {
@@ -165,9 +178,11 @@ func (r ImportResult) summary() string {
 	}{
 		{"currencies", r.Currencies},
 		{"bank accounts", r.BankAccounts},
+		{"products", r.Products},
 		{"customers", r.Customers},
 		{"business", r.Business},
 		{"e-mail server", r.EmailServer},
+		{"schedules", r.Schedules},
 	} {
 		if c.n != (ImportCounts{}) {
 			parts = append(parts, fmt.Sprintf("%s %d new, %d changed, %d unchanged", c.name, c.n.Created, c.n.Updated, c.n.Unchanged))
@@ -345,8 +360,17 @@ func (s *Service) importCustomers(ctx context.Context, r ports.Repos, in []domai
 		if id, ok := bankIDs[strings.TrimSpace(c.BankAccountID)]; ok {
 			c.BankAccountID = id
 		}
-		if err := checkCustomer(ctx, r, &c); err != nil {
+		var prev *domain.Customer
+		if p, ok := byCode[strings.ToUpper(strings.TrimSpace(c.Code))]; ok {
+			prev = &p
+		}
+		if err := checkCustomer(ctx, r, &c, prev); err != nil {
 			return inItem("customers", itemKey(strings.ToUpper(strings.TrimSpace(c.Code)), i), err)
+		}
+		if prev != nil && prev.Currency != c.Currency {
+			if err := noOpenInvoices(ctx, r, *prev); err != nil {
+				return inItem("customers", c.Code, err)
+			}
 		}
 		if seen[c.Code] {
 			return inItem("customers", c.Code, &domain.ValidationError{Field: "code", Reason: "appears more than once in the file"})
@@ -453,12 +477,23 @@ func (s *Service) importEmailServer(ctx context.Context, r ports.Repos, in *doma
 	}
 	st := *in
 	if err := st.Validate(); err != nil {
-		return inItem("emailServer", "", err)
+		// A server that could never send (e.g. a password over plain SMTP) is imported
+		// switched off rather than failing the whole import.
+		st.Enabled = false
+		if st.Validate() != nil {
+			return inItem("emailServer", "", err)
+		}
+		res.Warnings = append(res.Warnings, "The e-mail server is imported switched off: "+err.Error()+".")
 	}
 	cur, enc, err := r.SMTP.Get(ctx)
 	found := err == nil
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return err
+	}
+	if found && len(enc) > 0 && (!strings.EqualFold(st.Host, cur.Host) || st.Username != cur.Username) {
+		// The stored password belongs to this server's account: never send it to another.
+		enc = nil
+		res.Warnings = append(res.Warnings, "The stored e-mail password is not kept: it belongs to "+cur.Username+" at "+cur.Host+", not the imported server.")
 	}
 	if st.Enabled && st.Username != "" && len(enc) == 0 {
 		st.Enabled = false
@@ -494,18 +529,18 @@ func (s *Service) importProducts(ctx context.Context, r ports.Repos, in []domain
 	}
 	bySKU := map[string]domain.Product{}
 	for _, p := range list {
-		bySKU[p.SKU] = p
+		bySKU[strings.ToLower(p.SKU)] = p // the database compares SKUs ignoring case
 	}
 	seen := map[string]bool{}
 	for i, p := range in {
 		if err := checkProduct(ctx, r, &p); err != nil {
 			return inItem("products", itemKey(strings.TrimSpace(p.SKU), i), err)
 		}
-		if seen[p.SKU] {
+		if seen[strings.ToLower(p.SKU)] {
 			return inItem("products", p.SKU, &domain.ValidationError{Field: "sku", Reason: "appears more than once in the file"})
 		}
-		seen[p.SKU] = true
-		cur, ok := bySKU[p.SKU]
+		seen[strings.ToLower(p.SKU)] = true
+		cur, ok := bySKU[strings.ToLower(p.SKU)]
 		if ok {
 			p.ID, p.Version = cur.ID, cur.Version
 			if reflect.DeepEqual(p, cur) {
@@ -556,7 +591,7 @@ func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []Sched
 	}
 	bySKU := map[string]string{}
 	for _, p := range products {
-		bySKU[p.SKU] = p.ID
+		bySKU[strings.ToLower(p.SKU)] = p.ID
 	}
 	list, err := allSchedules(ctx, r)
 	if err != nil {
@@ -583,7 +618,7 @@ func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []Sched
 		}
 		sc.Lines = slices.Clone(sc.Lines)
 		for j, sku := range in.ProductSKUs {
-			id, ok := bySKU[strings.TrimSpace(sku)]
+			id, ok := bySKU[strings.ToLower(strings.TrimSpace(sku))]
 			if !ok {
 				return inItem("schedules", key, &domain.ValidationError{Field: "lines.product", Reason: "no product " + sku + " in the file or on this server"})
 			}
@@ -612,7 +647,9 @@ func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []Sched
 				return inItem("schedules", key, err)
 			}
 			res.Schedules.Created++
-			paused++
+			if sc.Status == domain.SchedulePaused {
+				paused++
+			}
 			continue
 		}
 		if err := checkScheduleAccess(ctx, cur); err != nil {
@@ -781,6 +818,45 @@ func (s *Service) OpenSettings(sealed []byte, passphrase string) ([]byte, error)
 		return nil, wrap("app.OpenSettings", &domain.ValidationError{Field: "file", Reason: "is too large"})
 	}
 	return plain, nil
+}
+
+// matchBankRefs maps the file's bank account ids that the imported bank accounts did not
+// cover (that section left out, or another installation's ids) to the same account here
+// (currency and account number). A customer whose account is not here falls back to the
+// currency default, with a warning.
+func (s *Service) matchBankRefs(ctx context.Context, r ports.Repos, refs []domain.BankAccount, ids map[string]string, customers []domain.Customer, res *ImportResult) error {
+	if len(customers) == 0 {
+		return nil
+	}
+	here, err := r.Banks.List(ctx, "")
+	if err != nil {
+		return err
+	}
+	byID := map[string]bool{}
+	byNumber := map[string]string{}
+	for _, b := range here {
+		byID[b.ID] = true
+		byNumber[string(b.Currency)+" "+strings.TrimSpace(b.AccountNumber)] = b.ID
+	}
+	for _, b := range refs {
+		id := strings.TrimSpace(b.ID)
+		if _, done := ids[id]; done || id == "" || byID[id] {
+			continue
+		}
+		if here, ok := byNumber[strings.ToUpper(strings.TrimSpace(string(b.Currency)))+" "+strings.TrimSpace(b.AccountNumber)]; ok {
+			ids[id] = here
+		}
+	}
+	for _, c := range customers {
+		id := strings.TrimSpace(c.BankAccountID)
+		if _, ok := ids[id]; id == "" || ok || byID[id] {
+			continue
+		}
+		ids[id] = "" // not here: the currency default
+		res.Warnings = append(res.Warnings, "Customer "+strings.ToUpper(strings.TrimSpace(c.Code))+
+			"'s bank account is not on this server: invoices use the currency's default account (import the bank accounts too to keep it).")
+	}
+	return nil
 }
 
 // allowed refuses an import step the signed-in user could not do by hand: a settings

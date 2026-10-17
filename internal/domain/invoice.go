@@ -230,13 +230,14 @@ const MaxInvoiceTotal = 1_000_000_000_000_000
 // checkTotalsFit refuses lines whose sums would exceed MaxInvoiceTotal; it adds in big.Int,
 // so many large lines cannot wrap around into a wrong (even positive) total.
 func checkTotalsFit(lines []Line, taxRate BasisPoints) error {
-	sum := new(big.Int)
+	sum, gross := new(big.Int), new(big.Int)
 	for _, l := range lines {
 		sum.Add(sum, big.NewInt(l.Amount()))
+		gross.Add(gross, big.NewInt(l.Gross())) // the stored subtotal (before discounts)
 	}
 	limit := big.NewInt(MaxInvoiceTotal)
 	withTax := new(big.Int).Mul(sum, big.NewInt(10000+int64(taxRate)))
-	if sum.Cmp(limit) > 0 || withTax.Cmp(new(big.Int).Mul(limit, big.NewInt(10000))) > 0 {
+	if sum.Cmp(limit) > 0 || gross.Cmp(limit) > 0 || withTax.Cmp(new(big.Int).Mul(limit, big.NewInt(10000))) > 0 {
 		return invalid("lines", "the invoice total is too large")
 	}
 	return nil

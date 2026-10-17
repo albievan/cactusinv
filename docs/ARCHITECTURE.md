@@ -507,3 +507,19 @@ the session timeouts and the host folders mapped to the container's folders.
   saved one as pending until the next deploy. On Kubernetes the folders are volume claims and
   nothing is mapped.
 
+## 18. Bug hunt rules (M25)
+
+- **Outbox**: after the mail server accepts a message it is marked sent in its own
+  transaction first; the invoice's sent state and event follow, retried on a conflict. An
+  error after acceptance (`sentButNotRecorded`) is logged and never retried, so a message
+  is not sent twice.
+- **Folder mappings** (§17) may never be a system or home folder, the database or secrets
+  folder (or inside or above them), the project folder, the other mapping, or a folder with
+  files cactusInv did not write: `ValidateHostDir` and `deploy.sh folder_safe`.
+- **Sign-in** checks an unknown login against a real hash (same time as a wrong password);
+  every `PUT /groups/…` counts against the password rate limit.
+- **Schedules**: a run is dated in the schedule's own zone; after an edit the first run is
+  the first whose billing period is free; a schedule with no run left is refused.
+- **PDF**: the DRAFT/VOID/PAID mark is drawn with the footer, on every page.
+- **Web lists** page with "Show more" (`usePaged`); the invoice editor searches customers.
+

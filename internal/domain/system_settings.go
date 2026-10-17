@@ -60,8 +60,25 @@ func (s *SystemSettings) Validate() error {
 	if s.InvoicesHostDir, err = ValidateHostDir("invoicesHostDir", s.InvoicesHostDir); err != nil {
 		return err
 	}
+	if s.BackupHostDir != "" && s.BackupHostDir == s.InvoicesHostDir {
+		return invalid("invoicesHostDir", "must differ from the backups folder")
+	}
 	return nil
 }
+
+// protectedDirs are host folders a mapping may never be, or be inside: the deployment
+// re-owns a mapped folder for the app, which would break the system, a home folder, the
+// database or the secrets (deploy.sh refuses the installation's own MARIADB_DATA_DIR and
+// SECRETS_DIR as well, which only it knows).
+var protectedDirs = []string{
+	"/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/root", "/run", "/sbin", "/sys", "/usr",
+	"/var/lib", "/var/run", "/System", "/Library", "/Applications", "/private/etc", "/private/var",
+	"./data/mariadb", "./secrets",
+}
+
+// shallowDirs may hold mappings only two levels below them (/Users/<name>/<folder>), never
+// be one, nor be a user's home folder itself.
+var shallowDirs = []string{"/Users", "/home", "/Volumes", "/mnt", "/media", "/opt", "/srv", "/var", "/tmp", "/private"}
 
 // ValidateHostDir checks a host folder to map into the container and returns it trimmed,
 // without a trailing slash: "" (the deployment's), an absolute path, or one relative to the
@@ -91,6 +108,20 @@ func ValidateHostDir(field, p string) (string, error) {
 	}
 	if p == "/" || p == "." {
 		return "", invalid(field, "must be a folder of its own, not the root or the project folder")
+	}
+	for _, d := range protectedDirs {
+		if p == d || strings.HasPrefix(p, d+"/") {
+			return "", invalid(field, "may not be a system, database or secrets folder ("+d+")")
+		}
+	}
+	if p == "./data" {
+		return "", invalid(field, "may not be the whole data folder; use a folder inside it, e.g. ./data/backups")
+	}
+	for _, d := range shallowDirs {
+		rest, ok := strings.CutPrefix(p, d+"/")
+		if p == d || (ok && !strings.Contains(rest, "/") && (d == "/Users" || d == "/home")) {
+			return "", invalid(field, "must be a folder of its own, not "+p+" itself (e.g. "+d+"/…/backups)")
+		}
 	}
 	return p, nil
 }

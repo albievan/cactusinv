@@ -5,13 +5,15 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
-import { Badge, ConfirmButton, Empty, ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
+import { usePaged } from '../../lib/usePaged'
+import { Badge, ConfirmButton, Empty, ErrorBanner, ShowMore, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { IconDownload, IconPlus, IconSend } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 
 export function CustomerList() {
   const [q, setQ] = useState('')
-  const { data, error, loading } = useAsync(() => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit: 200 } } })), [q])
+  const list = usePaged((offset, limit) => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit, offset } } })), [q])
+  const { data, error, loading } = list
   return (
     <Page title="Customers" actions={<Can need="customers.create"><Link to="/customers/new" className="btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search customers" />
@@ -46,6 +48,7 @@ export function CustomerList() {
           </table>
         </div>
       )}
+    <ShowMore list={list} />
     </Page>
   )
 }
@@ -210,7 +213,7 @@ export function CustomerEditor() {
             {(f) => (
               <select id={f} className="input" value={c.bankAccountId} onChange={(e) => set({ bankAccountId: e.target.value })}>
                 <option value="">Currency default</option>
-                {banks.data?.filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{b.label} · {b.accountNumber}</option>)}
+                {banks.data?.filter((b) => b.active || b.id === c.bankAccountId).map((b) => <option key={b.id} value={b.id}>{b.label} · {b.accountNumber}{b.active ? '' : ' (inactive: invoices use the currency default)'}</option>)}
               </select>
             )}
           </Field>

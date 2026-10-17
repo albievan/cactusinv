@@ -505,6 +505,54 @@ Business → Time zone, then edit the "Weekly" schedule's time zone (both are no
 | 24.4 | Web: menu, routes and buttons per permission (`can` takes any of several): Settings pages, + Currency / Save, + Bank / Save / Delete, the bank list, test e-mail, Resume, Verify integrity, Export and Import cards, System Settings Save | done | Vitest `granular.test.tsx` (bank edit without add/delete; currencies without banks), `ImportExport.test.tsx` (export only) | `web/src/components/{auth,Access}.tsx`, `App.tsx`, features |
 | 24.5 | ADR-012 amendment, VERSION 1.12.0; gate; integration | done | 2026-10-17: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.5 %, app 85.3 %, "No vulnerabilities found.", contracts in sync, web 86 tests, build OK); integration ok 33.4 s (`headSchema` 22); not yet pushed or deployed | `docs/adr/ADR-012-access-groups.md`, `VERSION` |
 
+### M25 — Full bug hunt (Albie, 2026-10-17) — v1.12.1
+
+> "Read this whole codebase and find real bugs, broken edge cases, and anything that falls
+> over in front of a user. List everything by severity and fix anything until no more bugs
+> exist." Four parallel read-only reviews (settings/sessions/deploy; invoices/money/PDF;
+> schedules/outbox/SMTP; HTTP/auth/backups/web), every finding traced, fixed with a
+> regression test, then a second review of the fixes themselves.
+
+| id | Severity | Finding | Fix | Verification |
+|---|---|---|---|---|
+| 25.1 | High | A System Settings folder mapping could be `./data`, `./data/mariadb`, `./secrets`, a home or system folder: the next deploy's volume-init re-owned it recursively (MariaDB down, secrets unreadable) | `ValidateHostDir` refuses system, home, database, secrets and the whole data folder and the same folder twice; `deploy.sh folder_safe` refuses the installation's own MARIADB_DATA_DIR/SECRETS_DIR (and inside or above them), the project folder, overlapping mappings and a folder holding files cactusInv did not write | `TestSystemSettingsValidate` (+7), folder rule on samples |
+| 25.2 | Medium (security) | Sign-in timing told which logins exist: the dummy hash was malformed, refused before hashing (30 µs vs 67 ms) | a real hash made by the configured hasher, once | `TestUnknownLoginRunsARealPasswordCheck` |
+| 25.3 | Medium (security) | `PUT /groups/x%2Fy` bypassed the password rate limit and Idempotency exemption (decoded path had an extra segment) | every PUT under `/groups/` is a reauth route | `TestReauthPath` (+3) |
+| 25.4 | Medium | An e-mail the server accepted was sent again when marking the invoice sent conflicted (payment recorded meanwhile, two messages) | the message is marked sent in its own transaction first; the invoice step retries and never feeds the retry path; MarkSent writes only from issued | `TestAnAcceptedEmailIsNeverSentAgain` (fails before) |
+| 25.5 | Medium (security) | A schedule saved without `kind` needed only `invoices.send`, yet raises and issues invoices | `""` is checked as an invoice schedule | existing granular tests |
+| 25.6 | Medium | Deactivating a customer's bank account blocked issuing, sending and schedules for that customer | an inactive override falls back to the currency default; the editor shows the inactive account | `TestResolveBankAccount`, `TestDeactivatedCurrencyOrAccountDoesNotLockCustomers` |
+| 25.7 | Medium | Deactivating a currency made its customers uneditable | an active currency/account is needed only when newly chosen | same test |
+| 25.8 | Medium | Changing a customer's currency dropped its unpaid invoices from statements | refused while issued, sent or overdue invoices exist (also on import) | `TestCurrencyChangeWaitsForOpenInvoices` |
+| 25.9 | Medium | Saving Business after an invoice was issued failed ("may only increase"), and a concurrent issue could be numbered again | the form sends the next number only when changed; the sequence is locked before compare (also on import) | web build, app tests |
+| 25.10 | Medium | Folder mappings were silently dropped when the app was not running; a cleared mapping never moved the files back | mappings read after the database is up, from the running app or a one-off container; both folders moved when they change; delete-uninstall says mapped folders are kept | `bash -n`; regression review |
+| 25.11 | Medium | A protected settings file could not be opened when any section was not allowed | `inspect=true` opens and counts without checking | httptest inspect, Vitest |
+| 25.12 | Medium | Importing customers without their bank accounts failed across installations | the file's accounts are matched by currency + number; a missing one gives the default with a warning | `TestImportedCustomersFindTheirBankAccount` |
+| 25.13 | Medium (security) | An imported e-mail server reused this server's stored password for another host or account | the password is dropped (with a warning) when host or user differ | `TestImportedEmailServerNeverGetsThisPassword` |
+| 25.14 | Medium | E-mail schedules looked at only the customer's 200 newest invoices | all open invoices, paged | app tests |
+| 25.15 | Medium-low | A schedule in another zone than the business dated its invoice a day early | dated in the schedule's zone | `TestScheduleInvoiceIsDatedInTheSchedulesZone` |
+| 25.16 | Medium-low | Editing a draft re-priced its lines and reset bill-to, ship-to and terms | the editor sends them | Vitest `InvoiceEditor.test.tsx` |
+| 25.17 | Medium-low | A product priced in a deactivated currency could not be saved | its own currency stays selectable | web build |
+| 25.18 | Medium-low | The invoice editor, invoice, customer and product lists stopped at 200 | customer search in the editor; Show more paging (`usePaged`) | Vitest |
+| 25.19 | Low-medium | The schedule Day field could not be typed to 10–19 | `NumberInput` clamps on blur | Vitest `NumberInput.test.tsx` |
+| 25.20 | Low | After an edit, the first run could overlap billed time and be skipped without billing | `ActivateFrom` starts at the first free period | `TestEditContinuesAfterTheBilledPeriod` (weekly → monthly) |
+| 25.21 | Low | A once schedule in the past was saved as ended | refused | `TestAOnceScheduleInThePastIsRefused` |
+| 25.22 | Low | CRLF bodies were double-spaced | CRLF normalised first | `TestCRLFBodyIsNotDoubleSpaced` |
+| 25.23 | Low | TLS "none" with a user name could be saved but never send | refused (except localhost) | `TestSMTPWithoutTLSNeedsNoUser` |
+| 25.24 | Low | A subject made long by its placeholders failed the whole invoice run | shortened to 300 bytes | `TestLongRenderedSubjectIsShortened` |
+| 25.25 | Low | Outbox: no Sending tab, stopped at 100 | Sending tab, Show more | Vitest |
+| 25.26 | Low | The last PDF page (totals, payment, notes) had no DRAFT/VOID/PAID mark | drawn on every page | `TestEveryPageIsWatermarked` (fails before) |
+| 25.27 | Low | A statement without a bank account printed invoice wording | statement wording | pdf tests |
+| 25.28 | Low | Subtotal/discount could overflow with 100 % discounts | the gross sum is bounded too | `TestHugeDiscountedSubtotalIsRefused` (fails before) |
+| 25.29 | Low | Issue used a draft's old date silently | the user picks the old date or today | Vitest `InvoiceDetail.test.tsx` |
+| 25.30 | Low | Dashboard debtor bars compared amounts across currencies | scaled per currency | web build |
+| 25.31 | Low | ChangePassword could undo an administrator's reset racing it | the user is locked and the hash re-checked | app tests |
+| 25.32 | Low | Import: SKUs matched case-sensitively; summary left out products and schedules; ended schedules counted as paused | fixed | app tests |
+| 25.33 | — (design) | `settings.export` alone exports every customer and account | kept: the permission's label says so | — |
+| 25.34 | High (from the fixes) | Second review: refusing a schedule with no run left in `createSchedule` made any settings file with an ended schedule fail to import | the refusal is in `CreateSchedule` only; an import copies it ended | `TestImportCopiesAnEndedSchedule` |
+| 25.35 | Medium-low (from the fixes) | The editor sent the old currency's prices if saved while re-pricing after a customer change | prices cleared at once on a currency change | Vitest |
+| 25.36 | Low (from the fixes) | A message reclaimed by another dispatcher got a second sent event; the import's and Business's sequence lock came after the audit head (deadlock with issuing); a server that could never send failed an import; the first unknown login took twice as long; `compose run` created the .env folders as root on Linux | `recordSent` says whether it was ours; the sequence is locked first; such a server is imported switched off; the dummy hash is made at start (`WarmUp`); the folders are made first | `TestImportSwitchesOffAServerThatCannotSend`, app tests |
+| 25.37 | — | Docs, VERSION 1.12.1, gate, integration, push, deploy | done | see the M25 evidence below |
+
 ## Decisions
 
 | Date | Decision | Why |

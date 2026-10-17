@@ -1422,6 +1422,16 @@ export interface components {
             /** @description The sections to import; omitted means all. */
             sections?: components["schemas"]["SettingsSection"][];
         };
+        /** @description How many items each section of the file holds (business and emailServer 0 or 1). */
+        SettingsSectionCounts: {
+            business: number;
+            emailServer: number;
+            currencies: number;
+            bankAccounts: number;
+            products: number;
+            customers: number;
+            schedules: number;
+        };
         ImportCounts: {
             created: number;
             updated: number;
@@ -1437,6 +1447,7 @@ export interface components {
             products: components["schemas"]["ImportCounts"];
             customers: components["schemas"]["ImportCounts"];
             schedules: components["schemas"]["ImportCounts"];
+            inFile: components["schemas"]["SettingsSectionCounts"];
             warnings: string[];
         };
         Currency: {
@@ -2338,6 +2349,8 @@ export interface operations {
         parameters: {
             query?: {
                 apply?: boolean;
+                /** @description Only open the file and count what it holds (inFile); nothing is checked or imported. */
+                inspect?: boolean;
             };
             header?: never;
             path?: never;

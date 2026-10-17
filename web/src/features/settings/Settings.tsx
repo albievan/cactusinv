@@ -279,14 +279,19 @@ function BusinessForm() {
   const [b, setB] = useState<BusinessSettings>()
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
-  useEffect(() => { if (data) setB(data) }, [data])
+  // The next number as loaded: sent only when changed (0 = unchanged), so saving the profile
+  // after an invoice was issued meanwhile does not fail as "may only increase".
+  const [loadedSeq, setLoadedSeq] = useState(0)
+  useEffect(() => { if (data) { setB(data); setLoadedSeq(data.nextSequence) } }, [data])
   if (!b) return error && !loading ? <ErrorBanner error={error} /> : <Spinner />
   const set = (patch: Partial<BusinessSettings>) => setB({ ...b, ...patch })
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setErr(null)
     try {
-      setB(await unwrap(api.PUT('/settings/business', { body: b })))
+      const out = await unwrap(api.PUT('/settings/business', { body: { ...b, nextSequence: b.nextSequence === loadedSeq ? 0 : b.nextSequence } }))
+      setB(out)
+      setLoadedSeq(out.nextSequence)
       setMsg('Saved.')
     } catch (x) {
       setErr(x as Error)

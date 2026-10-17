@@ -23,3 +23,13 @@ attach a currency to each customer.
 - Prices are deliberate business decisions per market, not a rate of the day.
 - Reporting totals are per currency; the dashboard never sums across currencies.
 - Changing a customer's currency affects future invoices only.
+
+## Amendment (M25, 2026-10-17)
+
+A customer's override account that has been **deactivated** no longer blocks invoicing:
+`ResolveBankAccount` falls back to the currency's default account, as for an override that no
+longer exists. A customer whose currency or account was deactivated after it was chosen stays
+editable; only a newly chosen currency or account must be active. A customer's currency cannot
+change while it has unpaid (issued, sent or overdue) invoices in the old one, because a
+statement is in one currency.
+

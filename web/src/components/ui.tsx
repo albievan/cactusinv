@@ -211,3 +211,38 @@ export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, 
     </>
   )
 }
+
+/** ShowMore is the "Show more" button under a paged list (usePaged). */
+export function ShowMore({ list }: { list: { hasMore: boolean; more: () => void; loading: boolean; data?: { items: unknown[]; total: number } } }) {
+  if (!list.hasMore || !list.data) return null
+  return (
+    <button className="btn-secondary mt-3 w-full" onClick={list.more} disabled={list.loading}>
+      Show more ({list.data.total - list.data.items.length} more)
+    </button>
+  )
+}
+
+/**
+ * NumberInput is a whole-number field that lets the user type freely (e.g. "1" on the way
+ * to "15") and clamps to [min, max] only when it loses focus; a valid value is passed on at
+ * once.
+ */
+export function NumberInput({ id, value, min, max, onChange, className }: { id: string; value: number; min: number; max: number; onChange: (n: number) => void; className?: string }) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => setText(String(value)), [value])
+  return (
+    <input
+      id={id} type="number" inputMode="numeric" min={min} max={max} className={className} value={text}
+      onChange={(e) => {
+        setText(e.target.value)
+        const n = Number(e.target.value)
+        if (e.target.value !== '' && Number.isInteger(n) && n >= min && n <= max) onChange(n)
+      }}
+      onBlur={() => {
+        const n = Math.min(max, Math.max(min, Math.trunc(Number(text)) || min))
+        setText(String(n))
+        onChange(n)
+      }}
+    />
+  )
+}

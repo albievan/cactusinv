@@ -60,6 +60,10 @@ type page struct {
 	cur   domain.Currency
 	biz   domain.BusinessProfile
 	kind  string // "INVOICE" | "STATEMENT"
+	// mark is the watermark on every page (draft, void, paid), drawn with the footer so the
+	// pages the totals, payment details or notes run on to are marked too.
+	mark      string
+	markColor rgb
 }
 
 // The PDFs use DejaVu Sans Condensed (embedded, UTF-8; licence in fonts/LICENSE), so names
@@ -407,7 +411,11 @@ func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string
 		}
 	}
 	if b.AccountNumber == "" {
-		shown = [][2]string{{"", "Payment details are added when the invoice is issued."}}
+		msg := "Payment details are added when the invoice is issued."
+		if p.kind == "STATEMENT" {
+			msg = "No bank account is set up for this currency."
+		}
+		shown = [][2]string{{"", msg}}
 	}
 	const labelW, lineH = 32.0, 4.4
 	type wrapped struct {
@@ -509,6 +517,7 @@ func (p *page) newPage() {
 }
 
 func (p *page) footer() {
+	p.watermark(p.mark, p.markColor)
 	p.draw(hairline)
 	p.pdf.SetLineWidth(0.2)
 	p.pdf.Line(margin, footerY-4, pageW-margin, footerY-4)
@@ -547,6 +556,7 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 	inv := doc.Invoice
 	p := newPage(r, invoiceTitle(inv), doc.Business.Name, "INVOICE", doc.Business, doc.Currency)
 	status, statusColor, mark := invoiceStatus(inv)
+	p.mark, p.markColor = mark, statusColor
 
 	number := inv.Number
 	if number == "" {
@@ -622,7 +632,6 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 			y += p.row(y, cols, cells)
 		}
 		lines = lines[i:]
-		p.watermark(mark, statusColor)
 		if len(lines) > 0 {
 			p.font("I", 8)
 			p.color(muted)
