@@ -489,3 +489,21 @@ changes nothing more.
   result counts (created / updated / unchanged per section, warnings) are exactly what an import
   would do. The web page opens a protected file by checking all of it (the counts say what it
   holds), then checks every choice of sections before offering **Import**.
+
+## 17. System Settings (M23)
+
+One `system_settings` row (migration 00021), never backed up or restored (`backupExcluded`):
+the session timeouts and the host folders mapped to the container's folders.
+
+- **Sessions**: a sign-in expires after `SessionMax` (default 7 days). Every request checks
+  `SystemSettings.SessionAlive`: the stored expiry, the current maximum from the start, and the
+  idle timeout from `sessions.last_seen_at`, so a lowered limit also ends sessions already
+  open. Use is written at most once a minute, also with no idle timeout set.
+- **Folders**: the app only writes where it is mounted (`/data/backups`, `/data/invoices`). On
+  Docker, `deploy.sh --install` reads `cactusinv system folders` from the running app (an
+  environment variable still wins), copies the old folder's files into an empty new one, and
+  mounts the new folder. It passes the target and the absolute folders mounted now
+  (`CACTUSINV_DEPLOY_TARGET`, `CACTUSINV_HOST_*`), so the page shows the mapping and marks a
+  saved one as pending until the next deploy. On Kubernetes the folders are volume claims and
+  nothing is mapped.
+

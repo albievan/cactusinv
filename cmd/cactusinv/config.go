@@ -43,6 +43,11 @@ type config struct {
 	CookieSecure         bool
 	DefaultAdminUser     string
 	DefaultAdminPassword string
+	// Deployment: set by deploy.sh so System Settings can show the folders mapped now.
+	DeployTarget    string
+	HostProjectDir  string
+	HostBackupDir   string
+	HostInvoicesDir string
 	// Backups (ADR-010).
 	BackupDir           string
 	BackupTimes         []domain.TimeOfDay
@@ -110,6 +115,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 		DefaultAdminPassword: str("CACTUSINV_DEFAULT_ADMIN_PASSWORD", "admin"),
 	}
 	c.BackupDir = str("CACTUSINV_BACKUP_DIR", "/data/backups")
+	c.DeployTarget = getenv("CACTUSINV_DEPLOY_TARGET")
+	c.HostProjectDir = getenv("CACTUSINV_HOST_PROJECT_DIR")
+	c.HostBackupDir = getenv("CACTUSINV_HOST_BACKUP_DIR")
+	c.HostInvoicesDir = getenv("CACTUSINV_HOST_INVOICES_DIR")
 	c.BackupRetentionDays = integer("CACTUSINV_BACKUP_RETENTION_DAYS", 14)
 	c.BackupMaxUploadMB = integer("CACTUSINV_BACKUP_MAX_UPLOAD_MB", 256)
 	c.RestoreDBName = str("CACTUSINV_RESTORE_DB_NAME", c.DBName+"_restore")

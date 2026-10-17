@@ -36,6 +36,8 @@ data:
   CACTUSINV_BACKUP_TIMES: "${BACKUP_TIMES}"
   CACTUSINV_BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS}"
   CACTUSINV_BACKUP_MAX_UPLOAD_MB: "${BACKUP_MAX_UPLOAD_MB}"
+  # System Settings: on Kubernetes the folders are volume claims, not mapped host folders.
+  CACTUSINV_DEPLOY_TARGET: "${TARGET}"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

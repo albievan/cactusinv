@@ -15,6 +15,7 @@ import { ScheduleDetailPage, ScheduleEditor, ScheduleList } from './features/sch
 import { AccountSettingsPage, BusinessSettingsPage, CurrencySettingsPage, EmailSettingsPage, More } from './features/settings/Settings'
 import { BackupSettingsPage } from './features/settings/backup/Backup'
 import { ImportExportSettingsPage } from './features/settings/transfer/ImportExport'
+import { SystemSettingsPage } from './features/settings/system/SystemSettings'
 import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
 
@@ -49,6 +50,7 @@ export function AppRoutes() {
           <Route path="email" element={need('settings.view', <EmailSettingsPage />)} />
           <Route path="currencies" element={need('settings.view', <CurrencySettingsPage />)} />
           <Route path="import-export" element={need('administer', <ImportExportSettingsPage />)} />
+          <Route path="system" element={need('administer', <SystemSettingsPage />)} />
           <Route path="users" element={need('administer', <UsersSettingsPage />)} />
           <Route path="backup" element={need('administer', <BackupSettingsPage />)} />
           <Route path="account" element={<AccountSettingsPage />} />

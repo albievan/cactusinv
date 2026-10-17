@@ -70,6 +70,11 @@ services:
       CACTUSINV_BACKUP_TIMES: ${BACKUP_TIMES}
       CACTUSINV_BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS}
       CACTUSINV_BACKUP_MAX_UPLOAD_MB: ${BACKUP_MAX_UPLOAD_MB}
+      # What System Settings show as mapped now (deploy.sh sets the absolute folders).
+      CACTUSINV_DEPLOY_TARGET: ${CACTUSINV_DEPLOY_TARGET:-dockerdesktop}
+      CACTUSINV_HOST_PROJECT_DIR: ${CACTUSINV_HOST_PROJECT_DIR:-}
+      CACTUSINV_HOST_BACKUP_DIR: ${CACTUSINV_HOST_BACKUP_DIR:-${BACKUP_DIR}}
+      CACTUSINV_HOST_INVOICES_DIR: ${CACTUSINV_HOST_INVOICES_DIR:-${INVOICES_DIR}}
     secrets: [db_password, smtp_password, app_key, backup_key]
     volumes:
       - ${INVOICES_DIR}:/data/invoices

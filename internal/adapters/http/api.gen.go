@@ -773,6 +773,22 @@ type Debtor struct {
 // Decimal Example: 2701.16
 type Decimal = string
 
+// DeploymentInfo defines model for DeploymentInfo.
+type DeploymentInfo struct {
+	// BackupDir The backups folder inside the container.
+	BackupDir string `json:"backupDir"`
+
+	// BackupHostDir The host folder mapped to it now ("" on Kubernetes).
+	BackupHostDir string `json:"backupHostDir"`
+
+	// InvoicesDir The invoice export folder inside the container.
+	InvoicesDir     string `json:"invoicesDir"`
+	InvoicesHostDir string `json:"invoicesHostDir"`
+
+	// Target dockerdesktop, k3s, k8s, or "" when unknown.
+	Target string `json:"target"`
+}
+
 // EmailList defines model for EmailList.
 type EmailList struct {
 	Items []EmailMessage `json:"items"`
@@ -1498,6 +1514,26 @@ type StatementSummary struct {
 	Total Decimal `json:"total"`
 }
 
+// SystemSettings defines model for SystemSettings.
+type SystemSettings struct {
+	// BackupHostDir Host folder mapped to the backups folder ("" = the deployment's, .env BACKUP_DIR).
+	BackupHostDir string         `json:"backupHostDir"`
+	Deployment    DeploymentInfo `json:"deployment,omitempty"`
+
+	// InvoicesHostDir Host folder mapped to the invoice export folder ("" = .env INVOICES_DIR).
+	InvoicesHostDir string `json:"invoicesHostDir"`
+
+	// PendingFolders A saved mapping differs from what is mounted now (redeploy to apply).
+	PendingFolders bool `json:"pendingFolders"`
+
+	// SessionIdleMinutes Sign out after this many minutes without activity; 0 = never.
+	SessionIdleMinutes int `json:"sessionIdleMinutes"`
+
+	// SessionMaxHours A sign-in ends this many hours after it started.
+	SessionMaxHours int `json:"sessionMaxHours"`
+	Version         int `json:"version"`
+}
+
 // TestEmailRequest defines model for TestEmailRequest.
 type TestEmailRequest struct {
 	To string `json:"to"`
@@ -1769,6 +1805,9 @@ type ExportSettingsJSONRequestBody = SettingsExportRequest
 // ImportSettingsJSONRequestBody defines body for ImportSettings for application/json ContentType.
 type ImportSettingsJSONRequestBody = SettingsImportRequest
 
+// UpdateSystemSettingsJSONRequestBody defines body for UpdateSystemSettings for application/json ContentType.
+type UpdateSystemSettingsJSONRequestBody = SystemSettings
+
 // SendStatementsJSONRequestBody defines body for SendStatements for application/json ContentType.
 type SendStatementsJSONRequestBody SendStatementsJSONBody
 
@@ -2005,6 +2044,12 @@ type ServerInterface interface {
 
 	// (POST /settings/import)
 	ImportSettings(w http.ResponseWriter, r *http.Request, params ImportSettingsParams)
+
+	// (GET /settings/system)
+	GetSystemSettings(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /settings/system)
+	UpdateSystemSettings(w http.ResponseWriter, r *http.Request)
 
 	// (GET /statements)
 	ListStatements(w http.ResponseWriter, r *http.Request)
@@ -4017,6 +4062,34 @@ func (siw *ServerInterfaceWrapper) ImportSettings(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSystemSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSystemSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListStatements operation middleware
 func (siw *ServerInterfaceWrapper) ListStatements(w http.ResponseWriter, r *http.Request) {
 
@@ -4321,6 +4394,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system", wrapper.GetSystemSettings)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/system", wrapper.UpdateSystemSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/import", wrapper.ImportSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
@@ -7415,6 +7490,83 @@ func (response ImportSettingsdefaultApplicationProblemPlusJSONResponse) VisitImp
 	return err
 }
 
+type GetSystemSettingsRequestObject struct {
+}
+
+type GetSystemSettingsResponseObject interface {
+	VisitGetSystemSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetSystemSettings200JSONResponse SystemSettings
+
+func (response GetSystemSettings200JSONResponse) VisitGetSystemSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSystemSettingsdefaultApplicationProblemPlusJSONResponse) VisitGetSystemSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSystemSettingsRequestObject struct {
+	Body *UpdateSystemSettingsJSONRequestBody
+}
+
+type UpdateSystemSettingsResponseObject interface {
+	VisitUpdateSystemSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateSystemSettings200JSONResponse SystemSettings
+
+func (response UpdateSystemSettings200JSONResponse) VisitUpdateSystemSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSystemSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateSystemSettingsdefaultApplicationProblemPlusJSONResponse) VisitUpdateSystemSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListStatementsRequestObject struct {
 }
 
@@ -8205,6 +8357,12 @@ type StrictServerInterface interface {
 
 	// (POST /settings/import)
 	ImportSettings(ctx context.Context, request ImportSettingsRequestObject) (ImportSettingsResponseObject, error)
+
+	// (GET /settings/system)
+	GetSystemSettings(ctx context.Context, request GetSystemSettingsRequestObject) (GetSystemSettingsResponseObject, error)
+
+	// (PUT /settings/system)
+	UpdateSystemSettings(ctx context.Context, request UpdateSystemSettingsRequestObject) (UpdateSystemSettingsResponseObject, error)
 
 	// (GET /statements)
 	ListStatements(ctx context.Context, request ListStatementsRequestObject) (ListStatementsResponseObject, error)
@@ -10305,6 +10463,61 @@ func (sh *strictHandler) ImportSettings(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ImportSettingsResponseObject); ok {
 		if err := validResponse.VisitImportSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSystemSettings operation middleware
+func (sh *strictHandler) GetSystemSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetSystemSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSystemSettings(ctx, request.(GetSystemSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSystemSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSystemSettingsResponseObject); ok {
+		if err := validResponse.VisitGetSystemSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSystemSettings operation middleware
+func (sh *strictHandler) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
+	var request UpdateSystemSettingsRequestObject
+
+	var body UpdateSystemSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateSystemSettings(ctx, request.(UpdateSystemSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSystemSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateSystemSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateSystemSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

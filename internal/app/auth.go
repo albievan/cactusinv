@@ -51,7 +51,11 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, ti
 		return "", time.Time{}, wrap("app.Login", err)
 	}
 	now := s.now()
-	sess := domain.Session{TokenHash: HashToken(token), UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(s.ttl)}
+	sys, err := s.systemSettings(ctx, s.tx.Repos())
+	if err != nil {
+		return "", time.Time{}, wrap("app.Login", err)
+	}
+	sess := domain.Session{TokenHash: HashToken(token), UserID: u.ID, CreatedAt: now, ExpiresAt: now.Add(sys.SessionMax)}
 	err = s.tx.WithinTx(WithActor(ctx, Actor{ID: u.ID, Name: u.Email}), func(ctx context.Context, r ports.Repos) error {
 		// The password was checked outside the transaction. Lock the user and make sure it
 		// still holds: a password change, reset or disable that committed meanwhile has
@@ -80,6 +84,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, ti
 	return token, sess.ExpiresAt, nil
 }
 
+// sessionTouchEvery is how often a session's last use is written (an idle timeout is at
+// least 5 minutes, so a minute's lag never matters).
+const sessionTouchEvery = time.Minute
+
 // errLoginRaced means the user's password or state changed between checking the password
 // and starting the session.
 var errLoginRaced = errors.New("sign-in raced a change to the user")
@@ -98,12 +106,31 @@ func (s *Service) Authenticate(ctx context.Context, token string) (domain.User, 
 		return domain.User{}, domain.ErrUnauthenticated
 	}
 	r := s.tx.Repos()
-	sess, err := r.Sessions.Get(ctx, HashToken(token))
-	if errors.Is(err, domain.ErrNotFound) || (err == nil && !sess.ExpiresAt.After(s.now())) {
+	hash := HashToken(token)
+	sess, err := r.Sessions.Get(ctx, hash)
+	if errors.Is(err, domain.ErrNotFound) {
 		return domain.User{}, domain.ErrUnauthenticated
 	}
 	if err != nil {
 		return domain.User{}, wrap("app.Authenticate", err)
+	}
+	// The timeouts in System Settings apply to every session, also those started before
+	// they were changed (ADR-011 amendment, M23).
+	sys, err := s.systemSettings(ctx, r)
+	if err != nil {
+		return domain.User{}, wrap("app.Authenticate", err)
+	}
+	now := s.now()
+	if !sys.SessionAlive(sess, now) {
+		_ = r.Sessions.Delete(ctx, hash)
+		return domain.User{}, domain.ErrUnauthenticated
+	}
+	// Record use, at most once a minute per session, also without an idle timeout: one set
+	// later must not sign out everyone who was active.
+	if now.Sub(sess.LastSeenAt) >= sessionTouchEvery {
+		if err := r.Sessions.Touch(ctx, hash, now); err != nil {
+			return domain.User{}, wrap("app.Authenticate", err)
+		}
 	}
 	u, err := r.Users.Get(ctx, sess.UserID)
 	if errors.Is(err, domain.ErrNotFound) || (err == nil && !u.Active()) {

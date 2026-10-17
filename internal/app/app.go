@@ -33,6 +33,22 @@ type Deps struct {
 	// business profile is first saved, so schedules do not silently run in UTC. Empty or
 	// unknown means UTC.
 	TimeZone string
+	// Deployment says how the installation was deployed and which host folders are mapped
+	// now (System Settings shows them; set by deploy.sh).
+	Deployment Deployment
+}
+
+// Deployment describes the running deployment's folder mapping.
+type Deployment struct {
+	// Target is dockerdesktop, k3s or k8s ("" when unknown, e.g. a binary run by hand).
+	Target string
+	// ProjectDir is the host project folder that ./ folders are relative to (Docker).
+	ProjectDir string
+	// BackupDir and InvoicesDir are the folders inside the container.
+	BackupDir, InvoicesDir string
+	// BackupHostDir and InvoicesHostDir are the host folders mapped to them now (Docker
+	// only; "" on Kubernetes, where they are volume claims).
+	BackupHostDir, InvoicesHostDir string
 }
 
 // Service exposes every use case. It is safe for concurrent use.
@@ -49,6 +65,7 @@ type Service struct {
 	ttl      time.Duration
 	backups  BackupDeps
 	zone     string
+	deploy   Deployment
 	// backupSlot admits one backup or restore operation at a time.
 	backupSlot chan struct{}
 	// exportRetry holds invoices whose archive export failed, until when they are skipped,
@@ -68,7 +85,7 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
-		backups: d.Backups, zone: d.TimeZone, backupSlot: make(chan struct{}, 1),
+		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, backupSlot: make(chan struct{}, 1),
 	}
 }
 

@@ -287,10 +287,11 @@ type ScheduleRun struct {
 }
 
 type Session struct {
-	TokenHash string
-	UserID    string
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	TokenHash  string
+	UserID     string
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
+	LastSeenAt sql.NullTime
 }
 
 type SmtpSetting struct {
@@ -304,6 +305,16 @@ type SmtpSetting struct {
 	TlsMode     string
 	Version     int32
 	UpdatedAt   time.Time
+}
+
+type SystemSetting struct {
+	ID                 int8
+	SessionIdleMinutes int32
+	SessionMaxMinutes  int32
+	BackupHostDir      string
+	InvoicesHostDir    string
+	Version            int32
+	UpdatedAt          time.Time
 }
 
 type SystemState struct {

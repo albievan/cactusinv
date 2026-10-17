@@ -71,6 +71,7 @@ type state struct {
 	idempotency map[string]ports.IdempotencyRecord
 	exported    map[string]int
 	smtp        *domain.SMTPSettings
+	sysSettings *domain.SystemSettings
 	smtpPass    []byte
 	system      domain.SystemState
 	backupRuns  []domain.BackupRun
@@ -145,7 +146,7 @@ func (s *Store) Repos() ports.Repos {
 		Business: business{s}, Currencies: currencies{s}, Banks: banks{s}, Customers: customers{s},
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
 		Emails: emails{s}, Users: users{s}, Groups: groups{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
-		System: systemStore{s}, BackupRuns: backupRuns{s},
+		System: systemStore{s}, BackupRuns: backupRuns{s}, SystemSettings: systemSettingsStore{s},
 	}
 }
 
@@ -1263,6 +1264,16 @@ func (r sessions) Get(_ context.Context, tokenHash string) (domain.Session, erro
 	return out, err
 }
 
+func (r sessions) Touch(_ context.Context, tokenHash string, at time.Time) error {
+	return r.s.do(func(st *state) error {
+		if s, ok := st.sessions[tokenHash]; ok {
+			s.LastSeenAt = at
+			st.sessions[tokenHash] = s
+		}
+		return nil
+	})
+}
+
 func (r sessions) Delete(_ context.Context, tokenHash string) error {
 	return r.s.do(func(st *state) error {
 		delete(st.sessions, tokenHash)
@@ -1392,6 +1403,37 @@ func (r smtpStore) Save(_ context.Context, s domain.SMTPSettings, passwordEnc []
 		}
 		s.Version++
 		st.smtp, st.smtpPass = &s, slices.Clone(passwordEnc)
+		return nil
+	})
+}
+
+// ---- system settings ----
+
+type systemSettingsStore struct{ s *Store }
+
+func (r systemSettingsStore) Get(_ context.Context) (domain.SystemSettings, error) {
+	var out domain.SystemSettings
+	err := r.s.do(func(st *state) error {
+		if st.sysSettings == nil {
+			return domain.ErrNotFound
+		}
+		out = *st.sysSettings
+		return nil
+	})
+	return out, err
+}
+
+func (r systemSettingsStore) Save(_ context.Context, s domain.SystemSettings) error {
+	return r.s.do(func(st *state) error {
+		cur := 0
+		if st.sysSettings != nil {
+			cur = st.sysSettings.Version
+		}
+		if cur != s.Version {
+			return domain.ErrConflict
+		}
+		s.Version++
+		st.sysSettings = &s
 		return nil
 	})
 }

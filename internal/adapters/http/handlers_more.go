@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/app"
 	"github.com/albievan/cactusinv/internal/domain"
@@ -217,4 +218,38 @@ func (h *handlers) SendStatements(ctx context.Context, req SendStatementsRequest
 		}
 	}
 	return out, nil
+}
+
+// ---- system settings ----
+
+func toAPISystemSettings(v app.SystemView) SystemSettings {
+	s, d := v.Settings, v.Deployment
+	return SystemSettings{
+		SessionIdleMinutes: int(s.SessionIdle / time.Minute), SessionMaxHours: int((s.SessionMax + time.Hour - 1) / time.Hour),
+		BackupHostDir: s.BackupHostDir, InvoicesHostDir: s.InvoicesHostDir, Version: s.Version,
+		Deployment: DeploymentInfo{
+			Target: d.Target, BackupDir: d.BackupDir, InvoicesDir: d.InvoicesDir, BackupHostDir: d.BackupHostDir, InvoicesHostDir: d.InvoicesHostDir,
+		},
+		PendingFolders: v.PendingFolders(),
+	}
+}
+
+func (h *handlers) GetSystemSettings(ctx context.Context, _ GetSystemSettingsRequestObject) (GetSystemSettingsResponseObject, error) {
+	v, err := h.svc.GetSystemSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return GetSystemSettings200JSONResponse(toAPISystemSettings(v)), nil
+}
+
+func (h *handlers) UpdateSystemSettings(ctx context.Context, req UpdateSystemSettingsRequestObject) (UpdateSystemSettingsResponseObject, error) {
+	b := req.Body
+	v, err := h.svc.UpdateSystemSettings(ctx, domain.SystemSettings{
+		SessionIdle: time.Duration(b.SessionIdleMinutes) * time.Minute, SessionMax: time.Duration(b.SessionMaxHours) * time.Hour,
+		BackupHostDir: b.BackupHostDir, InvoicesHostDir: b.InvoicesHostDir, Version: b.Version,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return UpdateSystemSettings200JSONResponse(toAPISystemSettings(v)), nil
 }

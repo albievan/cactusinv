@@ -57,6 +57,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$ACTION" ]] || usage 1
 [[ -n "$TARGET" ]] || die "choose a target: --dockerdesktop, --k3s or --k8s"
+export TARGET # the k8s manifest names it (System Settings)
 
 # ---------------------------------------------------------------------------------------
 # .env — parsed line by line (KEY=value, optional quotes), never executed.
@@ -73,6 +74,8 @@ load_env() {
     [[ -n "${!key+x}" ]] || export "$key=$val"
   done <.env
 }
+# Folders set in the environment win over System Settings, as over .env.
+EXPLICIT_BACKUP_DIR="${BACKUP_DIR+x}" EXPLICIT_INVOICES_DIR="${INVOICES_DIR+x}"
 load_env
 
 # Names that end up in SQL (database, user) are restricted to plain identifiers.
@@ -187,8 +190,67 @@ docker_preflight() {
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
 }
 
+# abs_dir resolves a folder relative to the project folder.
+abs_dir() { case "$1" in /*) printf '%s' "${1%/}" ;; *) printf '%s/%s' "$ROOT" "${1#./}" ;; esac; }
+
+# mounted_dir prints the host folder the running app has mounted at a container path.
+mounted_dir() {
+  local id
+  id="$(compose ps -q app 2>/dev/null || true)"
+  [[ -n "$id" ]] || return 0
+  docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$1\"}}{{.Source}}{{end}}{{end}}" "$id" 2>/dev/null || true
+}
+
+# move_folder copies a mapped folder's files to its new host folder when that is empty, so
+# the backups and invoice PDFs move with the mapping. The old folder is left as it is.
+move_folder() {
+  local old="$1" new="$2"
+  [[ -n "$old" && "$old" != "$new" && -d "$old" ]] || return 0
+  mkdir -p "$new"
+  if [[ -n "$(ls -A "$new" 2>/dev/null)" ]]; then
+    info "$new already holds files: nothing copied from $old (left as it is)"
+  elif [[ -n "$(ls -A "$old" 2>/dev/null)" ]]; then
+    info "copying $old to $new (the old folder is left as it is)"
+    cp -Rp "$old/." "$new/" || warn "could not copy $old to $new (permissions?): copy it yourself, e.g. with sudo cp -Rp"
+  fi
+}
+
+# apply_folder_mappings uses the host folders set in System Settings (cactusinv system
+# folders) for BACKUP_DIR and INVOICES_DIR, unless they are set in the environment. Before
+# the first install there is nothing to read, so .env applies.
+apply_folder_mappings() {
+  local id lines line key val dest
+  id="$(compose ps -q app 2>/dev/null || true)"
+  [[ -n "$id" ]] || return 0
+  if ! lines="$(compose exec -T app /cactusinv system folders </dev/null 2>/dev/null)"; then
+    warn "could not read the folder mappings from System Settings; using .env"
+    return 0
+  fi
+  while IFS= read -r line; do
+    # The same rule as the app (domain.ValidateHostDir): absolute or ./relative, no
+    # characters Compose or a shell reads specially, no "..".
+    [[ "$line" =~ ^(BACKUP_DIR|INVOICES_DIR)=((/|\./)[^:\$\"\'\`\\]*)$ ]] || continue
+    key="${BASH_REMATCH[1]}" val="${BASH_REMATCH[2]}"
+    [[ "/$val/" == */../* ]] && continue
+    if [[ "$key" == BACKUP_DIR && -n "$EXPLICIT_BACKUP_DIR" ]] || [[ "$key" == INVOICES_DIR && -n "$EXPLICIT_INVOICES_DIR" ]]; then
+      info "$key is set in the environment; System Settings' $val is not used"
+      continue
+    fi
+    dest=/data/backups
+    [[ "$key" == INVOICES_DIR ]] && dest=/data/invoices
+    info "System Settings map $dest to $val"
+    move_folder "$(mounted_dir "$dest")" "$(abs_dir "$val")"
+    export "$key=$val"
+  done <<<"$lines"
+}
+
 docker_install() {
   docker_preflight
+  apply_folder_mappings
+  # The app shows the folders mapped now (System Settings).
+  export CACTUSINV_DEPLOY_TARGET=dockerdesktop CACTUSINV_HOST_PROJECT_DIR="$ROOT"
+  CACTUSINV_HOST_BACKUP_DIR="$(abs_dir "$BACKUP_DIR")" CACTUSINV_HOST_INVOICES_DIR="$(abs_dir "$INVOICES_DIR")"
+  export CACTUSINV_HOST_BACKUP_DIR CACTUSINV_HOST_INVOICES_DIR
   mkdir -p "$MARIADB_DATA_DIR" "$INVOICES_DIR" "$BACKUP_DIR"
   ensure_secrets_dir
   info "building cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"

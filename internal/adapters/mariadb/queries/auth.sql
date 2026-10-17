@@ -65,3 +65,6 @@ DELETE FROM sessions;
 
 -- name: DeleteAllIdempotencyKeys :exec
 DELETE FROM idempotency_keys;
+
+-- name: TouchSession :exec
+UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?;

@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -92,6 +93,8 @@ func run(args []string) error {
 		return mariadb.Migrate(ctx, db, args[1] == "down")
 	case "admin":
 		return adminCommand(ctx, cfg, args[1:])
+	case "system":
+		return systemCommand(ctx, cfg, args[1:], os.Stdout)
 	case "backup":
 		st, _ := os.Stdin.Stat()
 		return backupCommand(ctx, cfg, args[1:], os.Stdin, os.Stdout, st != nil && st.Mode()&os.ModeCharDevice != 0)
@@ -138,6 +141,10 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
 		Hasher: argon2.New(argon2.DefaultConcurrency), Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
 		TimeZone: cfg.BackupLocation.String(),
+		Deployment: app.Deployment{
+			Target: cfg.DeployTarget, BackupDir: cfg.BackupDir, InvoicesDir: cfg.InvoicesDir,
+			ProjectDir: cfg.HostProjectDir, BackupHostDir: cfg.HostBackupDir, InvoicesHostDir: cfg.HostInvoicesDir,
+		},
 	}
 	dc, err := dbConfig(ctx, cfg)
 	if err != nil {
@@ -304,6 +311,37 @@ func adminCommand(ctx context.Context, cfg config, args []string) error {
 		return err
 	}
 	return svc.SetPassword(ctx, args[1], pw)
+}
+
+// systemCommand is `cactusinv system folders`: the host folders System Settings map to the
+// container's folders, one KEY=value line each (BACKUP_DIR, INVOICES_DIR; only those set),
+// for deploy.sh --install.
+func systemCommand(ctx context.Context, cfg config, args []string, out io.Writer) error {
+	if len(args) != 1 || args[0] != "folders" {
+		return errors.New("usage: cactusinv system folders")
+	}
+	db, err := openDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	svc, closeSvc, err := newService(ctx, cfg, db, newLogger("error"))
+	if err != nil {
+		return err
+	}
+	defer closeSvc()
+	m, err := svc.FolderMappings(ctx)
+	if err != nil {
+		return err
+	}
+	for _, k := range []string{"BACKUP_DIR", "INVOICES_DIR"} {
+		if v, ok := m[k]; ok {
+			if _, err := fmt.Fprintf(out, "%s=%s\n", k, v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func healthcheck() error {

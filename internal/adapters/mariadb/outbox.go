@@ -217,7 +217,15 @@ func (r sessionRepo) Get(ctx context.Context, tokenHash string) (domain.Session,
 	if err != nil {
 		return domain.Session{}, mapErr(err)
 	}
-	return domain.Session{TokenHash: s.TokenHash, UserID: s.UserID, ExpiresAt: s.ExpiresAt.UTC(), CreatedAt: s.CreatedAt.UTC()}, nil
+	out := domain.Session{TokenHash: s.TokenHash, UserID: s.UserID, ExpiresAt: s.ExpiresAt.UTC(), CreatedAt: s.CreatedAt.UTC()}
+	if s.LastSeenAt.Valid {
+		out.LastSeenAt = s.LastSeenAt.Time.UTC()
+	}
+	return out, nil
+}
+
+func (r sessionRepo) Touch(ctx context.Context, tokenHash string, at time.Time) error {
+	return mapErr(r.q.TouchSession(ctx, sqlcgen.TouchSessionParams{LastSeenAt: sql.NullTime{Time: at.UTC(), Valid: true}, TokenHash: tokenHash}))
 }
 
 func (r sessionRepo) Delete(ctx context.Context, tokenHash string) error {

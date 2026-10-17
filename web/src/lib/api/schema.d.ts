@@ -137,6 +137,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSystemSettings"];
+        /** @description The session timeouts apply at once to every session. A folder mapping is used by the next ./deploy.sh --install (Docker); "" keeps the deployment's folder (.env). */
+        put: operations["updateSystemSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/export": {
         parameters: {
             query?: never;
@@ -1335,6 +1352,31 @@ export interface components {
             nextSequence: number;
             version: number;
         };
+        SystemSettings: {
+            /** @description Sign out after this many minutes without activity; 0 = never. */
+            sessionIdleMinutes: number;
+            /** @description A sign-in ends this many hours after it started. */
+            sessionMaxHours: number;
+            /** @description Host folder mapped to the backups folder ("" = the deployment's, .env BACKUP_DIR). */
+            backupHostDir: string;
+            /** @description Host folder mapped to the invoice export folder ("" = .env INVOICES_DIR). */
+            invoicesHostDir: string;
+            version: number;
+            deployment: components["schemas"]["DeploymentInfo"];
+            /** @description A saved mapping differs from what is mounted now (redeploy to apply). */
+            readonly pendingFolders: boolean;
+        };
+        DeploymentInfo: {
+            /** @description dockerdesktop, k3s, k8s, or "" when unknown. */
+            target: string;
+            /** @description The backups folder inside the container. */
+            backupDir: string;
+            /** @description The invoice export folder inside the container. */
+            invoicesDir: string;
+            /** @description The host folder mapped to it now ("" on Kubernetes). */
+            backupHostDir: string;
+            invoicesHostDir: string;
+        };
         /** @description A settings file (Settings → Import/Export). Every section is optional. */
         SettingsFile: {
             /** @enum {string} */
@@ -2217,6 +2259,52 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSystemSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description System Settings and the folders mapped now. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSystemSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemSettings"];
+                };
             };
             default: components["responses"]["Problem"];
         };

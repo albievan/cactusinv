@@ -74,6 +74,11 @@ Released into the public domain — see [LICENSE](LICENSE).
   unchanged, per section you choose), then applied all or nothing. It never deletes, new
   schedules arrive paused, the next invoice number only moves forward, and the e-mail server
   password is never in the file.
+- **System Settings** — Settings → System Settings (administrators): sign users out after a
+  time without activity and end every sign-in after a maximum time (applies at once), and map
+  the container's backup and invoice export folders to host folders, e.g. a NAS share. A new
+  mapping is used by the next `./deploy.sh --install --dockerdesktop`, which copies the
+  existing files into an empty new folder. On Kubernetes the folders are volume claims.
 - **Users and access groups** — Settings → Users & groups: add users, reset a password,
   disable and enable; create groups, choose what each group may do — each action on its own
   (e.g. add customers but not edit or delete them; create invoices but not edit, issue or

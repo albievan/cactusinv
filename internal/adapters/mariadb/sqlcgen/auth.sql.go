@@ -126,7 +126,7 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, idemKey string) (Idempo
 }
 
 const getSession = `-- name: GetSession :one
-SELECT token_hash, user_id, expires_at, created_at FROM sessions WHERE token_hash = ?
+SELECT token_hash, user_id, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = ?
 `
 
 func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, error) {
@@ -137,6 +137,7 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 		&i.UserID,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.LastSeenAt,
 	)
 	return i, err
 }
@@ -344,6 +345,20 @@ func (q *Queries) SetUserDisabled(ctx context.Context, arg SetUserDisabledParams
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?
+`
+
+type TouchSessionParams struct {
+	LastSeenAt sql.NullTime
+	TokenHash  string
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.ExecContext(ctx, touchSession, arg.LastSeenAt, arg.TokenHash)
+	return err
 }
 
 const touchUserLogin = `-- name: TouchUserLogin :execrows

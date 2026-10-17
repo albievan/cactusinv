@@ -41,10 +41,11 @@ func (u User) Active() bool { return u.DisabledAt.IsZero() }
 
 // Session is a signed-in browser session; only a hash of its token is stored.
 type Session struct {
-	TokenHash string
-	UserID    string
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	TokenHash  string
+	UserID     string
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
+	LastSeenAt time.Time // zero: not used since it started
 }
 
 // ValidateNewLogin checks the login of a user being added and returns it trimmed: one

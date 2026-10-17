@@ -38,7 +38,7 @@ const (
 
 // backupExcluded are the tables never written to a backup: transient or local to one
 // installation (ADR-010). Every other base table is exported.
-var backupExcluded = []string{"sessions", "idempotency_keys", "goose_db_version", "audit_head", "system_state", "backup_runs"}
+var backupExcluded = []string{"sessions", "idempotency_keys", "goose_db_version", "audit_head", "system_state", "backup_runs", "system_settings"}
 
 // BackupExcludedTables returns the tables a backup never contains.
 func BackupExcludedTables() []string { return slices.Clone(backupExcluded) }

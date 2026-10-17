@@ -47,6 +47,16 @@ type Repos struct {
 	Audit       AuditRepository
 	System      SystemRepository
 	BackupRuns  BackupRunRepository
+	// SystemSettings are the installation's own settings (System Settings, M23).
+	SystemSettings SystemSettingsRepository
+}
+
+// SystemSettingsRepository stores the single System Settings row (never backed up).
+type SystemSettingsRepository interface {
+	// Get returns the settings, or ErrNotFound before they were first saved.
+	Get(ctx context.Context) (domain.SystemSettings, error)
+	// Save inserts (Version 0) or updates; Version must match.
+	Save(ctx context.Context, s domain.SystemSettings) error
 }
 
 // SystemRepository stores the installation's single state row (never backed up or
@@ -392,6 +402,8 @@ type SessionRepository interface {
 	Create(ctx context.Context, s domain.Session) error
 	Get(ctx context.Context, tokenHash string) (domain.Session, error)
 	Delete(ctx context.Context, tokenHash string) error
+	// Touch records that the session was used at at (for the idle timeout).
+	Touch(ctx context.Context, tokenHash string, at time.Time) error
 	DeleteExpired(ctx context.Context, now time.Time) error
 	// DeleteAll signs everybody out (after a restore).
 	DeleteAll(ctx context.Context) error

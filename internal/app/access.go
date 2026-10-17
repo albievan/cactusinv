@@ -63,6 +63,8 @@ var operationAccess = map[string][]domain.Permission{
 	// A settings file holds every customer's contact details and the bank account numbers,
 	// and an import changes all the settings at once: administrators only, like backups.
 	"exportsettings": {domain.PermAdminister}, "importsettings": {domain.PermAdminister},
+	// Session timeouts and host folders are the installation's: administrators only.
+	"getsystemsettings": {domain.PermAdminister}, "updatesystemsettings": {domain.PermAdminister},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).
