@@ -133,7 +133,16 @@ need root); the image is imported for the node's CPU without attestation manifes
 on the node, and run with `imagePullPolicy: Never`. If a rollout is not ready within five
 minutes the script prints the pods, their events and the last log lines before it stops.
 A volume claim that already exists keeps its size (claims cannot shrink); the `K8S_*_STORAGE`
-sizes apply to new installs.
+sizes apply to new installs. Pods do not mount a Kubernetes service-account token (none of
+them uses the API; on k3s the token's mount point would fall inside the read-only
+`/run/secrets` volume and MariaDB would not start).
+
+After a first install on k3s/k8s, sign in with `admin` / `admin` (you are asked to change it)
+and copy the generated backup key off the cluster:
+
+```
+kubectl -n cactusinv get secret cactusinv-secrets -o jsonpath='{.data.backup_key}' | base64 -d
+```
 
 On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Mailpit on
 `K8S_MAILPIT_NODE_PORT` (30025). The app's Service uses `externalTrafficPolicy: Local`, so

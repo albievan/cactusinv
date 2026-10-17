@@ -323,6 +323,7 @@ classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in 
 | Secrets | files in `${SECRETS_DIR}` (generated) | Secret `cactusinv-secrets` (generated in-cluster) |
 | Remote | `--ssh-access user@host` copies the project and runs it there | `--ssh-access` runs `kubectl`/`k3s ctr` over SSH |
 | Uninstall | `--uninstall` keeps data; `--delete-uninstall` removes it | same; delete removes the namespace |
+| Pods | — | no service-account token (`automountServiceAccountToken: false`); k3s: `imagePullPolicy: Never`; existing claims keep their size (ADR-007 amendment) |
 
 ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning.
 

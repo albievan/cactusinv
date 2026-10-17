@@ -36,3 +36,22 @@ volume is ReadWriteOnce; with a ReadWriteMany class it can scale out.
   audit trail.
 - `--install` creates the staging database `<db>_restore` and grants it to the app user
   (idempotent, with the root secret), and generates the `backup_key` secret (ADR-006).
+
+## Amendment — k3s pods and volume claims (2026-10-16, M20)
+- **No pod mounts the service-account token** (`automountServiceAccountToken: false` on
+  every pod spec). None of them calls the Kubernetes API, and the token's mount point
+  `/var/run/secrets/kubernetes.io/serviceaccount` lies inside our read-only secrets volume at
+  `/run/secrets` (`/var/run` is `/run`): runc could not create it and MariaDB never started on
+  k3s (`mkdirat …/run/secrets/kubernetes.io: read-only file system`). Docker Compose has no
+  token, so it never showed there. Moving our secrets elsewhere would have changed every
+  `*_FILE` path and the app's `CACTUSINV_SECRETS_DIR`; dropping a credential nobody uses is
+  also the smaller attack surface.
+- **On k3s the image is imported, never pulled**: built without provenance/SBOM manifests,
+  `docker save --platform linux/<node arch>`, imported with `k3s ctr` (root or `sudo -n`),
+  checked on the node, and run with `imagePullPolicy: Never` (k8s: `IfNotPresent`).
+- **An existing volume claim keeps its size.** A claim cannot shrink, so `deploy.sh` reads
+  the current request of `mariadb-data`, `invoices` and `backups` and renders that instead of
+  `K8S_*_STORAGE`; the `.env` sizes apply to new installs (grow a claim by hand where the
+  storage class allows it).
+- A rollout not ready within five minutes prints pods, claims, events and the current and
+  previous container logs before the script stops.
