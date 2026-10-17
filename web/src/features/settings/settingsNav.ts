@@ -9,8 +9,8 @@ export type SettingsItem = {
   label: string
   hint: string
   icon: ComponentType<SVGProps<SVGSVGElement>>
-  /** The permission that shows it (ADR-012); none = every signed-in user. */
-  need?: string
+  /** The permission that shows it, or any one of several (ADR-012); none = every signed-in user. */
+  need?: string | string[]
 }
 
 /**
@@ -19,11 +19,11 @@ export type SettingsItem = {
  * new page is one entry here plus its route in App.tsx.
  */
 export const settingsNav: SettingsItem[] = [
-  { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding, need: 'settings.view' },
-  { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer, need: 'settings.view' },
-  { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.view' },
-  { path: 'import-export', label: 'Import/Export Settings', hint: 'Customers, currencies, bank accounts, business and e-mail server as a JSON file', icon: IconTransfer, need: 'administer' },
-  { path: 'system', label: 'System Settings', hint: 'Session timeouts and the folders for backups and the invoice export', icon: IconSettings, need: 'administer' },
+  { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding, need: 'settings.business.view' },
+  { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer, need: 'settings.email.view' },
+  { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.currencies.view' },
+  { path: 'import-export', label: 'Import/Export Settings', hint: 'Customers, products, schedules and the settings as one file', icon: IconTransfer, need: ['settings.export', 'settings.import'] },
+  { path: 'system', label: 'System Settings', hint: 'Session timeouts and the folders for backups and the invoice export', icon: IconSettings, need: 'settings.system.view' },
   { path: 'users', label: 'Users & groups', hint: 'Who can sign in and what each group may do', icon: IconUser, need: 'administer' },
   { path: 'backup', label: 'Backup & restore', hint: 'Encrypted backups, downloads, and restoring from a file', icon: IconArchive, need: 'administer' },
   { path: 'account', label: 'Your account', hint: 'Your password', icon: IconShield },

@@ -20,7 +20,7 @@ import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
 
 export function AppRoutes() {
-  const need = (p: string, el: JSX.Element) => <RequireAccess need={p}>{el}</RequireAccess>
+  const need = (p: string | string[], el: JSX.Element) => <RequireAccess need={p}>{el}</RequireAccess>
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -46,11 +46,11 @@ export function AppRoutes() {
         <Route path="more" element={<More />} />
         <Route path="settings">
           <Route index element={<SettingsHome />} />
-          <Route path="business" element={need('settings.view', <BusinessSettingsPage />)} />
-          <Route path="email" element={need('settings.view', <EmailSettingsPage />)} />
-          <Route path="currencies" element={need('settings.view', <CurrencySettingsPage />)} />
-          <Route path="import-export" element={need('administer', <ImportExportSettingsPage />)} />
-          <Route path="system" element={need('administer', <SystemSettingsPage />)} />
+          <Route path="business" element={need('settings.business.view', <BusinessSettingsPage />)} />
+          <Route path="email" element={need('settings.email.view', <EmailSettingsPage />)} />
+          <Route path="currencies" element={need('settings.currencies.view', <CurrencySettingsPage />)} />
+          <Route path="import-export" element={need(['settings.export', 'settings.import'], <ImportExportSettingsPage />)} />
+          <Route path="system" element={need('settings.system.view', <SystemSettingsPage />)} />
           <Route path="users" element={need('administer', <UsersSettingsPage />)} />
           <Route path="backup" element={need('administer', <BackupSettingsPage />)} />
           <Route path="account" element={<AccountSettingsPage />} />

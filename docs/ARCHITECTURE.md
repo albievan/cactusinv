@@ -466,8 +466,8 @@ sections?}` move a **settings file** (JSON, `format: cactusinv-settings`, `forma
 between installations: business profile with the next sequence, e-mail server, currencies,
 bank accounts, products, customers and schedules, in the API's own schemas. A schedule is a
 `SettingsSchedule`: its customer by code, its lines' products by SKU, and the currency its unit
-prices are in. Administrators only (the file holds customer contact details and account
-numbers). Both routes carry a passphrase, so they skip Idempotency-Key; importing a file twice
+prices are in. `settings.export` / `settings.import` (M24); an import also needs each action's
+permission for what it adds or changes. Both routes carry a passphrase, so they skip Idempotency-Key; importing a file twice
 changes nothing more.
 
 - **Protection**: with a passphrase the file holds only `encrypted`, the base64 of the plain
@@ -492,7 +492,7 @@ changes nothing more.
 
 ## 17. System Settings (M23)
 
-One `system_settings` row (migration 00021), never backed up or restored (`backupExcluded`):
+`settings.system.view` / `.edit` (M24). One `system_settings` row (migration 00021), never backed up or restored (`backupExcluded`):
 the session timeouts and the host folders mapped to the container's folders.
 
 - **Sessions**: a sign-in expires after `SessionMax` (default 7 days). Every request checks

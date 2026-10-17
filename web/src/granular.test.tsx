@@ -97,3 +97,28 @@ test('time zones are picked from a list, the device zone first', () => {
   expect(options).toContain('Africa/Johannesburg')
   expect(new Set(options).size).toBe(options.length)
 })
+
+test('settings permissions are per page and per action (M24)', async () => {
+  const bank = {
+    id: 'b1', currency: 'ZAR', label: 'Main', bankName: 'FNB', branch: '', branchCode: '', accountName: '', accountNumber: '62000000001',
+    accountType: '', swiftBic: '', iban: '', country: '', isDefault: true, active: true, version: 1,
+  }
+  as(['settings.currencies.view', 'settings.banks.view', 'settings.banks.edit'], { 'GET /api/v1/bank-accounts': json({ items: [bank] }) })
+  window.history.pushState({}, '', '/settings/currencies')
+  const { unmount } = render(<App />)
+  const row = await screen.findByRole('button', { name: /Main · FNB · 62000000001/ })
+  // Only the pages it allows are in the menu.
+  expect(screen.queryByRole('link', { name: /^Business/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '+ Currency' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '+ Bank' })).not.toBeInTheDocument()
+  row.click()
+  expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+  unmount()
+
+  // Seeing currencies is not seeing their bank accounts.
+  as(['settings.currencies.view'], { 'GET /api/v1/bank-accounts': json({ items: [bank] }) })
+  render(<App />)
+  expect(await screen.findByText('ZAR')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Main · FNB/ })).not.toBeInTheDocument()
+})

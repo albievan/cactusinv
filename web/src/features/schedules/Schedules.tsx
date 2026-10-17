@@ -81,11 +81,9 @@ function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; ac
   return (
     <div className="flex flex-nowrap items-center gap-1" role="group" aria-label={`Actions for ${s.name}`}>
       <Can need="schedules.edit"><IconAction icon={IconEdit} label={`Edit ${s.name}`} title="Edit" to={`/schedules/${s.id}/edit`} /></Can>
-      <Can need="schedules.pause">
       {s.status === 'paused'
-        ? <IconAction icon={IconPlay} label={`Resume ${s.name}`} title="Resume" onClick={() => act(s, 'resume')} disabled={busy} />
-        : <IconAction icon={IconPause} label={`Pause ${s.name}`} title="Pause" onClick={() => act(s, 'pause')} disabled={busy || s.status !== 'active'} />}
-      </Can>
+        ? <Can need="schedules.resume"><IconAction icon={IconPlay} label={`Resume ${s.name}`} title="Resume" onClick={() => act(s, 'resume')} disabled={busy} /></Can>
+        : <Can need="schedules.pause"><IconAction icon={IconPause} label={`Pause ${s.name}`} title="Pause" onClick={() => act(s, 'pause')} disabled={busy || s.status !== 'active'} /></Can>}
       <Can need="schedules.run"><IconAction icon={IconBolt} label={`Run ${s.name} now`} title="Run now" onClick={() => ask({ kind: 'run', s })} disabled={busy || s.status !== 'active'} /></Can>
       <Can need="schedules.delete"><IconAction icon={IconTrash} label={`Delete ${s.name}`} title="Delete" onClick={() => ask({ kind: 'delete', s })} disabled={busy} danger /></Can>
     </div>
@@ -230,7 +228,7 @@ export function ScheduleDetailPage() {
       <div className="mb-4 grid grid-cols-2 gap-2 empty:hidden md:flex">
         {can('schedules.edit') && <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>}
         {can('schedules.pause') && s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
-        {can('schedules.pause') && s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
+        {can('schedules.resume') && s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
         {can('schedules.run') && s.status === 'active' && (
           <ConfirmButton
             label="Run now"

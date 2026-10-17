@@ -3,6 +3,7 @@ import { api, unwrap, type Schemas } from '../../../lib/api/client'
 import { useAsync } from '../../../lib/useAsync'
 import { ErrorBanner, Field, Spinner } from '../../../components/ui'
 import { SettingsPage } from '../Settings'
+import { useCan } from '../../../components/auth'
 
 type System = Schemas['SystemSettings']
 
@@ -21,6 +22,7 @@ function deployCommand(target: string): string {
 }
 
 function SystemForm() {
+  const can = useCan()
   const loaded = useAsync(() => unwrap(api.GET('/settings/system')), [])
   const [s, setS] = useState<System | null>(null)
   const [err, setErr] = useState<Error | null>(null)
@@ -32,6 +34,7 @@ function SystemForm() {
 
   if (!s) return loaded.error ? <ErrorBanner error={loaded.error} /> : <Spinner />
   const d = s.deployment
+  const edit = can('settings.system.edit')
   const docker = d.target === 'dockerdesktop'
   const set = (patch: Partial<System>) => {
     setSaved('')
@@ -61,6 +64,7 @@ function SystemForm() {
 
   return (
     <form onSubmit={submit} className="space-y-4" aria-labelledby="system-heading">
+      <fieldset disabled={!edit} className="contents">
       <h2 id="system-heading" className="text-xl font-bold text-brand-900">
         System Settings
       </h2>
@@ -127,12 +131,15 @@ function SystemForm() {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <button className="btn-primary" disabled={busy}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        {saved && <p className="text-sm text-green-700">{saved}</p>}
-      </div>
+      </fieldset>
+      {edit && (
+        <div className="flex items-center gap-3">
+          <button className="btn-primary" disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {saved && <p className="text-sm text-green-700">{saved}</p>}
+        </div>
+      )}
     </form>
   )
 }

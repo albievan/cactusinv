@@ -67,14 +67,14 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
-- **Import/Export Settings** — Settings → Import/Export Settings (administrators): export the
+- **Import/Export Settings** — Settings → Import/Export Settings: export the
   business details, e-mail server, currencies, bank accounts, products, customers and schedules
   to one JSON file, protected with a passphrase unless you choose readable JSON, and import such a
   file into this or another installation. An import is checked first (what is new, changed or
   unchanged, per section you choose), then applied all or nothing. It never deletes, new
   schedules arrive paused, the next invoice number only moves forward, and the e-mail server
   password is never in the file.
-- **System Settings** — Settings → System Settings (administrators): sign users out after a
+- **System Settings** — Settings → System Settings: sign users out after a
   time without activity and end every sign-in after a maximum time (applies at once), and map
   the container's backup and invoice export folders to host folders, e.g. a NAS share. A new
   mapping is used by the next `./deploy.sh --install --dockerdesktop`, which copies the

@@ -91,7 +91,7 @@ func TestAccessFor(t *testing.T) {
 		}
 	}
 	admin := AccessFor([]Group{{ID: AdministratorsGroupID, Builtin: true}})
-	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsBanks) || len(admin.Permissions()) != len(Permissions) {
+	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsBanksDelete) || len(admin.Permissions()) != len(Permissions) {
 		t.Fatalf("administrators must have everything: %+v", admin)
 	}
 	if !slices.IsSorted(admin.Permissions()) {

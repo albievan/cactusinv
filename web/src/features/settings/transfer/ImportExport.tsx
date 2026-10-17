@@ -3,6 +3,7 @@ import { api, unwrap, type Schemas } from '../../../lib/api/client'
 import { formatDateTime } from '../../../lib/format'
 import { ErrorBanner, Field } from '../../../components/ui'
 import { SettingsPage } from '../Settings'
+import { Can } from '../../../components/Access'
 
 type SettingsFile = Schemas['SettingsFile']
 type Result = Schemas['SettingsImportResult']
@@ -78,8 +79,12 @@ export function ImportExportSettingsPage() {
           Move the business details, e-mail server, currencies, bank accounts, products, customers and schedules to another cactusInv as
           one file. Invoices are not included: a full copy is a backup (Settings → Backup & restore).
         </p>
-        <Export />
-        <Import />
+        <Can need="settings.export">
+          <Export />
+        </Can>
+        <Can need="settings.import">
+          <Import />
+        </Can>
       </section>
     </SettingsPage>
   )

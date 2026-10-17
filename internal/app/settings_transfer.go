@@ -201,6 +201,9 @@ func (s *Service) importCurrencies(ctx context.Context, r ports.Repos, in []doma
 		cur, ok := have[c.Code]
 		switch {
 		case !ok:
+			if err := allowed(ctx, "currencies", string(c.Code), domain.PermSettingsCurrenciesCreate); err != nil {
+				return err
+			}
 			if err := r.Currencies.Create(ctx, c); err != nil {
 				return err
 			}
@@ -213,6 +216,9 @@ func (s *Service) importCurrencies(ctx context.Context, r ports.Repos, in []doma
 		case cur == c:
 			res.Currencies.Unchanged++
 		default:
+			if err := allowed(ctx, "currencies", string(c.Code), domain.PermSettingsCurrenciesEdit); err != nil {
+				return err
+			}
 			if err := r.Currencies.Update(ctx, c); err != nil {
 				return err
 			}
@@ -290,6 +296,13 @@ func (s *Service) importBanks(ctx context.Context, r ports.Repos, in []domain.Ba
 			res.BankAccounts.Unchanged++
 			continue
 		}
+		need := domain.PermSettingsBanksCreate
+		if ok {
+			need = domain.PermSettingsBanksEdit
+		}
+		if err := allowed(ctx, "bankAccounts", key, need); err != nil {
+			return nil, err
+		}
 		if b.IsDefault {
 			if err := r.Banks.ClearDefault(ctx, b.Currency, b.ID); err != nil {
 				return nil, err
@@ -342,6 +355,9 @@ func (s *Service) importCustomers(ctx context.Context, r ports.Repos, in []domai
 		cur, ok := byCode[c.Code]
 		switch {
 		case !ok:
+			if err := allowed(ctx, "customers", c.Code, domain.PermCustomersCreate); err != nil {
+				return err
+			}
 			c.ID, c.Version = s.ids.NewID(), 0
 			if err := r.Customers.Create(ctx, c); err != nil {
 				return err
@@ -351,6 +367,9 @@ func (s *Service) importCustomers(ctx context.Context, r ports.Repos, in []domai
 		case sameCustomer(cur, c):
 			res.Customers.Unchanged++
 		default:
+			if err := allowed(ctx, "customers", c.Code, domain.PermCustomersEdit); err != nil {
+				return err
+			}
 			c.ID, c.Version = cur.ID, cur.Version
 			if err := r.Customers.Update(ctx, c); err != nil {
 				return err
@@ -387,8 +406,23 @@ func (s *Service) importBusiness(ctx context.Context, r ports.Repos, in *Busines
 	if err != nil {
 		return err
 	}
+	next, err := r.Sequences.Peek(ctx)
+	if err != nil {
+		return err
+	}
 	p.Version = cur.Version
-	changed := p != cur
+	changed, forward := p != cur, in.NextSequence > next
+	if !changed && !forward {
+		if in.NextSequence > 0 && in.NextSequence < next {
+			res.Warnings = append(res.Warnings, fmt.Sprintf(
+				"The next invoice sequence stays %d: the file has %d, and numbers already used are never given again.", next, in.NextSequence))
+		}
+		res.Business.Unchanged++
+		return nil
+	}
+	if err := allowed(ctx, "business", "", domain.PermSettingsBusiness); err != nil {
+		return err
+	}
 	if changed {
 		if err := r.Business.Save(ctx, p); err != nil {
 			return err
@@ -397,16 +431,11 @@ func (s *Service) importBusiness(ctx context.Context, r ports.Repos, in *Busines
 			return err
 		}
 	}
-	next, err := r.Sequences.Peek(ctx)
-	if err != nil {
-		return err
-	}
 	switch {
-	case in.NextSequence > next:
+	case forward:
 		if err := r.Sequences.Set(ctx, in.NextSequence); err != nil {
 			return err
 		}
-		changed = true
 		if err := s.audit(ctx, r, "settings.next_number_set", "settings", "business", fmt.Sprintf("next invoice sequence %d", in.NextSequence)); err != nil {
 			return err
 		}
@@ -414,11 +443,7 @@ func (s *Service) importBusiness(ctx context.Context, r ports.Repos, in *Busines
 		res.Warnings = append(res.Warnings, fmt.Sprintf(
 			"The next invoice sequence stays %d: the file has %d, and numbers already used are never given again.", next, in.NextSequence))
 	}
-	if changed {
-		res.Business.Updated++
-	} else {
-		res.Business.Unchanged++
-	}
+	res.Business.Updated++
 	return nil
 }
 
@@ -444,6 +469,9 @@ func (s *Service) importEmailServer(ctx context.Context, r ports.Repos, in *doma
 	if found && st == cur {
 		res.EmailServer.Unchanged++
 		return nil
+	}
+	if err := allowed(ctx, "emailServer", "", domain.PermSettingsEmail); err != nil {
+		return err
 	}
 	if err := r.SMTP.Save(ctx, st, enc); err != nil {
 		return err
@@ -484,12 +512,18 @@ func (s *Service) importProducts(ctx context.Context, r ports.Repos, in []domain
 				res.Products.Unchanged++
 				continue
 			}
+			if err := allowed(ctx, "products", p.SKU, domain.PermProductsEdit); err != nil {
+				return err
+			}
 			if err := r.Products.Update(ctx, p); err != nil {
 				return err
 			}
 			res.Products.Updated++
 			err = s.audit(ctx, r, "product.updated", "product", p.ID, p.SKU+" "+p.Name)
 		} else {
+			if err := allowed(ctx, "products", p.SKU, domain.PermProductsCreate); err != nil {
+				return err
+			}
 			p.ID, p.Version = s.ids.NewID(), 0
 			if err := r.Products.Create(ctx, p); err != nil {
 				return err
@@ -569,6 +603,9 @@ func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []Sched
 		}
 		cur, ok := byName[c.ID+"\x00"+sc.Name]
 		if !ok {
+			if err := allowed(ctx, "schedules", key, domain.PermSchedulesCreate); err != nil {
+				return err
+			}
 			sc.ID, sc.CreatedAt, sc.Version = s.ids.NewID(), s.now(), 0
 			sc.Recurrence.DefaultWeekendRule()
 			if err := s.createSchedule(ctx, r, &sc, true); err != nil {
@@ -591,6 +628,9 @@ func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []Sched
 		if sameDefinition(sc, cur) {
 			res.Schedules.Unchanged++
 			continue
+		}
+		if err := allowed(ctx, "schedules", key, domain.PermSchedulesEdit); err != nil {
+			return err
 		}
 		if err := s.editSchedule(ctx, r, &cur, &sc); err != nil {
 			return inItem("schedules", key, err)
@@ -741,6 +781,19 @@ func (s *Service) OpenSettings(sealed []byte, passphrase string) ([]byte, error)
 		return nil, wrap("app.OpenSettings", &domain.ValidationError{Field: "file", Reason: "is too large"})
 	}
 	return plain, nil
+}
+
+// allowed refuses an import step the signed-in user could not do by hand: a settings
+// import never grants more than the user's own permissions (M24).
+func allowed(ctx context.Context, section, key string, p domain.Permission) error {
+	if ActorFrom(ctx).Can(p) {
+		return nil
+	}
+	field := section
+	if key != "" {
+		field += "[" + key + "]"
+	}
+	return &domain.ValidationError{Field: field, Reason: "your groups do not allow this: " + p.Label() + " (" + string(p) + ")"}
 }
 
 // allCustomers reads every customer, active or not, a page at a time.

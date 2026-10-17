@@ -258,12 +258,12 @@ function EmailServer() {
       </div>
       <div className="flex flex-wrap items-end gap-3 border-t border-cream-200 pt-4">
         <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="input md:w-72" value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
-        {can('settings.email') && (
+        {can('settings.email.test') && (
           <button type="button" className="btn-secondary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
             Send test e-mail
           </button>
         )}
-        {can('settings.email') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
+        {can('settings.email.test') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
         <span className="flex-1" />
         {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
         {can('settings.email') && <button className="btn-primary">Save e-mail server</button>}
@@ -325,6 +325,7 @@ function BusinessForm() {
 const blankBank = (currency: string): BankAccount => ({ currency, label: '', bankName: '', branch: '', branchCode: '', accountName: '', accountNumber: '', accountType: '', swiftBic: '', iban: '', country: '', isDefault: false, active: true, version: 0 })
 
 function CurrenciesAndBanks() {
+  const can = useCan()
   const currencies = useAsync(() => unwrap(api.GET('/currencies')).then((r) => r.items), [])
   const banks = useAsync(() => unwrap(api.GET('/bank-accounts')).then((r) => r.items), [])
   const [editCur, setEditCur] = useState<Currency & { isNew?: boolean }>()
@@ -361,7 +362,7 @@ function CurrenciesAndBanks() {
     <section className="card space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Currencies & bank accounts</h2>
-        <Can need="settings.currencies"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
+        <Can need="settings.currencies.create"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
       </div>
       <p className="text-sm text-slate-500">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
       <ErrorBanner error={err ?? currencies.error ?? banks.error} />
@@ -371,9 +372,9 @@ function CurrenciesAndBanks() {
             <button className="text-left" onClick={() => setEditCur(c)}>
               <span className="font-semibold">{c.code}</span> <span className="text-slate-500">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span>
             </button>
-            <Can need="settings.banks"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
+            <Can need="settings.banks.create"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
           </div>
-          <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          {can('settings.banks.view') && <ul className="divide-y divide-slate-100 border-t border-slate-100">
             {banks.data?.filter((b) => b.currency === c.code).map((b) => (
               <li key={b.id}>
                 <button className="flex w-full items-center justify-between p-3 text-left text-sm" onClick={() => setEditBank(b)}>
@@ -382,7 +383,7 @@ function CurrenciesAndBanks() {
                 </button>
               </li>
             ))}
-          </ul>
+          </ul>}
         </div>
       ))}
       <Sheet title={editCur?.isNew ? 'New currency' : `Currency ${editCur?.code ?? ''}`} open={!!editCur} onClose={() => setEditCur(undefined)}>
@@ -404,7 +405,7 @@ function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean 
       <Field label="Symbol">{(f) => <input id={f} className="input" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
       <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="input" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /> Active</label>
-      <Can need="settings.currencies"><button className="btn-primary w-full">Save</button></Can>
+      <Can need={c.isNew ? 'settings.currencies.create' : 'settings.currencies.edit'}><button className="btn-primary w-full">Save</button></Can>
     </form>
   )
 }
@@ -429,8 +430,8 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /> Default for {b.currency}</label>
       <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /> Active</label>
       <div className="flex gap-2">
-        <Can need="settings.banks">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
-        <Can need="settings.banks"><button className="btn-primary flex-1">Save</button></Can>
+        <Can need="settings.banks.delete">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
+        <Can need={b.id ? 'settings.banks.edit' : 'settings.banks.create'}><button className="btn-primary flex-1">Save</button></Can>
       </div>
     </form>
   )

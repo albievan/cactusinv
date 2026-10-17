@@ -28,11 +28,15 @@ issue or delete"):
 | Invoices | `invoices.view`, `invoices.create` (drafts), `invoices.edit` (drafts), `invoices.issue`, `invoices.delete` (drafts), `invoices.send` (e-mail), `invoices.pay`, `invoices.overdue`, `invoices.void` |
 | Customers | `customers.view`, `customers.create`, `customers.edit`, `customers.delete` |
 | Statements | `statements.view`, `statements.send` |
-| Schedules | `schedules.view`, `schedules.create`, `schedules.edit`, `schedules.pause` (pause and resume), `schedules.run` (run now), `schedules.delete` |
+| Schedules | `schedules.view`, `schedules.create`, `schedules.edit`, `schedules.pause`, `schedules.resume`, `schedules.run` (run now), `schedules.delete` |
 | Products | `products.view`, `products.create`, `products.edit`, `products.delete` |
 | Outbox | `emails.view`, `emails.cancel`, `emails.retry` |
-| Audit log | `audit.view` |
-| Settings | `settings.view`, `settings.business`, `settings.email` (server and test e-mail), `settings.currencies`, `settings.banks` |
+| Audit log | `audit.view`, `audit.verify` |
+| Settings: Business | `settings.business.view`, `settings.business` (change) |
+| Settings: E-mail server | `settings.email.view`, `settings.email` (change), `settings.email.test` |
+| Settings: Currencies & bank accounts | `settings.currencies.view`, `.create`, `.edit`; `settings.banks.view`, `.create`, `.edit`, `.delete` |
+| Settings: Import/Export Settings | `settings.export`, `settings.import` |
+| Settings: System Settings | `settings.system.view`, `settings.system.edit` |
 
 A permission implies only what it needs to be *seen*, transitively — never another action
 (a test checks this): every action implies its area's view; `invoices.create` and
@@ -49,6 +53,17 @@ edit, issue and delete) became `invoices.create`, `.edit`, `.issue` and `.delete
 permissions. Its down migration folds them back (any split permission gives the old one).
 Implied permissions are granted with the group, not stored, and the editor
 shows them ticked and greyed as "included".
+
+**Amendment (M24, 2026-10-17, migration `00022`)**: "split each access into individual
+access". `settings.view` became one view per page (business, e-mail server, currencies, bank
+accounts); `settings.currencies` became `.create` and `.edit`, `settings.banks` `.create`,
+`.edit` and `.delete`; the test e-mail (`settings.email.test`), resuming schedules
+(`schedules.resume`) and verifying the audit log (`audit.verify`) got their own. A group keeps
+exactly what it could do; down folds them back. The new Settings pages are grantable:
+`settings.export` / `settings.import` and `settings.system.view` / `.edit` (until then
+administrators only). An import never grants more than its user's own permissions: each item
+it adds or changes needs that action's permission (e.g. `customers.create`), checked in the
+dry run too.
 
 Every signed-in user may read the reference data every page needs: currencies, the
 business profile and bank accounts (all printed on every invoice anyway).

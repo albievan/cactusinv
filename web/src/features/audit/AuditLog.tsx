@@ -5,6 +5,7 @@ import { formatDateTime } from '../../lib/format'
 import { useAsync } from '../../lib/useAsync'
 import { Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
 import { IconShield } from '../../components/icons'
+import { Can } from '../../components/Access'
 import { actionLabel } from '../invoices/InvoiceDetail'
 
 const entityTypes = ['', 'invoice', 'customer', 'product', 'schedule', 'bank_account', 'currency', 'settings', 'user']
@@ -58,9 +59,11 @@ export function AuditLog() {
     <Page
       title="Audit log"
       actions={
-        <button className="btn-secondary" onClick={runVerify} disabled={verifying}>
-          <IconShield width={16} height={16} /> {verifying ? 'Verifying…' : 'Verify integrity'}
-        </button>
+        <Can need="audit.verify">
+          <button className="btn-secondary" onClick={runVerify} disabled={verifying}>
+            <IconShield width={16} height={16} /> {verifying ? 'Verifying…' : 'Verify integrity'}
+          </button>
+        </Can>
       }
     >
       <p className="mb-4 text-sm text-slate-600">

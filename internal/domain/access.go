@@ -37,6 +37,7 @@ const (
 	PermSchedulesCreate Permission = "schedules.create"
 	PermSchedulesEdit   Permission = "schedules.edit"
 	PermSchedulesPause  Permission = "schedules.pause"
+	PermSchedulesResume Permission = "schedules.resume"
 	PermSchedulesRun    Permission = "schedules.run"
 	PermSchedulesDelete Permission = "schedules.delete"
 
@@ -49,13 +50,25 @@ const (
 	PermEmailsCancel Permission = "emails.cancel"
 	PermEmailsRetry  Permission = "emails.retry"
 
-	PermAuditView Permission = "audit.view"
+	PermAuditView   Permission = "audit.view"
+	PermAuditVerify Permission = "audit.verify"
 
-	PermSettingsView       Permission = "settings.view"
-	PermSettingsBusiness   Permission = "settings.business"
-	PermSettingsEmail      Permission = "settings.email"
-	PermSettingsCurrencies Permission = "settings.currencies"
-	PermSettingsBanks      Permission = "settings.banks"
+	PermSettingsBusinessView     Permission = "settings.business.view"
+	PermSettingsBusiness         Permission = "settings.business"
+	PermSettingsEmailView        Permission = "settings.email.view"
+	PermSettingsEmail            Permission = "settings.email"
+	PermSettingsEmailTest        Permission = "settings.email.test"
+	PermSettingsCurrenciesView   Permission = "settings.currencies.view"
+	PermSettingsCurrenciesCreate Permission = "settings.currencies.create"
+	PermSettingsCurrenciesEdit   Permission = "settings.currencies.edit"
+	PermSettingsBanksView        Permission = "settings.banks.view"
+	PermSettingsBanksCreate      Permission = "settings.banks.create"
+	PermSettingsBanksEdit        Permission = "settings.banks.edit"
+	PermSettingsBanksDelete      Permission = "settings.banks.delete"
+	PermSettingsExport           Permission = "settings.export"
+	PermSettingsImport           Permission = "settings.import"
+	PermSettingsSystemView       Permission = "settings.system.view"
+	PermSettingsSystemEdit       Permission = "settings.system.edit"
 
 	// PermAdminister is users, groups, backups and restore. It cannot be granted: a user
 	// has it only as a member of the Administrators group.
@@ -102,7 +115,8 @@ var Permissions = []PermissionInfo{
 	{PermSchedulesView, "Schedules", "See schedules", []Permission{PermCustomersView, PermProductsView}},
 	{PermSchedulesCreate, "Schedules", "Create schedules", []Permission{PermSchedulesView}},
 	{PermSchedulesEdit, "Schedules", "Edit schedules", []Permission{PermSchedulesView}},
-	{PermSchedulesPause, "Schedules", "Pause and resume schedules", []Permission{PermSchedulesView}},
+	{PermSchedulesPause, "Schedules", "Pause schedules", []Permission{PermSchedulesView}},
+	{PermSchedulesResume, "Schedules", "Resume paused schedules", []Permission{PermSchedulesView}},
 	{PermSchedulesRun, "Schedules", "Run schedules now", []Permission{PermSchedulesView}},
 	{PermSchedulesDelete, "Schedules", "Delete schedules", []Permission{PermSchedulesView}},
 
@@ -115,18 +129,44 @@ var Permissions = []PermissionInfo{
 	{PermEmailsCancel, "Outbox", "Cancel e-mails", []Permission{PermEmailsView}},
 	{PermEmailsRetry, "Outbox", "Retry e-mails", []Permission{PermEmailsView}},
 
-	{PermAuditView, "Audit log", "See and verify the audit log", nil},
+	{PermAuditView, "Audit log", "See the audit log", nil},
+	{PermAuditVerify, "Audit log", "Verify the audit log's chain", []Permission{PermAuditView}},
 
-	{PermSettingsView, "Settings", "See the business, e-mail server and currency settings", nil},
-	{PermSettingsBusiness, "Settings", "Change the business details", []Permission{PermSettingsView}},
-	{PermSettingsEmail, "Settings", "Change the e-mail server and send test e-mails", []Permission{PermSettingsView}},
-	{PermSettingsCurrencies, "Settings", "Add and change currencies", []Permission{PermSettingsView}},
-	{PermSettingsBanks, "Settings", "Add, change and delete bank accounts", []Permission{PermSettingsView}},
+	{PermSettingsBusinessView, "Settings: Business", "See the business details", nil},
+	{PermSettingsBusiness, "Settings: Business", "Change the business details", []Permission{PermSettingsBusinessView}},
+
+	{PermSettingsEmailView, "Settings: E-mail server", "See the e-mail server settings", nil},
+	{PermSettingsEmail, "Settings: E-mail server", "Change the e-mail server", []Permission{PermSettingsEmailView}},
+	{PermSettingsEmailTest, "Settings: E-mail server", "Send test e-mails", []Permission{PermSettingsEmailView}},
+
+	{PermSettingsCurrenciesView, "Settings: Currencies & bank accounts", "See currencies", nil},
+	{PermSettingsCurrenciesCreate, "Settings: Currencies & bank accounts", "Add currencies", []Permission{PermSettingsCurrenciesView}},
+	{PermSettingsCurrenciesEdit, "Settings: Currencies & bank accounts", "Change currencies", []Permission{PermSettingsCurrenciesView}},
+	{PermSettingsBanksView, "Settings: Currencies & bank accounts", "See bank accounts", []Permission{PermSettingsCurrenciesView}},
+	{PermSettingsBanksCreate, "Settings: Currencies & bank accounts", "Add bank accounts", []Permission{PermSettingsBanksView}},
+	{PermSettingsBanksEdit, "Settings: Currencies & bank accounts", "Change bank accounts", []Permission{PermSettingsBanksView}},
+	{PermSettingsBanksDelete, "Settings: Currencies & bank accounts", "Delete bank accounts", []Permission{PermSettingsBanksView}},
+
+	{PermSettingsExport, "Settings: Import/Export Settings", "Export settings files (every customer's details and the bank accounts)", nil},
+	{PermSettingsImport, "Settings: Import/Export Settings", "Import settings files (adds and changes customers, products, schedules and settings)", nil},
+
+	{PermSettingsSystemView, "Settings: System Settings", "See System Settings", nil},
+	{PermSettingsSystemEdit, "Settings: System Settings", "Change session timeouts and folder mappings", []Permission{PermSettingsSystemView}},
 }
 
 // pick is what writing an invoice needs: to see invoices, and to pick customers and
 // products.
 var pick = []Permission{PermInvoicesView, PermCustomersView, PermProductsView}
+
+// Label is the permission's description in the group editor (the key when unknown).
+func (p Permission) Label() string {
+	for _, i := range Permissions {
+		if i.Key == p {
+			return i.Label
+		}
+	}
+	return string(p)
+}
 
 // Known reports whether p is a grantable permission.
 func (p Permission) Known() bool {

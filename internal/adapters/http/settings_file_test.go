@@ -120,17 +120,22 @@ func TestSettingsFileOverHTTP(t *testing.T) {
 		t.Fatalf("problem = %+v", p)
 	}
 
-	// Not for a user without administration, however many settings they may change.
+	// Each needs its own permission (M24): a user with every other one is refused.
 	var carol httpapi.User
 	albie.ok(albie.do("POST", "/api/v1/users", obj{"email": "carol@example.com", "password": "chosen by albie", "currentPassword": albiePW}, &carol), 201, "add carol")
-	all := []string{}
+	others := []string{}
 	for _, pi := range domain.Permissions {
-		all = append(all, string(pi.Key))
+		if pi.Key != domain.PermSettingsExport && pi.Key != domain.PermSettingsImport {
+			others = append(others, string(pi.Key))
+		}
 	}
-	albie.ok(albie.do("POST", "/api/v1/groups", obj{"name": "Everything", "permissions": all, "memberIds": []string{carol.Id}, "currentPassword": albiePW}, nil), 201, "group")
+	var g httpapi.Group
+	albie.ok(albie.do("POST", "/api/v1/groups", obj{"name": "Everything else", "permissions": others, "memberIds": []string{carol.Id}, "currentPassword": albiePW}, &g), 201, "group")
 	cc := albie.second()
 	cc.ok(cc.loginAs("carol@example.com", "chosen by albie"), 204, "carol signs in")
 	cc.ok(cc.do("POST", "/api/v1/auth/password", obj{"currentPassword": "chosen by albie", "newPassword": "carol's own password"}, nil), 204, "carol's password")
 	cc.ok(cc.do("POST", "/api/v1/settings/export", obj{}, &p), 403, "export")
 	cc.ok(cc.do("POST", "/api/v1/settings/import", obj{"file": file}, &p), 403, "import")
+	albie.ok(albie.do("PUT", "/api/v1/groups/"+g.Id, obj{"name": "Everything else", "permissions": append(others, "settings.export", "settings.import"), "memberIds": []string{carol.Id}, "currentPassword": albiePW}, nil), 200, "grant")
+	cc.ok(cc.do("POST", "/api/v1/settings/export", obj{}, nil), 200, "export granted")
 }

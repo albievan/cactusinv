@@ -259,3 +259,25 @@ func auditCount(h *harness, action string) int {
 	_, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{Action: action}))
 	return n
 }
+
+// An import never grants more than the user's own permissions (M24): settings.import
+// alone may re-import an unchanged file, but adding a customer needs customers.create.
+func TestSettingsImportNeedsEachActionsPermission(t *testing.T) {
+	h := newHarness(t).seed()
+	file := must(h.svc.ExportSettings(h.ctx))
+	ctx := as(h.ctx, domain.PermSettingsImport)
+	if r, err := h.svc.ImportSettings(ctx, file, true); err != nil || r.Customers.Unchanged != 1 {
+		t.Fatalf("unchanged file: %+v %v", r, err)
+	}
+	file.Customers = append(file.Customers, domain.Customer{Code: "NW", Name: "New", Email: "n@new.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true})
+	if _, err := h.svc.ImportSettings(ctx, file, false); fieldOf(err) != "customers[NW]" {
+		t.Fatalf("adding a customer without customers.create: %v", err)
+	}
+	file.Business.Profile.Phone = "011 000 0000"
+	if _, err := h.svc.ImportSettings(as(h.ctx, domain.PermSettingsImport, domain.PermCustomersCreate), file, false); fieldOf(err) != "business" {
+		t.Fatalf("changing the business without settings.business: %v", err)
+	}
+	if r := must(h.svc.ImportSettings(as(h.ctx, domain.PermSettingsImport, domain.PermCustomersCreate, domain.PermSettingsBusiness), file, true)); r.Customers.Created != 1 || r.Business.Updated != 1 {
+		t.Fatalf("with both: %+v", r)
+	}
+}

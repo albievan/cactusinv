@@ -24,13 +24,15 @@ export const AuthContext = createContext<Auth>({ user: null, logout: async () =>
 export const useAuth = () => useContext(AuthContext)
 
 /**
- * useCan tells what the signed-in user may do (ADR-012): `can('invoices.send')`, or
- * `can('administer')` for users, groups, backups and restore (Administrators only). The
- * server enforces the same rules; this only hides what would be refused.
+ * useCan tells what the signed-in user may do (ADR-012): `can('invoices.send')`, any one of
+ * several (`can(['settings.export', 'settings.import'])`), or `can('administer')` for users,
+ * groups, backups and restore (Administrators only). The server enforces the same rules;
+ * this only hides what would be refused.
  */
 export function useCan() {
   const { user, outside } = useAuth()
-  return (permission: string) => !!outside || (!!user && (!!user.administrator || (permission !== 'administer' && !!user.permissions?.includes(permission))))
+  const one = (p: string) => !!user && (!!user.administrator || (p !== 'administer' && !!user.permissions?.includes(p)))
+  return (permission: string | string[]) => !!outside || (Array.isArray(permission) ? permission.some(one) : one(permission))
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

@@ -34,9 +34,9 @@ const result = (applied: boolean) => ({
   warnings: ['The next invoice sequence stays 20: the file has 10, and numbers already used are never given again.'],
 })
 
-function routes(extra: Record<string, (req: Request) => Response | Promise<Response>> = {}, administrator = true) {
+function routes(extra: Record<string, (req: Request) => Response | Promise<Response>> = {}, permissions?: string[]) {
   mockFetch({
-    'GET /api/v1/auth/me': json({ administrator, permissions: administrator ? [] : ['settings.view', 'settings.business'], id: '1', email: 'admin@example.com', automationPaused: false }),
+    'GET /api/v1/auth/me': json({ administrator: !permissions, permissions: permissions ?? [], id: '1', email: 'admin@example.com', automationPaused: false }),
     'GET /api/v1/version': json({ version: '1.10.0', build: '30' }),
     ...extra,
   })
@@ -173,12 +173,18 @@ test('refuses a file that is not a settings file, and shows a check that fails',
   expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument()
 })
 
-test('only administrators see the page', async () => {
-  routes({}, false)
+test('each permission shows its own part of the page', async () => {
+  routes({}, ['settings.business.view'])
   window.history.pushState({}, '', '/settings/business')
-  render(<App />)
+  const { unmount } = render(<App />)
   expect(await screen.findAllByRole('link', { name: /Business/ })).not.toHaveLength(0)
   expect(screen.queryByRole('link', { name: /Import\/Export Settings/ })).not.toBeInTheDocument()
+  unmount()
+
+  routes({}, ['settings.export'])
+  await openPage()
+  expect(screen.getByRole('button', { name: 'Export to a JSON file' })).toBeInTheDocument()
+  expect(screen.queryByLabelText('Choose a settings file')).not.toBeInTheDocument()
 })
 
 test('parse', () => {

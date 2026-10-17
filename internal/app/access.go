@@ -39,19 +39,19 @@ var operationAccess = map[string][]domain.Permission{
 	"listschedules": {domain.PermSchedulesView}, "getschedule": {domain.PermSchedulesView},
 	"previewschedule": {domain.PermSchedulesView}, "getscheduledefaults": {domain.PermSchedulesView},
 	"createschedule": {domain.PermSchedulesCreate}, "updateschedule": {domain.PermSchedulesEdit}, "deleteschedule": {domain.PermSchedulesDelete},
-	"pauseschedule": {domain.PermSchedulesPause}, "resumeschedule": {domain.PermSchedulesPause}, "runschedulenow": {domain.PermSchedulesRun},
+	"pauseschedule": {domain.PermSchedulesPause}, "resumeschedule": {domain.PermSchedulesResume}, "runschedulenow": {domain.PermSchedulesRun},
 
 	// A statement page lists the statements e-mailed to its customer.
 	"listemails":  {domain.PermEmailsView, domain.PermStatementsView},
 	"cancelemail": {domain.PermEmailsCancel}, "retryemail": {domain.PermEmailsRetry},
 
-	"listaudit": {domain.PermAuditView}, "verifyaudit": {domain.PermAuditView},
+	"listaudit": {domain.PermAuditView}, "verifyaudit": {domain.PermAuditVerify},
 
-	"getemailsettings":    {domain.PermSettingsView},
+	"getemailsettings":    {domain.PermSettingsEmailView},
 	"updatebusiness":      {domain.PermSettingsBusiness},
-	"updateemailsettings": {domain.PermSettingsEmail}, "sendtestemail": {domain.PermSettingsEmail},
-	"createcurrency": {domain.PermSettingsCurrencies}, "updatecurrency": {domain.PermSettingsCurrencies},
-	"createbankaccount": {domain.PermSettingsBanks}, "updatebankaccount": {domain.PermSettingsBanks}, "deletebankaccount": {domain.PermSettingsBanks},
+	"updateemailsettings": {domain.PermSettingsEmail}, "sendtestemail": {domain.PermSettingsEmailTest},
+	"createcurrency": {domain.PermSettingsCurrenciesCreate}, "updatecurrency": {domain.PermSettingsCurrenciesEdit},
+	"createbankaccount": {domain.PermSettingsBanksCreate}, "updatebankaccount": {domain.PermSettingsBanksEdit}, "deletebankaccount": {domain.PermSettingsBanksDelete},
 
 	"listbackups": {domain.PermAdminister}, "createbackup": {domain.PermAdminister}, "exportbackup": {domain.PermAdminister},
 	"uploadbackup": {domain.PermAdminister}, "stagerestore": {domain.PermAdminister}, "getcurrentrestore": {domain.PermAdminister},
@@ -61,10 +61,9 @@ var operationAccess = map[string][]domain.Permission{
 	"listgroups": {domain.PermAdminister}, "creategroup": {domain.PermAdminister}, "updategroup": {domain.PermAdminister},
 	"deletegroup": {domain.PermAdminister},
 	// A settings file holds every customer's contact details and the bank account numbers,
-	// and an import changes all the settings at once: administrators only, like backups.
-	"exportsettings": {domain.PermAdminister}, "importsettings": {domain.PermAdminister},
-	// Session timeouts and host folders are the installation's: administrators only.
-	"getsystemsettings": {domain.PermAdminister}, "updatesystemsettings": {domain.PermAdminister},
+	// and an import changes many things at once: each has its own permission (M24).
+	"exportsettings": {domain.PermSettingsExport}, "importsettings": {domain.PermSettingsImport},
+	"getsystemsettings": {domain.PermSettingsSystemView}, "updatesystemsettings": {domain.PermSettingsSystemEdit},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).

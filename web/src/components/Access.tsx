@@ -4,7 +4,7 @@ import { useCan } from './auth'
 import { IconShield } from './icons'
 
 /** RequireAccess shows its page only to a user whose groups allow `need`. */
-export function RequireAccess({ need, children }: { need: string; children: ReactNode }) {
+export function RequireAccess({ need, children }: { need: string | string[]; children: ReactNode }) {
   const can = useCan()
   return can(need) ? <>{children}</> : <NoAccess />
 }
@@ -26,7 +26,7 @@ export function NoAccess({ home = true }: { home?: boolean }) {
 }
 
 /** Can renders its children only for a user whose groups allow `need`. */
-export function Can({ need, children }: { need: string; children: ReactNode }) {
+export function Can({ need, children }: { need: string | string[]; children: ReactNode }) {
   const can = useCan()
   return can(need) ? <>{children}</> : null
 }

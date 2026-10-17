@@ -493,6 +493,18 @@ Business → Time zone, then edit the "Weekly" schedule's time zone (both are no
 | 23.5 | Web: Settings → System Settings (`/settings/system`, administrators): idle minutes, maximum hours, each container folder with the host folder mapped now and the one to map; on Kubernetes the folders are shown as volume claims | done | Vitest `SystemSettings.test.tsx` | `web/src/features/settings/system/` |
 | 23.6 | README, ARCHITECTURE §17, VERSION 1.11.0; gate; integration | done | 2026-10-17: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.8 %, app 85.4 %, "No vulnerabilities found.", contracts in sync, web 85 tests, build OK); integration ok 38.6 s (`headSchema` 21); not yet deployed | `README.md`, `docs/ARCHITECTURE.md`, `VERSION` |
 
+### M24 — Access per page and action in Settings; the new pages grantable (Albie, 2026-10-17) — v1.12.0
+
+> "add the new menu items to the RBAC list and split each access into indevidual access"
+
+| id | Step | Status | Verification | Files |
+|---|---|---|---|---|
+| 24.1 | Domain catalogue: `settings.view` → `settings.business.view`, `settings.email.view`, `settings.currencies.view`, `settings.banks.view`; `settings.currencies` → `.create`/`.edit`; `settings.banks` → `.create`/`.edit`/`.delete`; new `settings.email.test`, `schedules.resume`, `audit.verify`; the new pages: `settings.export`, `settings.import`, `settings.system.view`/`.edit`; areas named per Settings page in the group editor; `Permission.Label` | done | `TestEachActionHasItsOwnPermission` (each new permission allows exactly its operation), `TestActionPermissionsImplyOnlyWhatTheyNeed` | `internal/domain/access.go`, `internal/app/access.go` |
+| 24.2 | Migration `00022`: old grants → all the new ones they covered; down folds back | done | integration `TestSplitSettingsPermissionsMigration` (two groups up and down); `headSchema` 22 | `migrations/00022_split_settings_permissions.sql` |
+| 24.3 | An import needs each action's permission for what it adds or changes (unchanged items need none), named in the check | done | `TestSettingsImportNeedsEachActionsPermission` | `internal/app/settings_transfer.go` |
+| 24.4 | Web: menu, routes and buttons per permission (`can` takes any of several): Settings pages, + Currency / Save, + Bank / Save / Delete, the bank list, test e-mail, Resume, Verify integrity, Export and Import cards, System Settings Save | done | Vitest `granular.test.tsx` (bank edit without add/delete; currencies without banks), `ImportExport.test.tsx` (export only) | `web/src/components/{auth,Access}.tsx`, `App.tsx`, features |
+| 24.5 | ADR-012 amendment, VERSION 1.12.0; gate; integration | done | 2026-10-17: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.5 %, app 85.3 %, "No vulnerabilities found.", contracts in sync, web 86 tests, build OK); integration ok 33.4 s (`headSchema` 22); not yet pushed or deployed | `docs/adr/ADR-012-access-groups.md`, `VERSION` |
+
 ## Decisions
 
 | Date | Decision | Why |
@@ -622,6 +634,7 @@ Business → Time zone, then edit the "Weekly" schedule's time zone (both are no
 | 2026-10-17 | An imported new schedule is created paused (M22) | moving to a new installation must not start invoicing customers before someone decides it should |
 | 2026-10-17 | Folders are mapped, not moved by the app: System Settings store a host folder per container folder and `deploy.sh --install` mounts it (M23) | the container can only write where it is mounted; a mapping is a deploy-time change, so the app shows it as pending until then |
 | 2026-10-17 | Session timeouts: an idle timeout (default off) plus a maximum lifetime (default 7 days, as before); both apply at once to every session (M23) | no change for anyone until set; a lowered limit must also end sessions already open |
+| 2026-10-17 | Settings access per page and action; Import/Export and System Settings grantable (M24, supersedes "administrators only" for them) | asked for; an import still never exceeds its user's own permissions |
 
 ## Later
 
