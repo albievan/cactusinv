@@ -32,7 +32,7 @@ test: ## unit tests
 	go test -race -count=1 $(GO_PKGS)
 
 cover: ## unit tests with coverage gates on domain and app
-	go test -race -count=1 -coverprofile=coverage.out $(GO_PKGS) >/dev/null
+	set -o pipefail; go test -race -count=1 -coverprofile=coverage.out $(GO_PKGS) | { grep -v -e '^ok ' -e 'no test files' -e 'coverage: 0.0% of statements' || true; } # failures stay visible
 	@for p in internal/domain internal/app; do \
 	  pct=$$(go test -count=1 -cover ./$$p | sed -E 's/.*coverage: ([0-9.]+)%.*/\1/'); \
 	  echo "$$p coverage $$pct%"; \

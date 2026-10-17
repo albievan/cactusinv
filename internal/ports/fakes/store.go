@@ -700,12 +700,23 @@ func (r invoices) Totals(_ context.Context, today domain.Date) ([]ports.Currency
 func (r invoices) ListUnexported(_ context.Context, limit int) ([]ports.ExportRef, error) {
 	var out []ports.ExportRef
 	err := r.s.do(func(st *state) error {
+		var all []domain.Invoice
 		for id, inv := range st.invoices {
-			if inv.Status != domain.InvoiceDraft && st.exported[id] != inv.Version && len(out) < limit {
-				out = append(out, ports.ExportRef{ID: id, Version: inv.Version})
+			if inv.Status != domain.InvoiceDraft && st.exported[id] != inv.Version {
+				all = append(all, inv)
 			}
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+		// Like the SQL (ORDER BY updated_at LIMIT ?): order first, then limit. The ID breaks
+		// ties so the result never depends on map iteration order.
+		sort.Slice(all, func(i, j int) bool {
+			if !all[i].UpdatedAt.Equal(all[j].UpdatedAt) {
+				return all[i].UpdatedAt.Before(all[j].UpdatedAt)
+			}
+			return all[i].ID < all[j].ID
+		})
+		for _, inv := range all[:min(len(all), max(limit, 0))] {
+			out = append(out, ports.ExportRef{ID: inv.ID, Version: inv.Version})
+		}
 		return nil
 	})
 	return out, err
