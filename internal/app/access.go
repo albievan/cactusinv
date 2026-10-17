@@ -60,6 +60,9 @@ var operationAccess = map[string][]domain.Permission{
 	"disableuser": {domain.PermAdminister}, "enableuser": {domain.PermAdminister}, "setusergroups": {domain.PermAdminister},
 	"listgroups": {domain.PermAdminister}, "creategroup": {domain.PermAdminister}, "updategroup": {domain.PermAdminister},
 	"deletegroup": {domain.PermAdminister},
+	// A settings file holds every customer's contact details and the bank account numbers,
+	// and an import changes all the settings at once: administrators only, like backups.
+	"exportsettings": {domain.PermAdminister}, "importsettings": {domain.PermAdminister},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).

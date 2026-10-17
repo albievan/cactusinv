@@ -415,6 +415,36 @@ func (e ScheduleStatus) Valid() bool {
 	}
 }
 
+// Defines values for SettingsFileFormat.
+const (
+	CactusinvSettings SettingsFileFormat = "cactusinv-settings"
+)
+
+// Valid indicates whether the value is a known member of the SettingsFileFormat enum.
+func (e SettingsFileFormat) Valid() bool {
+	switch e {
+	case CactusinvSettings:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SettingsFileFormatVersion.
+const (
+	N1 SettingsFileFormatVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the SettingsFileFormatVersion enum.
+func (e SettingsFileFormatVersion) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Aging defines model for Aging.
 type Aging struct {
 	// Current Example: 2701.16
@@ -814,6 +844,13 @@ type GroupRequest struct {
 	MemberIds       []string `json:"memberIds"`
 	Name            string   `json:"name"`
 	Permissions     []string `json:"permissions"`
+}
+
+// ImportCounts defines model for ImportCounts.
+type ImportCounts struct {
+	Created   int `json:"created"`
+	Unchanged int `json:"unchanged"`
+	Updated   int `json:"updated"`
 }
 
 // Invoice defines model for Invoice.
@@ -1294,6 +1331,39 @@ type SendRequest struct {
 	To      []string   `json:"to,omitempty"`
 }
 
+// SettingsFile A settings file (Settings → Import/Export). Every section is optional.
+type SettingsFile struct {
+	AppVersion   string            `json:"appVersion,omitempty"`
+	BankAccounts []BankAccount     `json:"bankAccounts,omitempty"`
+	Business     *BusinessSettings `json:"business,omitempty"`
+	Currencies   []Currency        `json:"currencies,omitempty"`
+	Customers    []Customer        `json:"customers,omitempty"`
+
+	// EmailServer Never holds the password.
+	EmailServer   *EmailSettings            `json:"emailServer,omitempty"`
+	ExportedAt    time.Time                 `json:"exportedAt,omitempty"`
+	Format        SettingsFileFormat        `json:"format"`
+	FormatVersion SettingsFileFormatVersion `json:"formatVersion"`
+}
+
+// SettingsFileFormat defines model for SettingsFile.Format.
+type SettingsFileFormat string
+
+// SettingsFileFormatVersion defines model for SettingsFile.FormatVersion.
+type SettingsFileFormatVersion int
+
+// SettingsImportResult defines model for SettingsImportResult.
+type SettingsImportResult struct {
+	// Applied false for a check (nothing saved).
+	Applied      bool         `json:"applied"`
+	BankAccounts ImportCounts `json:"bankAccounts"`
+	Business     ImportCounts `json:"business"`
+	Currencies   ImportCounts `json:"currencies"`
+	Customers    ImportCounts `json:"customers"`
+	EmailServer  ImportCounts `json:"emailServer"`
+	Warnings     []string     `json:"warnings"`
+}
+
 // StageRestoreRequest defines model for StageRestoreRequest.
 type StageRestoreRequest struct {
 	// Backup A stored backup's name.
@@ -1524,6 +1594,12 @@ type PreviewScheduleParams struct {
 	ScheduleId string `form:"scheduleId,omitempty" json:"scheduleId,omitempty"`
 }
 
+// ImportSettingsParams defines parameters for ImportSettings.
+type ImportSettingsParams struct {
+	Apply          bool   `form:"apply,omitempty" json:"apply,omitempty"`
+	IdempotencyKey string `json:"Idempotency-Key,omitempty"`
+}
+
 // SendStatementsJSONBody defines parameters for SendStatements.
 type SendStatementsJSONBody struct {
 	CustomerIds []string `json:"customerIds"`
@@ -1615,6 +1691,9 @@ type UpdateEmailSettingsJSONRequestBody = EmailSettings
 
 // SendTestEmailJSONRequestBody defines body for SendTestEmail for application/json ContentType.
 type SendTestEmailJSONRequestBody = TestEmailRequest
+
+// ImportSettingsJSONRequestBody defines body for ImportSettings for application/json ContentType.
+type ImportSettingsJSONRequestBody = SettingsFile
 
 // SendStatementsJSONRequestBody defines body for SendStatements for application/json ContentType.
 type SendStatementsJSONRequestBody SendStatementsJSONBody
@@ -1846,6 +1925,12 @@ type ServerInterface interface {
 
 	// (POST /settings/email/test)
 	SendTestEmail(w http.ResponseWriter, r *http.Request)
+
+	// (GET /settings/export)
+	ExportSettings(w http.ResponseWriter, r *http.Request)
+
+	// (POST /settings/import)
+	ImportSettings(w http.ResponseWriter, r *http.Request, params ImportSettingsParams)
 
 	// (GET /statements)
 	ListStatements(w http.ResponseWriter, r *http.Request)
@@ -3811,6 +3896,74 @@ func (siw *ServerInterfaceWrapper) SendTestEmail(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ExportSettings operation middleware
+func (siw *ServerInterfaceWrapper) ExportSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportSettings operation middleware
+func (siw *ServerInterfaceWrapper) ImportSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ImportSettingsParams
+
+	// ------------- Optional query parameter "apply" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "apply", r.URL.Query(), &params.Apply, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "apply"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "apply", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportSettings(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListStatements operation middleware
 func (siw *ServerInterfaceWrapper) ListStatements(w http.ResponseWriter, r *http.Request) {
 
@@ -4115,6 +4268,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/import", wrapper.ImportSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/currencies", wrapper.CreateCurrency)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/currencies/{code}", wrapper.UpdateCurrency)
@@ -7128,6 +7283,84 @@ func (response SendTestEmaildefaultApplicationProblemPlusJSONResponse) VisitSend
 	return err
 }
 
+type ExportSettingsRequestObject struct {
+}
+
+type ExportSettingsResponseObject interface {
+	VisitExportSettingsResponse(w http.ResponseWriter) error
+}
+
+type ExportSettings200JSONResponse SettingsFile
+
+func (response ExportSettings200JSONResponse) VisitExportSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExportSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ExportSettingsdefaultApplicationProblemPlusJSONResponse) VisitExportSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportSettingsRequestObject struct {
+	Params ImportSettingsParams
+	Body   *ImportSettingsJSONRequestBody
+}
+
+type ImportSettingsResponseObject interface {
+	VisitImportSettingsResponse(w http.ResponseWriter) error
+}
+
+type ImportSettings200JSONResponse SettingsImportResult
+
+func (response ImportSettings200JSONResponse) VisitImportSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ImportSettingsdefaultApplicationProblemPlusJSONResponse) VisitImportSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListStatementsRequestObject struct {
 }
 
@@ -7912,6 +8145,12 @@ type StrictServerInterface interface {
 
 	// (POST /settings/email/test)
 	SendTestEmail(ctx context.Context, request SendTestEmailRequestObject) (SendTestEmailResponseObject, error)
+
+	// (GET /settings/export)
+	ExportSettings(ctx context.Context, request ExportSettingsRequestObject) (ExportSettingsResponseObject, error)
+
+	// (POST /settings/import)
+	ImportSettings(ctx context.Context, request ImportSettingsRequestObject) (ImportSettingsResponseObject, error)
 
 	// (GET /statements)
 	ListStatements(ctx context.Context, request ListStatementsRequestObject) (ListStatementsResponseObject, error)
@@ -9948,6 +10187,63 @@ func (sh *strictHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SendTestEmailResponseObject); ok {
 		if err := validResponse.VisitSendTestEmailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExportSettings operation middleware
+func (sh *strictHandler) ExportSettings(w http.ResponseWriter, r *http.Request) {
+	var request ExportSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ExportSettings(ctx, request.(ExportSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExportSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ExportSettingsResponseObject); ok {
+		if err := validResponse.VisitExportSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ImportSettings operation middleware
+func (sh *strictHandler) ImportSettings(w http.ResponseWriter, r *http.Request, params ImportSettingsParams) {
+	var request ImportSettingsRequestObject
+
+	request.Params = params
+
+	var body ImportSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ImportSettings(ctx, request.(ImportSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ImportSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ImportSettingsResponseObject); ok {
+		if err := validResponse.VisitImportSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

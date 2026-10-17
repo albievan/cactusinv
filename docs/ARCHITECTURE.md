@@ -458,3 +458,23 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   422 naming the column; missing `/assets/*` → 404.
 - **Money input**: a decimal comma is accepted when unambiguous (`domain.parseFixed`,
   web `normalizeDecimal`); invoice totals are bounded by `MaxInvoiceTotal`.
+
+## 16. Settings import/export (M22)
+
+`GET /settings/export` and `POST /settings/import?apply=` move a **settings file** (JSON,
+`format: cactusinv-settings`, `formatVersion: 1`) between installations: business profile with
+the next sequence, e-mail server, currencies, bank accounts and customers, in the API's own
+schemas. Administrators only (the file holds customer contact details and account numbers).
+
+- **Export** reads everything in one transaction and audits `settings.exported`. The SMTP
+  password is never exported (`passwordSet` is false in the file).
+- **Import** (`app.ImportSettings`) runs in one transaction in dependency order: currencies →
+  bank accounts → customers → business → e-mail server. It merges and never deletes:
+  currencies by code (minor units must match), bank accounts by id, else currency + account
+  number, customers by code. A customer's `bankAccountId` from the file is mapped to the
+  account's id here. The next sequence only moves forward; the stored SMTP password is kept. A
+  server that needs a password none is stored for is imported switched off, with a warning.
+  Any error rolls everything back and names the item (`customers[CD].email`).
+- **Check**: without `apply=true` the same transaction is rolled back (`errDryRun`), so the
+  result counts (created / updated / unchanged per section, warnings) are exactly what an import
+  would do. The web page checks every choice before offering **Import**.

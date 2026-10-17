@@ -137,6 +137,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The business profile, e-mail server (never its password), currencies, bank accounts and customers as one settings file, for Settings → Import/Export. Recorded in the audit log. */
+        get: operations["exportSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Merges a settings file, all or nothing; nothing is deleted. Currencies are matched by code, bank accounts by id or by currency and account number, customers by code: a match is updated, anything else created. A section left out of the file is not touched. The next invoice sequence only moves forward and the e-mail server keeps its stored password. Without apply=true nothing is saved and the result says what would happen. */
+        post: operations["importSettings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/currencies": {
         parameters: {
             query?: never;
@@ -1301,6 +1335,37 @@ export interface components {
             nextSequence: number;
             version: number;
         };
+        /** @description A settings file (Settings → Import/Export). Every section is optional. */
+        SettingsFile: {
+            /** @enum {string} */
+            format: "cactusinv-settings";
+            /** @enum {integer} */
+            formatVersion: 1;
+            /** Format: date-time */
+            exportedAt?: string;
+            appVersion?: string;
+            business?: components["schemas"]["BusinessSettings"];
+            /** @description Never holds the password. */
+            emailServer?: components["schemas"]["EmailSettings"];
+            currencies?: components["schemas"]["Currency"][];
+            bankAccounts?: components["schemas"]["BankAccount"][];
+            customers?: components["schemas"]["Customer"][];
+        };
+        ImportCounts: {
+            created: number;
+            updated: number;
+            unchanged: number;
+        };
+        SettingsImportResult: {
+            /** @description false for a check (nothing saved). */
+            applied: boolean;
+            business: components["schemas"]["ImportCounts"];
+            emailServer: components["schemas"]["ImportCounts"];
+            currencies: components["schemas"]["ImportCounts"];
+            bankAccounts: components["schemas"]["ImportCounts"];
+            customers: components["schemas"]["ImportCounts"];
+            warnings: string[];
+        };
         Currency: {
             code: string;
             name: string;
@@ -2121,6 +2186,56 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    exportSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The settings file. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsFile"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    importSettings: {
+        parameters: {
+            query?: {
+                apply?: boolean;
+            };
+            header?: {
+                "Idempotency-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsFile"];
+            };
+        };
+        responses: {
+            /** @description What was (or, without apply, would be) imported. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsImportResult"];
+                };
             };
             default: components["responses"]["Problem"];
         };

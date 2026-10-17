@@ -1,6 +1,6 @@
 import type { ComponentType, SVGProps } from 'react'
 import { useCan } from '../../components/auth'
-import { IconArchive, IconBank, IconBuilding, IconServer, IconShield, IconUser } from '../../components/icons'
+import { IconArchive, IconBank, IconBuilding, IconServer, IconShield, IconTransfer, IconUser } from '../../components/icons'
 
 /** A Settings sub-page: its route, its label in the sidebar and on More, and what it holds. */
 export type SettingsItem = {
@@ -22,6 +22,7 @@ export const settingsNav: SettingsItem[] = [
   { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding, need: 'settings.view' },
   { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer, need: 'settings.view' },
   { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.view' },
+  { path: 'import-export', label: 'Import/Export Settings', hint: 'Customers, currencies, bank accounts, business and e-mail server as a JSON file', icon: IconTransfer, need: 'administer' },
   { path: 'users', label: 'Users & groups', hint: 'Who can sign in and what each group may do', icon: IconUser, need: 'administer' },
   { path: 'backup', label: 'Backup & restore', hint: 'Encrypted backups, downloads, and restoring from a file', icon: IconArchive, need: 'administer' },
   { path: 'account', label: 'Your account', hint: 'Your password', icon: IconShield },

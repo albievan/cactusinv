@@ -176,6 +176,46 @@ paths:
         '204': { description: Sent (servers before v1.6.1 answer without a body). }
         default: { $ref: '#/components/responses/Problem' }
 
+  /settings/export:
+    get:
+      tags: [settings]
+      operationId: exportSettings
+      description: >-
+        The business profile, e-mail server (never its password), currencies, bank accounts and
+        customers as one settings file, for Settings → Import/Export. Recorded in the audit log.
+      responses:
+        '200':
+          description: The settings file.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsFile' }
+        default: { $ref: '#/components/responses/Problem' }
+  /settings/import:
+    post:
+      tags: [settings]
+      operationId: importSettings
+      description: >-
+        Merges a settings file, all or nothing; nothing is deleted. Currencies are matched by
+        code, bank accounts by id or by currency and account number, customers by code: a
+        match is updated, anything else created. A section left out of the file is not touched.
+        The next invoice sequence only moves forward and the e-mail server keeps its stored
+        password. Without apply=true nothing is saved and the result says what would happen.
+      parameters:
+        - { name: apply, in: query, schema: { type: boolean, default: false } }
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsFile' }
+      responses:
+        '200':
+          description: What was (or, without apply, would be) imported.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SettingsImportResult' }
+        default: { $ref: '#/components/responses/Problem' }
+
   /currencies:
     get:
       tags: [currencies]
@@ -1564,6 +1604,44 @@ components:
           format: int64
           description: Next invoice sequence value; may only increase.
         version: { type: integer }
+
+    SettingsFile:
+      type: object
+      required: [format, formatVersion]
+      description: A settings file (Settings → Import/Export). Every section is optional.
+      properties:
+        format: { type: string, enum: [cactusinv-settings] }
+        formatVersion: { type: integer, enum: [1] }
+        exportedAt: { type: string, format: date-time }
+        appVersion: { type: string }
+        business:
+          allOf: [{ $ref: '#/components/schemas/BusinessSettings' }]
+          x-go-type-skip-optional-pointer: false
+        emailServer:
+          allOf: [{ $ref: '#/components/schemas/EmailSettings' }]
+          x-go-type-skip-optional-pointer: false
+          description: Never holds the password.
+        currencies: { type: array, items: { $ref: '#/components/schemas/Currency' } }
+        bankAccounts: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+        customers: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+    ImportCounts:
+      type: object
+      required: [created, updated, unchanged]
+      properties:
+        created: { type: integer }
+        updated: { type: integer }
+        unchanged: { type: integer }
+    SettingsImportResult:
+      type: object
+      required: [applied, business, emailServer, currencies, bankAccounts, customers, warnings]
+      properties:
+        applied: { type: boolean, description: false for a check (nothing saved). }
+        business: { $ref: '#/components/schemas/ImportCounts' }
+        emailServer: { $ref: '#/components/schemas/ImportCounts' }
+        currencies: { $ref: '#/components/schemas/ImportCounts' }
+        bankAccounts: { $ref: '#/components/schemas/ImportCounts' }
+        customers: { $ref: '#/components/schemas/ImportCounts' }
+        warnings: { type: array, x-omitempty: false, items: { type: string } }
 
     Currency:
       type: object

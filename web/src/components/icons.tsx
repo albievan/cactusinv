@@ -43,4 +43,5 @@ export const IconEdit = base(<><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.
 export const IconPause = base(<><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></>)
 export const IconPlay = base(<path d="M7 4.5v15l12-7.5z" />)
 export const IconBolt = base(<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" />)
+export const IconTransfer = base(<><path d="M7 4v13M3 13l4 4 4-4" /><path d="M17 20V7M13 11l4-4 4 4" /></>)
 export const IconTrash = base(<><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>)

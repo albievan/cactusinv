@@ -115,7 +115,7 @@ test('/settings opens Business, and the sidebar nests the settings pages under S
 
   const group = within(sidebar()).getByRole('list', { name: 'Settings' })
   const links = within(group).getAllByRole('link')
-  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts', 'Users & groups', 'Backup & restore', 'Your account'])
+  expect(links.map((l) => l.textContent)).toEqual(['Business', 'E-mail server', 'Currencies & bank accounts', 'Import/Export Settings', 'Users & groups', 'Backup & restore', 'Your account'])
   expect(within(group).getByRole('link', { name: 'Business' })).toHaveAttribute('aria-current', 'page')
   expect(within(sidebar()).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'true')
 

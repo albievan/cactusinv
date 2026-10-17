@@ -42,6 +42,7 @@ func TestDeadlinesReachTheConnection(t *testing.T) {
 		{"POST", "/api/v1/backups", maxBody, true, false},
 		{"GET", "/api/v1/backups", maxBody, false, false},
 		{"POST", "/api/v1/invoices", maxBody, false, false},
+		{"POST", pathImportSettings, maxSettingsFile, false, false},
 	}
 	for _, c := range cases {
 		r := httptest.NewRequest(c.method, c.path, strings.NewReader(""))

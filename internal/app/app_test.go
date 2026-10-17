@@ -25,14 +25,15 @@ type harness struct {
 	usersP   domain.Product
 	integP   domain.Product
 	bank     domain.BankAccount
+	ids      *fakes.IDs
 }
 
 var start = time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC) // 08:00 in Johannesburg
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	h := &harness{t: t, ctx: context.Background(), store: fakes.NewStore(), clock: &fakes.Clock{T: start}, mailer: &fakes.Mailer{}}
-	h.svc = app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
+	h := &harness{t: t, ctx: context.Background(), store: fakes.NewStore(), clock: &fakes.Clock{T: start}, mailer: &fakes.Mailer{}, ids: &fakes.IDs{}}
+	h.svc = app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: h.ids, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
 	return h
 }
 

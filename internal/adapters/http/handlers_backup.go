@@ -20,7 +20,13 @@ import (
 const (
 	pathExport  = "/api/v1/backups/export"
 	pathUploads = "/api/v1/backups/uploads"
+	// pathImportSettings takes a whole settings file (every customer), larger than maxBody.
+	pathImportSettings = "/api/v1/settings/import"
 )
+
+// maxSettingsFile is the largest settings file an import accepts (16 MiB, tens of
+// thousands of customers).
+const maxSettingsFile = 16 << 20
 
 // DefaultMaxUploadBytes is the upload limit when none is configured (256 MiB).
 const DefaultMaxUploadBytes = 256 << 20
@@ -38,6 +44,8 @@ func limitsFor(r *http.Request, maxUpload int64) routeLimits {
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == pathUploads:
 		return routeLimits{body: maxUpload, read: 30 * time.Minute, written: 30 * time.Minute}
+	case r.Method == http.MethodPost && r.URL.Path == pathImportSettings:
+		return routeLimits{body: maxSettingsFile}
 	case r.Method == http.MethodPost && r.URL.Path == pathExport:
 		return routeLimits{body: maxBody, written: app.DefaultExportTimeout + time.Minute}
 	case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/restores" || strings.HasPrefix(r.URL.Path, "/api/v1/restores/")) ||
