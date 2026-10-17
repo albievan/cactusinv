@@ -83,6 +83,25 @@ func (q *Queries) ClaimDueSchedules(ctx context.Context, arg ClaimDueSchedulesPa
 	return items, nil
 }
 
+const countOverlappingScheduleRuns = `-- name: CountOverlappingScheduleRuns :one
+SELECT COUNT(*) FROM schedule_runs
+WHERE schedule_id = ? AND period_start < ? AND period_end > ?
+FOR UPDATE
+`
+
+type CountOverlappingScheduleRunsParams struct {
+	ScheduleID  string
+	PeriodEnd   time.Time
+	PeriodStart time.Time
+}
+
+func (q *Queries) CountOverlappingScheduleRuns(ctx context.Context, arg CountOverlappingScheduleRunsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOverlappingScheduleRuns, arg.ScheduleID, arg.PeriodEnd, arg.PeriodStart)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSchedules = `-- name: CountSchedules :one
 SELECT COUNT(*) FROM schedules
 WHERE (? = '' OR customer_id = ?)
@@ -286,15 +305,17 @@ func (q *Queries) InsertScheduleLine(ctx context.Context, arg InsertScheduleLine
 }
 
 const insertScheduleRun = `-- name: InsertScheduleRun :exec
-INSERT INTO schedule_runs (schedule_id, period, period_key, invoice_id, at) VALUES (?, ?, ?, ?, ?)
+INSERT INTO schedule_runs (schedule_id, period, period_key, period_start, period_end, invoice_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertScheduleRunParams struct {
-	ScheduleID string
-	Period     time.Time
-	PeriodKey  string
-	InvoiceID  string
-	At         time.Time
+	ScheduleID  string
+	Period      time.Time
+	PeriodKey   string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	InvoiceID   string
+	At          time.Time
 }
 
 func (q *Queries) InsertScheduleRun(ctx context.Context, arg InsertScheduleRunParams) error {
@@ -302,6 +323,8 @@ func (q *Queries) InsertScheduleRun(ctx context.Context, arg InsertScheduleRunPa
 		arg.ScheduleID,
 		arg.Period,
 		arg.PeriodKey,
+		arg.PeriodStart,
+		arg.PeriodEnd,
 		arg.InvoiceID,
 		arg.At,
 	)
@@ -354,7 +377,7 @@ func (q *Queries) ListScheduleLines(ctx context.Context, ids []string) ([]Schedu
 }
 
 const listScheduleRuns = `-- name: ListScheduleRuns :many
-SELECT schedule_id, period, invoice_id, at, period_key FROM schedule_runs WHERE schedule_id = ? ORDER BY period DESC LIMIT ?
+SELECT schedule_id, period, invoice_id, at, period_key, period_start, period_end FROM schedule_runs WHERE schedule_id = ? ORDER BY period DESC LIMIT ?
 `
 
 type ListScheduleRunsParams struct {
@@ -377,6 +400,8 @@ func (q *Queries) ListScheduleRuns(ctx context.Context, arg ListScheduleRunsPara
 			&i.InvoiceID,
 			&i.At,
 			&i.PeriodKey,
+			&i.PeriodStart,
+			&i.PeriodEnd,
 		); err != nil {
 			return nil, err
 		}
@@ -469,6 +494,17 @@ func (q *Queries) ListSchedules(ctx context.Context, arg ListSchedulesParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const scheduleBilledUntil = `-- name: ScheduleBilledUntil :one
+SELECT period_end FROM schedule_runs WHERE schedule_id = ? ORDER BY period_end DESC LIMIT 1
+`
+
+func (q *Queries) ScheduleBilledUntil(ctx context.Context, scheduleID string) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, scheduleBilledUntil, scheduleID)
+	var period_end time.Time
+	err := row.Scan(&period_end)
+	return period_end, err
 }
 
 const updateSchedule = `-- name: UpdateSchedule :execrows

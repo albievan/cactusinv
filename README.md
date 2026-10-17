@@ -57,6 +57,11 @@ Released into the public domain — see [LICENSE](LICENSE).
   keep running on the day itself until you change them). A new schedule starts with a suggested
   e-mail subject and body for its type; invoice schedules show the disclaimer every invoice
   prints and where to change it.
+  Billing periods count from the start date (a quarterly schedule starting in February bills
+  February–April, May–July, …), and no stretch of time is billed twice: after you change a
+  schedule's day, frequency or start date it continues in the next period not yet billed (the
+  editor's run list already shows this). Resuming a schedule whose last run had failed runs that
+  period now; a schedule that was running fine and was paused skips the periods missed.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
@@ -106,6 +111,10 @@ Invoice number format placeholders: `{code}` customer code, `{seq}` the gap-free
 (required), `{dd}` and `{mm}` the issue day and month, `{yy}` or `{yyyy}` the year. New
 installs start with `{code}/{dd}{mm}-{seq}/{yy}` (`CD/2108-1195/26` for 21 August 2026);
 an install that already saved a format keeps it.
+
+Every placeholder for e-mail subjects and bodies (`{{invoice_number}}`, `{{total}}`, …), invoice
+numbers and recurring-invoice line descriptions (`{month}`, `{period}`, …) is listed with
+examples in [docs/PLACEHOLDERS.md](docs/PLACEHOLDERS.md).
 
 ## Deploying — `deploy.sh`
 

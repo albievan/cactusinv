@@ -396,6 +396,12 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 		t.Fatalf("preview in UTC = %s %v", preview.TimeZone, preview.Runs)
 	}
 	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "weekly", "interval": 1, "dayOfMonth": 0, "weekday": 5, "sendTime": "25:00", "startDate": "2026-09-01"}, &p), 422, "bad time")
+	// Editing an existing schedule: the runs as saving would set them; an unknown one is 404.
+	c.ok(c.do("POST", "/api/v1/schedules/preview?scheduleId="+id, sched.Schedule.Recurrence, &preview), 200, "preview edit")
+	if len(preview.Runs) == 0 || preview.TimeZone == "" {
+		t.Fatalf("edit preview = %+v", preview)
+	}
+	c.ok(c.do("POST", "/api/v1/schedules/preview?scheduleId=00000000-0000-0000-0000-000000000000", sched.Schedule.Recurrence, &p), 404, "preview unknown schedule")
 	// Monthly on the first: with the weekend rule no run is on a Saturday or Sunday in the business zone.
 	jhb, _ := time.LoadLocation("Africa/Johannesburg")
 	c.ok(c.do("POST", "/api/v1/schedules/preview", obj{"frequency": "monthly", "interval": 1, "dayOfMonth": 1, "weekday": 0, "sendTime": "09:00", "startDate": "2026-01-01", "weekendRule": "previous-friday"}, &preview), 200, "preview previous-friday")

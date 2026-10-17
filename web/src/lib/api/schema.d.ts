@@ -535,7 +535,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description The next run times of an unsaved recurrence. */
+        /** @description The next run times of an unsaved recurrence. With scheduleId, the run times that schedule would have after saving the recurrence: an unrun overdue period is kept and periods already billed are not run again. */
         post: operations["previewSchedule"];
         delete?: never;
         options?: never;
@@ -3021,7 +3021,10 @@ export interface operations {
     };
     previewSchedule: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description An existing schedule being edited. */
+                scheduleId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

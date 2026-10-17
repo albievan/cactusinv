@@ -139,6 +139,45 @@ func (s *Service) PreviewRecurrence(ctx context.Context, r domain.Recurrence, n 
 	return RunPreview{Runs: r.Upcoming(s.now(), min(max(n, 1), 24)), TimeZone: r.TimeZone, Weekend: r.Weekend}, nil
 }
 
+// PreviewScheduleEdit lists the next n run times the schedule id would have with the
+// recurrence r, as saving it would set them: an unrun overdue period is kept and billed
+// periods are not run again (ActivateFrom); a paused schedule shows them as resuming now
+// would. A recurrence without a weekend rule keeps the schedule's.
+func (s *Service) PreviewScheduleEdit(ctx context.Context, id string, r domain.Recurrence, n int) (RunPreview, error) {
+	repos := s.tx.Repos()
+	cur, err := repos.Schedules.Get(ctx, id)
+	if err != nil {
+		return RunPreview{}, wrap("app.PreviewScheduleEdit", err)
+	}
+	if r.Weekend == "" {
+		r.Weekend = cur.Recurrence.Weekend
+	}
+	pv, err := s.PreviewRecurrence(ctx, r, n)
+	if err != nil {
+		return RunPreview{}, err
+	}
+	billed, err := repos.Schedules.BilledUntil(ctx, id)
+	if err != nil {
+		return RunPreview{}, wrap("app.PreviewScheduleEdit", err)
+	}
+	r.TimeZone, r.Weekend = pv.TimeZone, pv.Weekend
+	if err := r.Validate(); err != nil { // normalises it as saving would (valid: previewed)
+		return RunPreview{}, wrap("app.PreviewScheduleEdit", err)
+	}
+	sc := *cur
+	sc.Recurrence = r
+	if sc.Status == domain.SchedulePaused {
+		_ = sc.Resume(s.now(), billed) // a paused schedule always resumes
+	} else {
+		sc.ActivateFrom(cur.NextOccurrence, billed, s.now())
+	}
+	pv.Runs = []time.Time{}
+	if sc.Status == domain.ScheduleActive {
+		pv.Runs = sc.UpcomingRuns(min(max(n, 1), 24))
+	}
+	return pv, nil
+}
+
 // ScheduleEmailDefaults returns the suggested e-mail subject and body for a new schedule
 // of each type; the recurring-invoice type uses the business's own invoice e-mail texts
 // when it has set them.
@@ -198,12 +237,16 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 		}
 		// The run state is the server's: a paused schedule keeps its pending occurrence and
 		// failure count (Resume decides from them); an active one keeps an unrun overdue
-		// occurrence (ActivateFrom).
+		// occurrence and continues after what was billed (ActivateFrom).
 		sc.Status, sc.CreatedAt, sc.LastRunAt = cur.Status, cur.CreatedAt, cur.LastRunAt
 		sc.FailureCount, sc.LastError, sc.NextOccurrence, sc.NextRunAt = cur.FailureCount, cur.LastError, cur.NextOccurrence, cur.NextRunAt
 		sc.UpdatedAt = s.now()
 		if cur.Status != domain.SchedulePaused {
-			sc.ActivateFrom(cur.NextOccurrence, s.now())
+			billed, err := r.Schedules.BilledUntil(ctx, sc.ID)
+			if err != nil {
+				return err
+			}
+			sc.ActivateFrom(cur.NextOccurrence, billed, s.now())
 		}
 		if err := r.Schedules.Update(ctx, &sc); err != nil {
 			return err
@@ -272,23 +315,28 @@ func (s *Service) DeleteSchedule(ctx context.Context, id string) error {
 
 // PauseSchedule stops a schedule.
 func (s *Service) PauseSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.PauseSchedule", "schedule.paused", id, func(sc *domain.Schedule) error { return sc.Pause(s.now()) })
+	return s.scheduleTransition(ctx, "app.PauseSchedule", "schedule.paused", id, func(sc *domain.Schedule, _ ports.Repos) error { return sc.Pause(s.now()) })
 }
 
-// ResumeSchedule restarts a paused schedule from the next occurrence after now.
+// ResumeSchedule restarts a paused schedule: a failed pending period runs now, otherwise
+// it continues with the next occurrence after now; never inside a billed period.
 func (s *Service) ResumeSchedule(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.ResumeSchedule", "schedule.resumed", id, func(sc *domain.Schedule) error {
+	return s.scheduleTransition(ctx, "app.ResumeSchedule", "schedule.resumed", id, func(sc *domain.Schedule, r ports.Repos) error {
 		if err := checkScheduleAccess(ctx, *sc); err != nil {
 			return err
 		}
-		return sc.Resume(s.now())
+		billed, err := r.Schedules.BilledUntil(ctx, sc.ID)
+		if err != nil {
+			return err
+		}
+		return sc.Resume(s.now(), billed)
 	})
 }
 
 // RunScheduleNow makes the schedule's pending occurrence due immediately: the next
 // invoice is issued (and sent if auto-send) on the runner's next pass.
 func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleDetail, error) {
-	return s.scheduleTransition(ctx, "app.RunScheduleNow", "schedule.run_now", id, func(sc *domain.Schedule) error {
+	return s.scheduleTransition(ctx, "app.RunScheduleNow", "schedule.run_now", id, func(sc *domain.Schedule, _ ports.Repos) error {
 		if err := checkScheduleAccess(ctx, *sc); err != nil {
 			return err
 		}
@@ -300,13 +348,13 @@ func (s *Service) RunScheduleNow(ctx context.Context, id string) (ScheduleDetail
 	})
 }
 
-func (s *Service) scheduleTransition(ctx context.Context, op, action, id string, apply func(*domain.Schedule) error) (ScheduleDetail, error) {
+func (s *Service) scheduleTransition(ctx context.Context, op, action, id string, apply func(*domain.Schedule, ports.Repos) error) (ScheduleDetail, error) {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		sc, err := r.Schedules.Get(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := apply(sc); err != nil {
+		if err := apply(sc, r); err != nil {
 			return err
 		}
 		if err := r.Schedules.Update(ctx, sc); err != nil {
@@ -328,8 +376,9 @@ type RunResult struct {
 }
 
 // RunDueSchedules processes up to limit due schedule occurrences (ADR-004). Each
-// occurrence is processed in its own transaction; the (schedule, period) unique run
-// record guarantees at most one invoice per period even with concurrent runners.
+// occurrence is processed in its own transaction; its run record (refused when its billing
+// period overlaps one already billed) guarantees at most one invoice for any stretch of
+// time, even with concurrent runners.
 func (s *Service) RunDueSchedules(ctx context.Context, limit int) (RunResult, error) {
 	var res RunResult
 	for range limit {
@@ -371,11 +420,14 @@ func (s *Service) runOccurrence(ctx context.Context, r ports.Repos, sc *domain.S
 	if sc.Kind != domain.ScheduleEmail {
 		invoiceID = s.ids.NewID()
 	}
-	err := r.Schedules.InsertRun(ctx, domain.ScheduleRun{ScheduleID: sc.ID, Period: period, PeriodKey: sc.PeriodKey(), InvoiceID: invoiceID, At: s.now()})
+	start, end := sc.BillingPeriod()
+	err := r.Schedules.InsertRun(ctx, domain.ScheduleRun{
+		ScheduleID: sc.ID, Period: period, PeriodKey: sc.PeriodKey(), PeriodStart: start, PeriodEnd: end, InvoiceID: invoiceID, At: s.now(),
+	})
 	switch {
 	case errors.Is(err, domain.ErrConflict):
-		// This billing period already ran (a previous run committed but did not advance, or
-		// the day was moved within the period after it ran): just advance.
+		// This billing period, or part of it, was already billed (a previous run committed
+		// but did not advance, or the recurrence changed after it ran): just advance.
 		sc.Advance(s.now())
 		return r.Schedules.Update(ctx, sc)
 	case err != nil:

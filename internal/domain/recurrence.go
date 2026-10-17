@@ -206,11 +206,46 @@ func (r Recurrence) NextAfter(t time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// PeriodKey names the billing period of an occurrence nominally on d: its month
-// ("2026-10") for monthly, its calendar quarter ("2026-Q4") for quarterly, its year
-// ("2026") for yearly, and the date ("2026-10-15") for weekly and once. A schedule raises
-// at most one invoice per key, so moving the day or the start date after a run cannot bill
-// the same period twice.
+// BillingPeriod is the billing period [start, end) of an occurrence nominally on d. It is
+// anchored on StartDate: monthly, quarterly and yearly periods are runs of Interval×1, ×3
+// or ×12 whole months counted from StartDate's month (so a quarterly schedule starting in
+// February bills February–April); weekly periods are runs of Interval weeks counted from
+// the Monday of StartDate's week; a once schedule bills its day. A schedule raises at most
+// one invoice for any stretch of time: a run whose period overlaps a billed one is refused,
+// so moving the day, weekday, start date or frequency after a run never bills twice.
+func (r Recurrence) BillingPeriod(d Date) (start, end Date) {
+	switch r.Frequency {
+	case FrequencyMonthly, FrequencyQuarterly, FrequencyYearly:
+		step := max(r.monthStep(), 1)
+		anchor := r.StartDate.Year*12 + int(r.StartDate.Month) - 1
+		m := d.Year*12 + int(d.Month) - 1
+		s := anchor + floorDiv(m-anchor, step)*step
+		start = NewDate(s/12, time.Month(s%12+1), 1)
+		return start, NewDate(start.Year, start.Month+time.Month(step), 1)
+	case FrequencyWeekly:
+		weeks := max(r.Interval, 1)
+		monday := func(x Date) Date { return x.AddDays(-((int(x.Time(time.UTC).Weekday()) + 6) % 7)) }
+		anchor := monday(r.StartDate)
+		w := int(monday(d).Time(time.UTC).Sub(anchor.Time(time.UTC)).Hours()/24) / 7
+		start = anchor.AddDays(floorDiv(w, weeks) * weeks * 7)
+		return start, start.AddDays(weeks * 7)
+	default:
+		return d, d.AddDays(1)
+	}
+}
+
+func floorDiv(a, b int) int {
+	q := a / b
+	if a%b != 0 && (a < 0) != (b < 0) {
+		q--
+	}
+	return q
+}
+
+// PeriodKey labels the run of an occurrence nominally on d: its calendar month
+// ("2026-10") for monthly, calendar quarter ("2026-Q4") for quarterly, year ("2026") for
+// yearly, the date ("2026-10-15") for weekly and once. It is a label for people and logs;
+// the billing guarantee is the overlap rule of BillingPeriod.
 func (r Recurrence) PeriodKey(d Date) string {
 	switch r.Frequency {
 	case FrequencyMonthly:
@@ -221,20 +256,6 @@ func (r Recurrence) PeriodKey(d Date) string {
 		return fmt.Sprintf("%04d", d.Year)
 	default:
 		return d.String()
-	}
-}
-
-// PeriodStart is the first day of the billing period (see PeriodKey) of the date d.
-func (r Recurrence) PeriodStart(d Date) Date {
-	switch r.Frequency {
-	case FrequencyMonthly:
-		return NewDate(d.Year, d.Month, 1)
-	case FrequencyQuarterly:
-		return NewDate(d.Year, time.Month((int(d.Month)-1)/3*3+1), 1)
-	case FrequencyYearly:
-		return NewDate(d.Year, time.January, 1)
-	default:
-		return d
 	}
 }
 

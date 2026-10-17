@@ -159,21 +159,21 @@ func TestScheduleLifecycle(t *testing.T) {
 	}
 	// Paused by failures: resuming keeps the failed period and runs it now (later missed
 	// periods are caught up one by one, as after downtime).
-	if !s.PausedByFailures() {
+	if !s.HasFailedPending() {
 		t.Fatal("paused by failures")
 	}
 	resumed := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	if err := s.Resume(resumed); err != nil || s.Period() != NewDate(2026, 9, 21) || !s.NextRunAt.Equal(resumed) || s.FailureCount != 0 {
+	if err := s.Resume(resumed, Date{}); err != nil || s.Period() != NewDate(2026, 9, 21) || !s.NextRunAt.Equal(resumed) || s.FailureCount != 0 {
 		t.Fatalf("Resume after failures keeps the failed period: %v %v %v", err, s.Period(), s.NextRunAt)
 	}
-	if err := s.Resume(first); !errors.Is(err, ErrInvalidTransition) {
+	if err := s.Resume(first, Date{}); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatal("cannot resume active")
 	}
-	if err := s.Pause(first); err != nil || s.Status != SchedulePaused || s.PausedByFailures() {
+	if err := s.Pause(first); err != nil || s.Status != SchedulePaused || s.HasFailedPending() {
 		t.Fatal("Pause")
 	}
-	// Paused by the user: resuming skips the periods missed while paused.
-	if err := s.Resume(resumed); err != nil || s.Period() != NewDate(2026, 11, 21) {
+	// A healthy schedule paused by the user: resuming skips the periods missed while paused.
+	if err := s.Resume(resumed, Date{}); err != nil || s.Period() != NewDate(2026, 11, 21) {
 		t.Fatalf("Resume after a user pause skips missed periods: %v %v", err, s.Period())
 	}
 
@@ -605,7 +605,7 @@ func TestScheduleWeekendRun(t *testing.T) {
 	paused := Schedule{Recurrence: r, Status: ScheduleActive}
 	paused.Activate(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)) // Thursday
 	_ = paused.Pause(time.Date(2026, 10, 29, 13, 0, 0, 0, time.UTC))
-	if err := paused.Resume(sat); err != nil || paused.Period() != NewDate(2026, 11, 1) || !paused.NextRunAt.Equal(sat) {
+	if err := paused.Resume(sat, Date{}); err != nil || paused.Period() != NewDate(2026, 11, 1) || !paused.NextRunAt.Equal(sat) {
 		t.Fatalf("resumed on Saturday: %v period %v at %v", err, paused.Period(), paused.NextRunAt)
 	}
 	// Issue date: the scheduled run date, never after today.
@@ -644,36 +644,54 @@ func TestScheduleWeekendRun(t *testing.T) {
 	}
 }
 
-func TestPeriodKeyAndStart(t *testing.T) {
-	d := NewDate(2026, 11, 15)
+func TestBillingPeriod(t *testing.T) {
+	rec := func(f Frequency, interval int, start Date) Recurrence {
+		return Recurrence{Frequency: f, Interval: interval, StartDate: start}
+	}
+	d := NewDate
 	tests := []struct {
-		f     Frequency
-		key   string
-		start Date
+		name       string
+		r          Recurrence
+		on         Date
+		start, end Date
 	}{
-		{FrequencyMonthly, "2026-11", NewDate(2026, 11, 1)},
-		{FrequencyQuarterly, "2026-Q4", NewDate(2026, 10, 1)},
-		{FrequencyYearly, "2026", NewDate(2026, 1, 1)},
-		{FrequencyWeekly, "2026-11-15", d},
-		{FrequencyOnce, "2026-11-15", d},
+		{"monthly", rec(FrequencyMonthly, 1, d(2026, 1, 15)), d(2026, 11, 15), d(2026, 11, 1), d(2026, 12, 1)},
+		{"every 2 months from February", rec(FrequencyMonthly, 2, d(2026, 2, 1)), d(2026, 5, 10), d(2026, 4, 1), d(2026, 6, 1)},
+		{"quarterly from February", rec(FrequencyQuarterly, 1, d(2026, 2, 1)), d(2026, 11, 15), d(2026, 11, 1), d(2027, 2, 1)},
+		{"quarterly from February, in January", rec(FrequencyQuarterly, 1, d(2026, 2, 1)), d(2027, 1, 31), d(2026, 11, 1), d(2027, 2, 1)},
+		{"quarterly from January", rec(FrequencyQuarterly, 1, d(2026, 1, 1)), d(2026, 3, 31), d(2026, 1, 1), d(2026, 4, 1)},
+		{"yearly from April", rec(FrequencyYearly, 1, d(2026, 4, 1)), d(2027, 2, 1), d(2026, 4, 1), d(2027, 4, 1)},
+		{"before the anchor month", rec(FrequencyQuarterly, 1, d(2026, 5, 1)), d(2026, 4, 30), d(2026, 2, 1), d(2026, 5, 1)},
+		// 15 Oct 2026 is a Thursday: weeks run Monday to Monday.
+		{"weekly", rec(FrequencyWeekly, 1, d(2026, 1, 1)), d(2026, 10, 15), d(2026, 10, 12), d(2026, 10, 19)},
+		{"every 2 weeks from the week of 1 Oct", rec(FrequencyWeekly, 2, d(2026, 10, 1)), d(2026, 10, 15), d(2026, 10, 12), d(2026, 10, 26)},
+		{"every 2 weeks, first week", rec(FrequencyWeekly, 2, d(2026, 10, 1)), d(2026, 10, 9), d(2026, 9, 28), d(2026, 10, 12)},
+		{"once", rec(FrequencyOnce, 1, d(2026, 10, 15)), d(2026, 10, 15), d(2026, 10, 15), d(2026, 10, 16)},
 	}
 	for _, tc := range tests {
-		r := Recurrence{Frequency: tc.f}
-		if got := r.PeriodKey(d); got != tc.key {
-			t.Errorf("%s key = %q, want %q", tc.f, got, tc.key)
-		}
-		if got := r.PeriodStart(d); got != tc.start {
-			t.Errorf("%s start = %v, want %v", tc.f, got, tc.start)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			s, e := tc.r.BillingPeriod(tc.on)
+			if s != tc.start || e != tc.end {
+				t.Fatalf("BillingPeriod(%v) = [%v, %v), want [%v, %v)", tc.on, s, e, tc.start, tc.end)
+			}
+		})
 	}
-	if (Recurrence{Frequency: FrequencyQuarterly}).PeriodKey(NewDate(2026, 3, 31)) != "2026-Q1" {
-		t.Fatal("Q1")
+	// A weekday change within a week, or a day change within a month, stays in one period.
+	w := rec(FrequencyWeekly, 1, d(2026, 1, 1))
+	if a, _ := w.BillingPeriod(d(2026, 10, 12)); a != func() Date { b, _ := w.BillingPeriod(d(2026, 10, 18)); return b }() {
+		t.Fatal("Monday and Sunday of one week")
 	}
 }
 
-// TestActivateFrom: an unrun occurrence whose time has passed is kept when the schedule is
-// (re)activated, even when the edit moves its day within the period; a future one is not
-// pulled forward.
+func TestPeriodKey(t *testing.T) {
+	d := NewDate(2026, 11, 15)
+	for f, want := range map[Frequency]string{FrequencyMonthly: "2026-11", FrequencyQuarterly: "2026-Q4", FrequencyYearly: "2026", FrequencyWeekly: "2026-11-15", FrequencyOnce: "2026-11-15"} {
+		if got := (Recurrence{Frequency: f}).PeriodKey(d); got != want {
+			t.Errorf("%s = %q, want %q", f, got, want)
+		}
+	}
+}
+
 func TestActivateFrom(t *testing.T) {
 	monthly := func(day int) Recurrence {
 		return Recurrence{Frequency: FrequencyMonthly, Interval: 1, DayOfMonth: day, SendHour: 9, TimeZone: "UTC", StartDate: NewDate(2026, 1, 1), Weekend: WeekendNone}
@@ -684,23 +702,48 @@ func TestActivateFrom(t *testing.T) {
 		name    string
 		r       Recurrence
 		pending time.Time
+		billed  Date // end of the latest billed period
 		period  Date
 		runAt   time.Time
 	}{
-		{"same day, failed this morning", monthly(15), failed, NewDate(2026, 10, 15), now},
-		{"day moved earlier in the month", monthly(10), failed, NewDate(2026, 10, 10), now},
-		{"day moved later in the month", monthly(20), failed, NewDate(2026, 10, 20), time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)},
-		{"overdue by months (downtime)", monthly(15), time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 8, 15), now},
-		{"pending still ahead: not pulled forward", monthly(1), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 11, 1), time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
-		{"nothing pending", monthly(15), time.Time{}, NewDate(2026, 11, 15), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)},
+		{"same day, failed this morning", monthly(15), failed, NewDate(2026, 10, 1), NewDate(2026, 10, 15), now},
+		{"day moved earlier in the month", monthly(10), failed, NewDate(2026, 10, 1), NewDate(2026, 10, 10), now},
+		{"day moved later in the month", monthly(20), failed, NewDate(2026, 10, 1), NewDate(2026, 10, 20), time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)},
+		{"overdue by months (downtime)", monthly(15), time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 8, 1), NewDate(2026, 8, 15), now},
+		{"pending still ahead: not pulled forward", monthly(1), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 11, 1), NewDate(2026, 11, 1), time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
+		{"nothing pending", monthly(15), time.Time{}, Date{}, NewDate(2026, 11, 15), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC)},
+		// The floor: never back into billed time. October billed (until 1 Nov); a day moved to
+		// the 20th on 16 Oct continues in November, not on 20 Oct.
+		{"day moved within a billed month", monthly(20), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), NewDate(2026, 11, 1), NewDate(2026, 11, 20), time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)},
+		{"quarter billed until January, switched to monthly", monthly(15), time.Date(2026, 11, 15, 9, 0, 0, 0, time.UTC), NewDate(2027, 1, 1), NewDate(2027, 1, 15), time.Date(2027, 1, 15, 9, 0, 0, 0, time.UTC)},
+		{"failed pending inside billed time is not pulled back into it", monthly(10), failed, NewDate(2026, 11, 1), NewDate(2026, 11, 10), time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := Schedule{Recurrence: tc.r, FailureCount: 2, LastError: "x"}
-			s.ActivateFrom(tc.pending, now)
+			s.ActivateFrom(tc.pending, tc.billed, now)
 			if s.Status != ScheduleActive || s.Period() != tc.period || !s.NextRunAt.Equal(tc.runAt) || s.FailureCount != 0 {
 				t.Fatalf("period %v run %v (%+v)", s.Period(), s.NextRunAt, s)
 			}
 		})
+	}
+}
+
+func TestScheduleRunOverlaps(t *testing.T) {
+	run := func(s, e Date) ScheduleRun { return ScheduleRun{PeriodStart: s, PeriodEnd: e} }
+	oct := run(NewDate(2026, 10, 1), NewDate(2026, 11, 1))
+	for _, tc := range []struct {
+		o    ScheduleRun
+		want bool
+	}{
+		{run(NewDate(2026, 11, 1), NewDate(2026, 12, 1)), false}, // adjacent
+		{run(NewDate(2026, 9, 1), NewDate(2026, 10, 1)), false},
+		{run(NewDate(2026, 10, 31), NewDate(2026, 11, 1)), true}, // last day
+		{run(NewDate(2026, 9, 1), NewDate(2027, 1, 1)), true},    // covers it
+		{run(NewDate(2026, 10, 15), NewDate(2026, 10, 16)), true},
+	} {
+		if got := oct.Overlaps(tc.o); got != tc.want || tc.o.Overlaps(oct) != tc.want {
+			t.Errorf("October overlaps [%v, %v) = %v, want %v", tc.o.PeriodStart, tc.o.PeriodEnd, got, tc.want)
+		}
 	}
 }

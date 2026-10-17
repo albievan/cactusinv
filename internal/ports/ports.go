@@ -295,9 +295,11 @@ type ScheduleRepository interface {
 	// nothing while automation is held after a restore (it reads the system state in share
 	// mode first, so it also waits for a restore in progress).
 	ClaimDue(ctx context.Context, now time.Time, limit int) ([]*domain.Schedule, error)
-	// InsertRun records a processed billing period (ScheduleID, PeriodKey); ErrConflict if
-	// it was already processed.
+	// InsertRun records a processed occurrence and its billing period; ErrConflict if the
+	// schedule already has a run whose billing period overlaps it.
 	InsertRun(ctx context.Context, run domain.ScheduleRun) error
+	// BilledUntil is the end of the schedule's latest billed period (zero if none ran).
+	BilledUntil(ctx context.Context, scheduleID string) (domain.Date, error)
 	ListRuns(ctx context.Context, scheduleID string, limit int) ([]domain.ScheduleRun, error)
 }
 

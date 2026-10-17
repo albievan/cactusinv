@@ -954,13 +954,26 @@ func (r schedules) ClaimDue(_ context.Context, now time.Time, limit int) ([]*dom
 func (r schedules) InsertRun(_ context.Context, run domain.ScheduleRun) error {
 	return r.s.do(func(st *state) error {
 		for _, x := range st.runs {
-			if x.ScheduleID == run.ScheduleID && x.PeriodKey == run.PeriodKey {
+			if x.ScheduleID == run.ScheduleID && x.Overlaps(run) {
 				return domain.ErrConflict
 			}
 		}
 		st.runs = append(st.runs, run)
 		return nil
 	})
+}
+
+func (r schedules) BilledUntil(_ context.Context, scheduleID string) (domain.Date, error) {
+	var until domain.Date
+	err := r.s.do(func(st *state) error {
+		for _, x := range st.runs {
+			if x.ScheduleID == scheduleID && x.PeriodEnd.After(until) {
+				until = x.PeriodEnd
+			}
+		}
+		return nil
+	})
+	return until, err
 }
 
 func (r schedules) ListRuns(_ context.Context, scheduleID string, limit int) ([]domain.ScheduleRun, error) {

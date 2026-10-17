@@ -50,7 +50,15 @@ LIMIT ?
 FOR UPDATE SKIP LOCKED;
 
 -- name: InsertScheduleRun :exec
-INSERT INTO schedule_runs (schedule_id, period, period_key, invoice_id, at) VALUES (?, ?, ?, ?, ?);
+INSERT INTO schedule_runs (schedule_id, period, period_key, period_start, period_end, invoice_id, at) VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- name: CountOverlappingScheduleRuns :one
+SELECT COUNT(*) FROM schedule_runs
+WHERE schedule_id = sqlc.arg(schedule_id) AND period_start < sqlc.arg(period_end) AND period_end > sqlc.arg(period_start)
+FOR UPDATE;
+
+-- name: ScheduleBilledUntil :one
+SELECT period_end FROM schedule_runs WHERE schedule_id = ? ORDER BY period_end DESC LIMIT 1;
 
 -- name: ListScheduleRuns :many
 SELECT * FROM schedule_runs WHERE schedule_id = ? ORDER BY period DESC LIMIT ?;

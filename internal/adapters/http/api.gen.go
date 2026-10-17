@@ -1518,6 +1518,12 @@ type ListSchedulesParams struct {
 	Offset     Offset         `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// PreviewScheduleParams defines parameters for PreviewSchedule.
+type PreviewScheduleParams struct {
+	// ScheduleId An existing schedule being edited.
+	ScheduleId string `form:"scheduleId,omitempty" json:"scheduleId,omitempty"`
+}
+
 // SendStatementsJSONBody defines parameters for SendStatements.
 type SendStatementsJSONBody struct {
 	CustomerIds []string `json:"customerIds"`
@@ -1806,7 +1812,7 @@ type ServerInterface interface {
 	GetScheduleDefaults(w http.ResponseWriter, r *http.Request)
 
 	// (POST /schedules/preview)
-	PreviewSchedule(w http.ResponseWriter, r *http.Request)
+	PreviewSchedule(w http.ResponseWriter, r *http.Request, params PreviewScheduleParams)
 
 	// (DELETE /schedules/{id})
 	DeleteSchedule(w http.ResponseWriter, r *http.Request, id Id)
@@ -3549,8 +3555,27 @@ func (siw *ServerInterfaceWrapper) GetScheduleDefaults(w http.ResponseWriter, r 
 // PreviewSchedule operation middleware
 func (siw *ServerInterfaceWrapper) PreviewSchedule(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewScheduleParams
+
+	// ------------- Optional query parameter "scheduleId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scheduleId", r.URL.Query(), &params.ScheduleId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scheduleId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scheduleId", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PreviewSchedule(w, r)
+		siw.Handler.PreviewSchedule(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6634,7 +6659,8 @@ func (response GetScheduleDefaultsdefaultApplicationProblemPlusJSONResponse) Vis
 }
 
 type PreviewScheduleRequestObject struct {
-	Body *PreviewScheduleJSONRequestBody
+	Params PreviewScheduleParams
+	Body   *PreviewScheduleJSONRequestBody
 }
 
 type PreviewScheduleResponseObject interface {
@@ -9593,8 +9619,10 @@ func (sh *strictHandler) GetScheduleDefaults(w http.ResponseWriter, r *http.Requ
 }
 
 // PreviewSchedule operation middleware
-func (sh *strictHandler) PreviewSchedule(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) PreviewSchedule(w http.ResponseWriter, r *http.Request, params PreviewScheduleParams) {
 	var request PreviewScheduleRequestObject
+
+	request.Params = params
 
 	var body PreviewScheduleJSONRequestBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

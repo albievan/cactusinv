@@ -277,11 +277,13 @@ type ScheduleLine struct {
 }
 
 type ScheduleRun struct {
-	ScheduleID string
-	Period     time.Time
-	InvoiceID  string
-	At         time.Time
-	PeriodKey  string
+	ScheduleID  string
+	Period      time.Time
+	InvoiceID   string
+	At          time.Time
+	PeriodKey   string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
 }
 
 type Session struct {

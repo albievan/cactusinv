@@ -666,7 +666,12 @@ func (h *handlers) PreviewSchedule(ctx context.Context, req PreviewScheduleReque
 	if err != nil {
 		return nil, err
 	}
-	pv, err := h.svc.PreviewRecurrence(ctx, r, 6)
+	var pv app.RunPreview
+	if req.Params.ScheduleId != "" {
+		pv, err = h.svc.PreviewScheduleEdit(ctx, req.Params.ScheduleId, r, 6)
+	} else {
+		pv, err = h.svc.PreviewRecurrence(ctx, r, 6)
+	}
 	if err != nil {
 		return nil, err
 	}

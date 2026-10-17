@@ -3,6 +3,7 @@ package mariadb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
@@ -177,9 +178,32 @@ func (r scheduleRepo) ClaimDue(ctx context.Context, now time.Time, limit int) ([
 }
 
 func (r scheduleRepo) InsertRun(ctx context.Context, run domain.ScheduleRun) error {
+	// The caller holds the schedule's row lock (ClaimDue), so no other run of it is being
+	// recorded; the locking read sees every committed run.
+	n, err := r.q.CountOverlappingScheduleRuns(ctx, sqlcgen.CountOverlappingScheduleRunsParams{
+		ScheduleID: run.ScheduleID, PeriodStart: dateValue(run.PeriodStart), PeriodEnd: dateValue(run.PeriodEnd),
+	})
+	if err != nil {
+		return mapErr(err)
+	}
+	if n > 0 {
+		return domain.ErrConflict
+	}
 	return mapErr(r.q.InsertScheduleRun(ctx, sqlcgen.InsertScheduleRunParams{
-		ScheduleID: run.ScheduleID, Period: dateValue(run.Period), PeriodKey: run.PeriodKey, InvoiceID: run.InvoiceID, At: run.At.UTC(),
+		ScheduleID: run.ScheduleID, Period: dateValue(run.Period), PeriodKey: run.PeriodKey,
+		PeriodStart: dateValue(run.PeriodStart), PeriodEnd: dateValue(run.PeriodEnd), InvoiceID: run.InvoiceID, At: run.At.UTC(),
 	}))
+}
+
+func (r scheduleRepo) BilledUntil(ctx context.Context, scheduleID string) (domain.Date, error) {
+	t, err := r.q.ScheduleBilledUntil(ctx, scheduleID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Date{}, nil
+	}
+	if err != nil {
+		return domain.Date{}, mapErr(err)
+	}
+	return fromDate(t), nil
 }
 
 func (r scheduleRepo) ListRuns(ctx context.Context, scheduleID string, limit int) ([]domain.ScheduleRun, error) {
@@ -189,7 +213,10 @@ func (r scheduleRepo) ListRuns(ctx context.Context, scheduleID string, limit int
 	}
 	out := make([]domain.ScheduleRun, len(rows))
 	for i, x := range rows {
-		out[i] = domain.ScheduleRun{ScheduleID: x.ScheduleID, Period: fromDate(x.Period), PeriodKey: x.PeriodKey, InvoiceID: x.InvoiceID, At: x.At.UTC()}
+		out[i] = domain.ScheduleRun{
+			ScheduleID: x.ScheduleID, Period: fromDate(x.Period), PeriodKey: x.PeriodKey,
+			PeriodStart: fromDate(x.PeriodStart), PeriodEnd: fromDate(x.PeriodEnd), InvoiceID: x.InvoiceID, At: x.At.UTC(),
+		}
 	}
 	return out, nil
 }

@@ -711,7 +711,12 @@ paths:
     post:
       tags: [schedules]
       operationId: previewSchedule
-      description: The next run times of an unsaved recurrence.
+      description: >-
+        The next run times of an unsaved recurrence. With scheduleId, the run times that
+        schedule would have after saving the recurrence: an unrun overdue period is kept and
+        periods already billed are not run again.
+      parameters:
+        - { name: scheduleId, in: query, description: An existing schedule being edited., schema: { type: string } }
       requestBody:
         required: true
         content:

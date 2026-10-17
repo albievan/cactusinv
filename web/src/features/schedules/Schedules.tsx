@@ -329,10 +329,11 @@ export function ScheduleEditor() {
   }, [existing.data])
   useEffect(() => {
     const t = setTimeout(() => {
-      api.POST('/schedules/preview', { body: s.recurrence }).then(({ data }) => setPreview(data ?? null))
+      // Editing: the runs as saving would set them (billed periods are not run again).
+      api.POST('/schedules/preview', { params: { query: id ? { scheduleId: id } : {} }, body: s.recurrence }).then(({ data }) => setPreview(data ?? null))
     }, 300)
     return () => clearTimeout(t)
-  }, [s.recurrence])
+  }, [s.recurrence, id])
   const set = (patch: Partial<Schedule>) => setS({ ...s, ...patch })
   const setR = (patch: Partial<Schemas['Recurrence']>) => setS({ ...s, recurrence: { ...s.recurrence, ...patch } })
   useEffect(() => {

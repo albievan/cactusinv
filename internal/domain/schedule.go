@@ -198,20 +198,32 @@ func (s *Schedule) Validate() error {
 
 // Activate (re)computes the next occurrence strictly after now and marks the schedule
 // active, or ended if nothing is left.
-func (s *Schedule) Activate(now time.Time) { s.ActivateFrom(time.Time{}, now) }
+func (s *Schedule) Activate(now time.Time) { s.ActivateFrom(time.Time{}, Date{}, now) }
 
-// ActivateFrom (re)activates like Activate, keeping a pending occurrence that has not run:
-// when pending (the nominal instant the schedule was waiting to process) is not after now,
-// the search starts at the beginning of pending's billing period under the (possibly
-// edited) recurrence, so editing a failing or overdue schedule, or resuming one paused by
-// failures, never drops that period. A period that did run is refused by its run record.
-func (s *Schedule) ActivateFrom(pending, now time.Time) {
+// ActivateFrom (re)activates like Activate, keeping a pending occurrence that has not run
+// and never going back into time already billed:
+//   - when pending (the nominal instant the schedule was waiting to process) is not after
+//     now, the search starts at the beginning of pending's billing period under the
+//     (possibly edited) recurrence, so editing a failing or overdue schedule, or resuming
+//     one that was failing, never drops that period;
+//   - the search never starts before billedUntil (the end of the latest billed period, zero
+//     when nothing ran), so a changed frequency, interval, start date, day or weekday
+//     continues after what was billed instead of listing runs that would be refused.
+//
+// Any run whose period still overlaps a billed one is refused by its run record.
+func (s *Schedule) ActivateFrom(pending time.Time, billedUntil Date, now time.Time) {
 	s.FailureCount = 0
 	s.LastError = ""
+	loc := s.Recurrence.location()
 	from := now
 	if !pending.IsZero() && !pending.After(now) {
-		start := s.Recurrence.PeriodStart(s.Recurrence.LocalDate(pending))
-		from = start.Time(s.Recurrence.location()).Add(-time.Nanosecond)
+		start, _ := s.Recurrence.BillingPeriod(s.Recurrence.LocalDate(pending))
+		from = start.Time(loc).Add(-time.Nanosecond)
+	}
+	if !billedUntil.IsZero() {
+		if floor := billedUntil.Time(loc).Add(-time.Nanosecond); floor.After(from) {
+			from = floor
+		}
 	}
 	nominal, ok := s.Recurrence.NextAfter(from)
 	if !ok {
@@ -245,25 +257,27 @@ func (s *Schedule) Pause(now time.Time) error {
 	return nil
 }
 
-// Resume restarts a paused schedule. Paused by the user, it restarts from the next
-// occurrence after now (periods missed while paused are skipped deliberately); paused by
-// MaxScheduleFailures failed runs, the failed period is kept and runs now.
-func (s *Schedule) Resume(now time.Time) error {
+// Resume restarts a paused schedule, never before billedUntil (see ActivateFrom). If its
+// pending occurrence had failed when it was paused (by MaxScheduleFailures failures, or by
+// the user while it was failing), that period is kept and runs now; a healthy schedule
+// paused by the user restarts from the next occurrence after now (periods missed while
+// paused are skipped deliberately).
+func (s *Schedule) Resume(now time.Time, billedUntil Date) error {
 	if s.Status != SchedulePaused {
 		return ErrInvalidTransition
 	}
-	if s.PausedByFailures() {
-		s.ActivateFrom(s.NextOccurrence, now)
+	if s.HasFailedPending() {
+		s.ActivateFrom(s.NextOccurrence, billedUntil, now)
 		return nil
 	}
-	s.Activate(now)
+	s.ActivateFrom(time.Time{}, billedUntil, now)
 	return nil
 }
 
-// PausedByFailures reports whether the schedule was paused by MaxScheduleFailures failed
-// runs rather than by a user.
-func (s *Schedule) PausedByFailures() bool {
-	return s.Status == SchedulePaused && s.FailureCount >= MaxScheduleFailures
+// HasFailedPending reports whether the pending occurrence has failed at least once and not
+// run since.
+func (s *Schedule) HasFailedPending() bool {
+	return s.FailureCount > 0 && !s.NextOccurrence.IsZero()
 }
 
 // EmailAt is when an invoice raised at raisedAt is e-mailed: EmailDelayDays later.
@@ -329,8 +343,12 @@ func (s *Schedule) UpcomingRuns(n int) []time.Time {
 	return append([]time.Time{first}, s.Recurrence.RunsAfter(s.NextOccurrence, n-1)...)
 }
 
-// PeriodKey names the billing period of the occurrence being processed (see
-// Recurrence.PeriodKey): the key of its run record.
+// BillingPeriod is the billing period [start, end) of the occurrence being processed (see
+// Recurrence.BillingPeriod): what its run record covers.
+func (s *Schedule) BillingPeriod() (start, end Date) { return s.Recurrence.BillingPeriod(s.Period()) }
+
+// PeriodKey labels the run record of the occurrence being processed (see
+// Recurrence.PeriodKey).
 func (s *Schedule) PeriodKey() string { return s.Recurrence.PeriodKey(s.Period()) }
 
 // Advance records a successful (or already-done) run and moves to the next occurrence.
@@ -420,13 +438,20 @@ func (s *Schedule) BuildDraft(c Customer, products map[string]Product, defaultVA
 	return content, nil
 }
 
-// ScheduleRun records one processed occurrence; (ScheduleID, PeriodKey) is unique.
+// ScheduleRun records one processed occurrence and the billing period it covered.
 type ScheduleRun struct {
-	ScheduleID string
-	Period     Date   // the occurrence's nominal date
-	PeriodKey  string // its billing period (Recurrence.PeriodKey); (ScheduleID, PeriodKey) is unique
-	InvoiceID  string
-	At         time.Time
+	ScheduleID  string
+	Period      Date   // the occurrence's nominal date
+	PeriodKey   string // its label (Recurrence.PeriodKey)
+	PeriodStart Date   // its billing period [PeriodStart, PeriodEnd); no two runs of a schedule overlap
+	PeriodEnd   Date
+	InvoiceID   string
+	At          time.Time
+}
+
+// Overlaps reports whether two runs' billing periods share a day.
+func (r ScheduleRun) Overlaps(o ScheduleRun) bool {
+	return r.PeriodStart.Before(o.PeriodEnd) && o.PeriodStart.Before(r.PeriodEnd)
 }
 
 func truncate(s string, n int) string { return TruncateUTF8(s, n) }

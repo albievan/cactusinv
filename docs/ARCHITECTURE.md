@@ -56,7 +56,7 @@ cactusInv/
 ├── deploy/mariadb/initdb/         # creates the restore staging database on a new install
 ├── deploy/k8s/cactusinv.yaml      # k3s/k8s manifests (rendered from .env)
 ├── deploy.sh  docker-compose.yml  .env   # one-script deployment; .env = defaults
-├── docs/                          # this file, ENGINEERING_PRINCIPLES.md, adr/
+├── docs/                          # this file, ENGINEERING_PRINCIPLES.md, PLACEHOLDERS.md, adr/
 ├── Dockerfile  Makefile  sqlc.yaml  .golangci.yml
 ├── PLAN.md  CLAUDE.md  README.md  LICENSE
 └── example/                       # the reference invoice (local only, git-ignored: personal data)
@@ -169,12 +169,19 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
 
 - `Recurrence.Next(after time.Time) time.Time` is pure and table-tested.
 - **Runner** (every minute): claim due schedules (`next_run_at <= now`, `status=active`,
-  `FOR UPDATE SKIP LOCKED`) → inside one transaction: insert `schedule_runs(schedule_id,
-  period_start)` (UNIQUE — idempotency), build the invoice from the template using the
+  `FOR UPDATE SKIP LOCKED`) → inside one transaction: insert the run record
+  `schedule_runs(schedule_id, period, period_key, period_start, period_end)` — refused when
+  `[period_start, period_end)` overlaps a billed period (idempotency, and
+  no stretch of time billed twice) — build the invoice from the template using the
   customer's currency price list, **issue** it, and if `auto_send` enqueue the e-mail;
   advance `next_run_at`; end the schedule when past `end_date`.
-- A failed run is recorded in `schedule_runs.error`, the schedule is not advanced past the
-  failing period more than `max_attempts` times, and it surfaces in the UI.
+- **Billing periods** (`Recurrence.BillingPeriod`, ADR-004 amendment) count from the start
+  date: interval × 1, × 3 or × 12 months from the start month, interval weeks from the
+  Monday of the start week, the day itself for a once schedule. Editing or resuming a
+  schedule never starts inside billed time (`ActivateFrom`'s floor, the end of the latest
+  billed period); a period that failed is kept and retried, also after a pause.
+- A failed run keeps the schedule on the failing period with backoff
+  (`RecordFailure`); after `MaxScheduleFailures` it is paused, and it surfaces in the UI.
 
 ### 3.8 E-mail outbox (ADR-004)
 
@@ -187,9 +194,10 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
   `SKIP LOCKED`), mark `sending`, render the PDF, send via `ports.Mailer`, then mark
   `sent` + set invoice `sent` (or back to `pending` with backoff `1m·2^attempts`, capped
   at 6 h; `failed` after 8 attempts). Stuck `sending` rows older than 10 min are reclaimed.
-- Subject/body are templates with placeholders `{{invoice_number}}`, `{{customer_name}}`,
-  `{{total}}`, `{{due_date}}`, `{{business_name}}`; rendered with `text/template` on a
-  restricted data struct.
+- Subject/body are templates with `{{…}}` placeholders, filled by plain substitution
+  (`domain.RenderTemplate`, no template language; unknown placeholders stay as written) when
+  the e-mail is queued; the subject is folded to one line. The full list for invoice and
+  statement e-mails, invoice numbers and schedule line descriptions: `docs/PLACEHOLDERS.md`.
 
 ## 4. Data (MariaDB 11)
 

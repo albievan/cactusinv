@@ -1594,6 +1594,7 @@ func TestWeekendRuleNeverSkips(t *testing.T) {
 		name  string
 		setup func(h *harness) string // returns the schedule id, leaves the clock on Saturday
 		want  int                     // invoices for November after the runner's pass
+		next  domain.Date             // the pending period before the pass (zero: 1 November)
 	}{
 		{"none switched to previous-friday on Saturday", func(h *harness) string {
 			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
@@ -1602,11 +1603,11 @@ func TestWeekendRuleNeverSkips(t *testing.T) {
 			upd := *d.Schedule
 			upd.Recurrence.Weekend = domain.WeekendPreviousFriday
 			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
-		}, 1},
+		}, 1, domain.Date{}},
 		{"created on Saturday, starting 1 November", func(h *harness) string {
 			h.clock.Set(sat)
 			return must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 11, 1))))).Schedule.ID
-		}, 1},
+		}, 1, domain.Date{}},
 		{"Friday run failed, edited on Saturday", func(h *harness) string {
 			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
 			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
@@ -1623,7 +1624,7 @@ func TestWeekendRuleNeverSkips(t *testing.T) {
 			upd := *must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
 			upd.Name = "Edited"
 			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
-		}, 1},
+		}, 1, domain.Date{}},
 		{"paused Thursday, resumed Saturday", func(h *harness) string {
 			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
 			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
@@ -1631,7 +1632,7 @@ func TestWeekendRuleNeverSkips(t *testing.T) {
 			must(h.svc.PauseSchedule(h.ctx, d.Schedule.ID))
 			h.clock.Set(sat)
 			return must(h.svc.ResumeSchedule(h.ctx, d.Schedule.ID)).Schedule.ID
-		}, 1},
+		}, 1, domain.Date{}},
 		{"ran early on Friday, edited on Saturday: not again", func(h *harness) string {
 			h.clock.Set(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC))
 			d := must(h.svc.CreateSchedule(h.ctx, h.weekendSchedule(monthly("", domain.NewDate(2026, 10, 1)))))
@@ -1643,15 +1644,18 @@ func TestWeekendRuleNeverSkips(t *testing.T) {
 			upd := *must(h.svc.GetSchedule(h.ctx, d.Schedule.ID)).Schedule
 			upd.Name = "Edited"
 			return must(h.svc.UpdateSchedule(h.ctx, upd)).Schedule.ID
-		}, 1},
+		}, 1, domain.NewDate(2026, 12, 1)}, // November is billed: the edit continues after it
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t).seed()
 			id := tc.setup(h)
-			got := must(h.svc.GetSchedule(h.ctx, id)).Schedule
-			if got.Period() != domain.NewDate(2026, 11, 1) {
-				t.Fatalf("pending period %v, want 2026-11-01 (November skipped)", got.Period())
+			want := tc.next
+			if want.IsZero() {
+				want = domain.NewDate(2026, 11, 1)
+			}
+			if got := must(h.svc.GetSchedule(h.ctx, id)).Schedule; got.Period() != want {
+				t.Fatalf("pending period %v, want %v", got.Period(), want)
 			}
 			must(h.svc.RunDueSchedules(h.ctx, 10))
 			invs, n := must3(h.svc.ListInvoices(h.ctx, ports.InvoiceFilter{CustomerID: h.customer.ID}))
@@ -1800,7 +1804,7 @@ func TestEditOrResumeKeepsUnrunPeriod(t *testing.T) {
 				must(h.svc.RunDueSchedules(h.ctx, 10))
 				h.clock.Advance(time.Hour)
 			}
-			if got := must(h.svc.GetSchedule(h.ctx, id)).Schedule; !got.PausedByFailures() {
+			if got := must(h.svc.GetSchedule(h.ctx, id)).Schedule; got.Status != domain.SchedulePaused || !got.HasFailedPending() {
 				t.Fatalf("not auto-paused: %+v", got)
 			}
 			b.IsDefault, b.Active = true, true
