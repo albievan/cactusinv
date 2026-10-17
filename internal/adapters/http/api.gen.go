@@ -445,6 +445,39 @@ func (e SettingsFileFormatVersion) Valid() bool {
 	}
 }
 
+// Defines values for SettingsSection.
+const (
+	SettingsSectionBankAccounts SettingsSection = "bankAccounts"
+	SettingsSectionBusiness     SettingsSection = "business"
+	SettingsSectionCurrencies   SettingsSection = "currencies"
+	SettingsSectionCustomers    SettingsSection = "customers"
+	SettingsSectionEmailServer  SettingsSection = "emailServer"
+	SettingsSectionProducts     SettingsSection = "products"
+	SettingsSectionSchedules    SettingsSection = "schedules"
+)
+
+// Valid indicates whether the value is a known member of the SettingsSection enum.
+func (e SettingsSection) Valid() bool {
+	switch e {
+	case SettingsSectionBankAccounts:
+		return true
+	case SettingsSectionBusiness:
+		return true
+	case SettingsSectionCurrencies:
+		return true
+	case SettingsSectionCustomers:
+		return true
+	case SettingsSectionEmailServer:
+		return true
+	case SettingsSectionProducts:
+		return true
+	case SettingsSectionSchedules:
+		return true
+	default:
+		return false
+	}
+}
+
 // Aging defines model for Aging.
 type Aging struct {
 	// Current Example: 2701.16
@@ -1331,6 +1364,12 @@ type SendRequest struct {
 	To      []string   `json:"to,omitempty"`
 }
 
+// SettingsExportRequest defines model for SettingsExportRequest.
+type SettingsExportRequest struct {
+	// Passphrase Protect the file (at least 16 characters); omit for plain JSON.
+	Passphrase string `json:"passphrase,omitempty"`
+}
+
 // SettingsFile A settings file (Settings → Import/Export). Every section is optional.
 type SettingsFile struct {
 	AppVersion   string            `json:"appVersion,omitempty"`
@@ -1340,10 +1379,15 @@ type SettingsFile struct {
 	Customers    []Customer        `json:"customers,omitempty"`
 
 	// EmailServer Never holds the password.
-	EmailServer   *EmailSettings            `json:"emailServer,omitempty"`
+	EmailServer *EmailSettings `json:"emailServer,omitempty"`
+
+	// Encrypted A file protected with a passphrase holds only this: the base64 of the plain file (JSON) encrypted with age (scrypt). `age -d` opens it too.
+	Encrypted     []byte                    `json:"encrypted,omitempty"`
 	ExportedAt    time.Time                 `json:"exportedAt,omitempty"`
 	Format        SettingsFileFormat        `json:"format"`
 	FormatVersion SettingsFileFormatVersion `json:"formatVersion"`
+	Products      []Product                 `json:"products,omitempty"`
+	Schedules     []SettingsSchedule        `json:"schedules,omitempty"`
 }
 
 // SettingsFileFormat defines model for SettingsFile.Format.
@@ -1351,6 +1395,18 @@ type SettingsFileFormat string
 
 // SettingsFileFormatVersion defines model for SettingsFile.FormatVersion.
 type SettingsFileFormatVersion int
+
+// SettingsImportRequest defines model for SettingsImportRequest.
+type SettingsImportRequest struct {
+	// File A settings file (Settings → Import/Export). Every section is optional.
+	File SettingsFile `json:"file"`
+
+	// Passphrase The file's passphrase
+	Passphrase string `json:"passphrase,omitempty"`
+
+	// Sections The sections to import; omitted means all.
+	Sections []SettingsSection `json:"sections,omitempty"`
+}
 
 // SettingsImportResult defines model for SettingsImportResult.
 type SettingsImportResult struct {
@@ -1361,8 +1417,24 @@ type SettingsImportResult struct {
 	Currencies   ImportCounts `json:"currencies"`
 	Customers    ImportCounts `json:"customers"`
 	EmailServer  ImportCounts `json:"emailServer"`
+	Products     ImportCounts `json:"products"`
+	Schedules    ImportCounts `json:"schedules"`
 	Warnings     []string     `json:"warnings"`
 }
+
+// SettingsSchedule A schedule in a settings file; its customer and products are named by code and SKU.
+type SettingsSchedule struct {
+	// Currency The customer's currency at export (the lines' unit prices).
+	Currency     string `json:"currency"`
+	CustomerCode string `json:"customerCode"`
+
+	// ProductSkus One per line.
+	ProductSkus []string `json:"productSkus"`
+	Schedule    Schedule `json:"schedule"`
+}
+
+// SettingsSection defines model for SettingsSection.
+type SettingsSection string
 
 // StageRestoreRequest defines model for StageRestoreRequest.
 type StageRestoreRequest struct {
@@ -1596,8 +1668,7 @@ type PreviewScheduleParams struct {
 
 // ImportSettingsParams defines parameters for ImportSettings.
 type ImportSettingsParams struct {
-	Apply          bool   `form:"apply,omitempty" json:"apply,omitempty"`
-	IdempotencyKey string `json:"Idempotency-Key,omitempty"`
+	Apply bool `form:"apply,omitempty" json:"apply,omitempty"`
 }
 
 // SendStatementsJSONBody defines parameters for SendStatements.
@@ -1692,8 +1763,11 @@ type UpdateEmailSettingsJSONRequestBody = EmailSettings
 // SendTestEmailJSONRequestBody defines body for SendTestEmail for application/json ContentType.
 type SendTestEmailJSONRequestBody = TestEmailRequest
 
+// ExportSettingsJSONRequestBody defines body for ExportSettings for application/json ContentType.
+type ExportSettingsJSONRequestBody = SettingsExportRequest
+
 // ImportSettingsJSONRequestBody defines body for ImportSettings for application/json ContentType.
-type ImportSettingsJSONRequestBody = SettingsFile
+type ImportSettingsJSONRequestBody = SettingsImportRequest
 
 // SendStatementsJSONRequestBody defines body for SendStatements for application/json ContentType.
 type SendStatementsJSONRequestBody SendStatementsJSONBody
@@ -1926,7 +2000,7 @@ type ServerInterface interface {
 	// (POST /settings/email/test)
 	SendTestEmail(w http.ResponseWriter, r *http.Request)
 
-	// (GET /settings/export)
+	// (POST /settings/export)
 	ExportSettings(w http.ResponseWriter, r *http.Request)
 
 	// (POST /settings/import)
@@ -3932,27 +4006,6 @@ func (siw *ServerInterfaceWrapper) ImportSettings(w http.ResponseWriter, r *http
 		return
 	}
 
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey string
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = IdempotencyKey
-
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ImportSettings(w, r, params)
 	}))
@@ -4268,7 +4321,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/import", wrapper.ImportSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/currencies", wrapper.CreateCurrency)
@@ -7284,6 +7337,7 @@ func (response SendTestEmaildefaultApplicationProblemPlusJSONResponse) VisitSend
 }
 
 type ExportSettingsRequestObject struct {
+	Body *ExportSettingsJSONRequestBody
 }
 
 type ExportSettingsResponseObject interface {
@@ -8146,7 +8200,7 @@ type StrictServerInterface interface {
 	// (POST /settings/email/test)
 	SendTestEmail(ctx context.Context, request SendTestEmailRequestObject) (SendTestEmailResponseObject, error)
 
-	// (GET /settings/export)
+	// (POST /settings/export)
 	ExportSettings(ctx context.Context, request ExportSettingsRequestObject) (ExportSettingsResponseObject, error)
 
 	// (POST /settings/import)
@@ -10197,6 +10251,13 @@ func (sh *strictHandler) SendTestEmail(w http.ResponseWriter, r *http.Request) {
 // ExportSettings operation middleware
 func (sh *strictHandler) ExportSettings(w http.ResponseWriter, r *http.Request) {
 	var request ExportSettingsRequestObject
+
+	var body ExportSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ExportSettings(ctx, request.(ExportSettingsRequestObject))

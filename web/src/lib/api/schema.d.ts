@@ -144,10 +144,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description The business profile, e-mail server (never its password), currencies, bank accounts and customers as one settings file, for Settings → Import/Export. Recorded in the audit log. */
-        get: operations["exportSettings"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** @description The business profile, e-mail server (never its password), currencies, bank accounts, products, customers and schedules as one settings file, for Settings → Import/Export Settings. With a passphrase the file holds only `encrypted` (age, scrypt). Recorded in the audit log. Exempt from Idempotency-Key (the body may carry a passphrase). */
+        post: operations["exportSettings"];
         delete?: never;
         options?: never;
         head?: never;
@@ -163,7 +163,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Merges a settings file, all or nothing; nothing is deleted. Currencies are matched by code, bank accounts by id or by currency and account number, customers by code: a match is updated, anything else created. A section left out of the file is not touched. The next invoice sequence only moves forward and the e-mail server keeps its stored password. Without apply=true nothing is saved and the result says what would happen. */
+        /** @description Merges a settings file, all or nothing; nothing is deleted. Currencies are matched by code, bank accounts by id or by currency and account number, customers by code: a match is updated, anything else created; products by SKU, schedules by customer and name (a new schedule is created paused). Only the chosen sections are imported. The next invoice sequence only moves forward and the e-mail server keeps its stored password. Without apply=true nothing is saved and the result says what would happen. Exempt from Idempotency-Key (the body may carry a passphrase; importing a file twice changes nothing more). */
         post: operations["importSettings"];
         delete?: never;
         options?: never;
@@ -1349,7 +1349,36 @@ export interface components {
             emailServer?: components["schemas"]["EmailSettings"];
             currencies?: components["schemas"]["Currency"][];
             bankAccounts?: components["schemas"]["BankAccount"][];
+            products?: components["schemas"]["Product"][];
             customers?: components["schemas"]["Customer"][];
+            schedules?: components["schemas"]["SettingsSchedule"][];
+            /**
+             * Format: byte
+             * @description A file protected with a passphrase holds only this: the base64 of the plain file (JSON) encrypted with age (scrypt). `age -d` opens it too.
+             */
+            encrypted?: string;
+        };
+        /** @description A schedule in a settings file; its customer and products are named by code and SKU. */
+        SettingsSchedule: {
+            customerCode: string;
+            /** @description The customer's currency at export (the lines' unit prices). */
+            currency: string;
+            /** @description One per line. */
+            productSkus: string[];
+            schedule: components["schemas"]["Schedule"];
+        };
+        /** @enum {string} */
+        SettingsSection: "business" | "emailServer" | "currencies" | "bankAccounts" | "products" | "customers" | "schedules";
+        SettingsExportRequest: {
+            /** @description Protect the file (at least 16 characters); omit for plain JSON. */
+            passphrase?: string;
+        };
+        SettingsImportRequest: {
+            file: components["schemas"]["SettingsFile"];
+            /** @description The file's passphrase */
+            passphrase?: string;
+            /** @description The sections to import; omitted means all. */
+            sections?: components["schemas"]["SettingsSection"][];
         };
         ImportCounts: {
             created: number;
@@ -1363,7 +1392,9 @@ export interface components {
             emailServer: components["schemas"]["ImportCounts"];
             currencies: components["schemas"]["ImportCounts"];
             bankAccounts: components["schemas"]["ImportCounts"];
+            products: components["schemas"]["ImportCounts"];
             customers: components["schemas"]["ImportCounts"];
+            schedules: components["schemas"]["ImportCounts"];
             warnings: string[];
         };
         Currency: {
@@ -2197,7 +2228,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsExportRequest"];
+            };
+        };
         responses: {
             /** @description The settings file. */
             200: {
@@ -2216,15 +2251,13 @@ export interface operations {
             query?: {
                 apply?: boolean;
             };
-            header?: {
-                "Idempotency-Key"?: string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SettingsFile"];
+                "application/json": components["schemas"]["SettingsImportRequest"];
             };
         };
         responses: {

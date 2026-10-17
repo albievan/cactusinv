@@ -31,7 +31,10 @@ func newServer(t *testing.T) (*client, *fakes.Store, *fakes.Clock, *app.Service)
 	t.Helper()
 	store := fakes.NewStore()
 	clock := &fakes.Clock{T: time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC)}
-	svc := app.New(app.Deps{Tx: store, Clock: clock, IDs: &fakes.IDs{}, Mailer: &fakes.Mailer{}, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
+	svc := app.New(app.Deps{
+		Tx: store, Clock: clock, IDs: &fakes.IDs{}, Mailer: &fakes.Mailer{}, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{},
+		Backups: app.BackupDeps{Sealer: fakes.Sealer{}}, // passphrase-protected settings files; backups stay off
+	})
 	if _, err := svc.CreateUser(context.Background(), "albie@example.com", "correct horse battery"); err != nil {
 		t.Fatal(err)
 	}

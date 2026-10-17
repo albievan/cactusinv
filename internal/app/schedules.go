@@ -198,19 +198,30 @@ func (s *Service) CreateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 	sc.CreatedAt = s.now()
 	sc.Recurrence.DefaultWeekendRule()
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		if err := s.checkSchedule(ctx, r, &sc); err != nil {
-			return err
-		}
-		sc.Activate(s.now())
-		if err := r.Schedules.Create(ctx, &sc); err != nil {
-			return err
-		}
-		return s.audit(ctx, r, "schedule.created", "schedule", sc.ID, sc.Name)
+		return s.createSchedule(ctx, r, &sc, false)
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.CreateSchedule", err)
 	}
 	return s.GetSchedule(ctx, sc.ID)
+}
+
+// createSchedule checks and saves a new schedule (ID and CreatedAt set), active or, with
+// paused, paused at its first occurrence.
+func (s *Service) createSchedule(ctx context.Context, r ports.Repos, sc *domain.Schedule, paused bool) error {
+	if err := s.checkSchedule(ctx, r, sc); err != nil {
+		return err
+	}
+	sc.Activate(s.now())
+	if paused && sc.Status == domain.ScheduleActive {
+		if err := sc.Pause(s.now()); err != nil {
+			return err
+		}
+	}
+	if err := r.Schedules.Create(ctx, sc); err != nil {
+		return err
+	}
+	return s.audit(ctx, r, "schedule.created", "schedule", sc.ID, sc.Name)
 }
 
 // UpdateSchedule edits a schedule. An active schedule's next run is recomputed from now.
@@ -229,34 +240,39 @@ func (s *Service) UpdateSchedule(ctx context.Context, sc domain.Schedule) (Sched
 		if err := checkScheduleAccess(ctx, sc); err != nil {
 			return err
 		}
-		if sc.Recurrence.Weekend == "" { // a client that does not know the rule keeps it
-			sc.Recurrence.Weekend = cur.Recurrence.Weekend
-		}
-		if err := s.checkSchedule(ctx, r, &sc); err != nil {
-			return err
-		}
-		// The run state is the server's: a paused schedule keeps its pending occurrence and
-		// failure count (Resume decides from them); an active one keeps an unrun overdue
-		// occurrence and continues after what was billed (ActivateFrom).
-		sc.Status, sc.CreatedAt, sc.LastRunAt = cur.Status, cur.CreatedAt, cur.LastRunAt
-		sc.FailureCount, sc.LastError, sc.NextOccurrence, sc.NextRunAt = cur.FailureCount, cur.LastError, cur.NextOccurrence, cur.NextRunAt
-		sc.UpdatedAt = s.now()
-		if cur.Status != domain.SchedulePaused {
-			billed, err := r.Schedules.BilledUntil(ctx, sc.ID)
-			if err != nil {
-				return err
-			}
-			sc.ActivateFrom(cur.NextOccurrence, billed, s.now())
-		}
-		if err := r.Schedules.Update(ctx, &sc); err != nil {
-			return err
-		}
-		return s.audit(ctx, r, "schedule.updated", "schedule", sc.ID, sc.Name)
+		return s.editSchedule(ctx, r, cur, &sc)
 	})
 	if err != nil {
 		return ScheduleDetail{}, wrap("app.UpdateSchedule", err)
 	}
 	return s.GetSchedule(ctx, sc.ID)
+}
+
+// editSchedule saves sc as the new definition of cur, keeping cur's run state.
+func (s *Service) editSchedule(ctx context.Context, r ports.Repos, cur *domain.Schedule, sc *domain.Schedule) error {
+	if sc.Recurrence.Weekend == "" { // a client that does not know the rule keeps it
+		sc.Recurrence.Weekend = cur.Recurrence.Weekend
+	}
+	if err := s.checkSchedule(ctx, r, sc); err != nil {
+		return err
+	}
+	// The run state is the server's: a paused schedule keeps its pending occurrence and
+	// failure count (Resume decides from them); an active one keeps an unrun overdue
+	// occurrence and continues after what was billed (ActivateFrom).
+	sc.Status, sc.CreatedAt, sc.LastRunAt = cur.Status, cur.CreatedAt, cur.LastRunAt
+	sc.FailureCount, sc.LastError, sc.NextOccurrence, sc.NextRunAt = cur.FailureCount, cur.LastError, cur.NextOccurrence, cur.NextRunAt
+	sc.UpdatedAt = s.now()
+	if cur.Status != domain.SchedulePaused {
+		billed, err := r.Schedules.BilledUntil(ctx, sc.ID)
+		if err != nil {
+			return err
+		}
+		sc.ActivateFrom(cur.NextOccurrence, billed, s.now())
+	}
+	if err := r.Schedules.Update(ctx, sc); err != nil {
+		return err
+	}
+	return s.audit(ctx, r, "schedule.updated", "schedule", sc.ID, sc.Name)
 }
 
 func (s *Service) checkSchedule(ctx context.Context, r ports.Repos, sc *domain.Schedule) error {

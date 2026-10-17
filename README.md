@@ -68,10 +68,12 @@ Released into the public domain — see [LICENSE](LICENSE).
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
 - **Import/Export Settings** — Settings → Import/Export Settings (administrators): export the
-  business details, e-mail server, currencies, bank accounts and customers to one JSON file, and
-  import such a file into this or another installation. An import is checked first (what is new,
-  changed or unchanged, per section you choose), then applied all or nothing; it never deletes,
-  the next invoice number only moves forward, and the e-mail server password is never in the file.
+  business details, e-mail server, currencies, bank accounts, products, customers and schedules
+  to one JSON file, protected with a passphrase unless you choose readable JSON, and import such a
+  file into this or another installation. An import is checked first (what is new, changed or
+  unchanged, per section you choose), then applied all or nothing. It never deletes, new
+  schedules arrive paused, the next invoice number only moves forward, and the e-mail server
+  password is never in the file.
 - **Users and access groups** — Settings → Users & groups: add users, reset a password,
   disable and enable; create groups, choose what each group may do — each action on its own
   (e.g. add customers but not edit or delete them; create invoices but not edit, issue or

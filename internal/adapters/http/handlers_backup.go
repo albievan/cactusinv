@@ -24,9 +24,9 @@ const (
 	pathImportSettings = "/api/v1/settings/import"
 )
 
-// maxSettingsFile is the largest settings file an import accepts (16 MiB, tens of
+// maxSettingsFile is the largest settings file an import accepts (a 16 MiB plain file, tens of
 // thousands of customers).
-const maxSettingsFile = 16 << 20
+const maxSettingsFile = 24 << 20 // base64 of a 16 MiB protected file
 
 // DefaultMaxUploadBytes is the upload limit when none is configured (256 MiB).
 const DefaultMaxUploadBytes = 256 << 20
@@ -63,6 +63,9 @@ func limitsFor(r *http.Request, maxUpload int64) routeLimits {
 func skipsIdempotency(r *http.Request) bool {
 	p := r.URL.Path
 	if r.Method == http.MethodPut && p == "/api/v1/settings/email" { // may carry the SMTP password
+		return true
+	}
+	if r.Method == http.MethodPost && (p == "/api/v1/settings/export" || p == pathImportSettings) { // may carry a passphrase
 		return true
 	}
 	if reauthPath(r) { // POST and PUT routes with the actor's password

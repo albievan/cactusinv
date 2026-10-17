@@ -1,9 +1,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"slices"
 	"strconv"
@@ -14,14 +16,26 @@ import (
 )
 
 // SettingsFile is what Settings → Import/Export moves between installations: the business
-// profile, the e-mail server (never its password), currencies, bank accounts and customers.
-// On import a nil or empty section is left alone.
+// profile, the e-mail server (never its password), currencies, bank accounts, products,
+// customers and schedules. On import a nil or empty section is left alone.
 type SettingsFile struct {
 	Business     *BusinessSettings
 	EmailServer  *domain.SMTPSettings
 	Currencies   []domain.Currency
 	BankAccounts []domain.BankAccount
+	Products     []domain.Product
 	Customers    []domain.Customer
+	Schedules    []ScheduleImport
+}
+
+// ScheduleImport is a schedule in a settings file. Ids differ between installations, so
+// its customer is named by code and each line's product by SKU; Currency is the customer's
+// currency at export, the currency of the lines' unit prices.
+type ScheduleImport struct {
+	CustomerCode string
+	Currency     domain.CurrencyCode
+	ProductSKUs  []string // one per line
+	Schedule     domain.Schedule
 }
 
 // ImportCounts says what an import did to one section.
@@ -36,7 +50,9 @@ type ImportResult struct {
 	EmailServer  ImportCounts
 	Currencies   ImportCounts
 	BankAccounts ImportCounts
+	Products     ImportCounts
 	Customers    ImportCounts
+	Schedules    ImportCounts
 	Warnings     []string // never nil
 }
 
@@ -71,11 +87,18 @@ func (s *Service) ExportSettings(ctx context.Context) (SettingsFile, error) {
 		if f.BankAccounts, err = r.Banks.List(ctx, ""); err != nil {
 			return err
 		}
+		if f.Products, err = allProducts(ctx, r); err != nil {
+			return err
+		}
 		if f.Customers, err = allCustomers(ctx, r); err != nil {
 			return err
 		}
+		if f.Schedules, err = exportSchedules(ctx, r, f.Customers, f.Products); err != nil {
+			return err
+		}
 		return s.audit(ctx, r, "settings.exported", "settings", "export", fmt.Sprintf(
-			"%d currencies, %d bank accounts, %d customers", len(f.Currencies), len(f.BankAccounts), len(f.Customers)))
+			"%d currencies, %d bank accounts, %d products, %d customers, %d schedules",
+			len(f.Currencies), len(f.BankAccounts), len(f.Products), len(f.Customers), len(f.Schedules)))
 	})
 	if err != nil {
 		return SettingsFile{}, wrap("app.ExportSettings", err)
@@ -85,10 +108,13 @@ func (s *Service) ExportSettings(ctx context.Context) (SettingsFile, error) {
 
 // ImportSettings merges a settings file into this installation, all or nothing, in one
 // transaction. Nothing is deleted. Currencies are matched by code, bank accounts by id
-// (the same installation) or by currency and account number, customers by code; a match is
-// updated, anything else created. The next invoice number only moves forward, the e-mail
-// server keeps its stored password (a file never holds one), and a currency's minor units
-// never change. With apply false nothing is saved: the result says what would happen.
+// (the same installation) or by currency and account number, products by SKU, customers by
+// code, schedules by customer and name; a match is updated, anything else created. A new
+// schedule is created paused, so nothing is invoiced before someone resumes it; a matched
+// one keeps its run state and billed periods. The next invoice number only moves forward,
+// the e-mail server keeps its stored password (a file never holds one), and a currency's
+// minor units never change. With apply false nothing is saved: the result says what would
+// happen.
 func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool) (ImportResult, error) {
 	res := ImportResult{Applied: apply, Warnings: []string{}}
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
@@ -99,6 +125,9 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 		if err != nil {
 			return err
 		}
+		if err := s.importProducts(ctx, r, f.Products, &res); err != nil {
+			return err
+		}
 		if err := s.importCustomers(ctx, r, f.Customers, bankIDs, &res); err != nil {
 			return err
 		}
@@ -106,6 +135,9 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 			return err
 		}
 		if err := s.importEmailServer(ctx, r, f.EmailServer, &res); err != nil {
+			return err
+		}
+		if err := s.importSchedules(ctx, r, f.Schedules, &res); err != nil {
 			return err
 		}
 		if err := s.audit(ctx, r, "settings.imported", "settings", "import", res.summary()); err != nil {
@@ -126,7 +158,7 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 }
 
 func (r ImportResult) summary() string {
-	parts := make([]string, 0, 5)
+	parts := make([]string, 0, 7)
 	for _, c := range []struct {
 		name string
 		n    ImportCounts
@@ -422,6 +454,293 @@ func (s *Service) importEmailServer(ctx context.Context, r ports.Repos, in *doma
 		res.EmailServer.Created++
 	}
 	return s.audit(ctx, r, "settings.email_server_updated", "settings", "email", st.Host+" as "+st.Username+", "+activeText(st.Enabled)+", imported")
+}
+
+func (s *Service) importProducts(ctx context.Context, r ports.Repos, in []domain.Product, res *ImportResult) error {
+	if len(in) == 0 {
+		return nil
+	}
+	list, err := allProducts(ctx, r)
+	if err != nil {
+		return err
+	}
+	bySKU := map[string]domain.Product{}
+	for _, p := range list {
+		bySKU[p.SKU] = p
+	}
+	seen := map[string]bool{}
+	for i, p := range in {
+		if err := checkProduct(ctx, r, &p); err != nil {
+			return inItem("products", itemKey(strings.TrimSpace(p.SKU), i), err)
+		}
+		if seen[p.SKU] {
+			return inItem("products", p.SKU, &domain.ValidationError{Field: "sku", Reason: "appears more than once in the file"})
+		}
+		seen[p.SKU] = true
+		cur, ok := bySKU[p.SKU]
+		if ok {
+			p.ID, p.Version = cur.ID, cur.Version
+			if reflect.DeepEqual(p, cur) {
+				res.Products.Unchanged++
+				continue
+			}
+			if err := r.Products.Update(ctx, p); err != nil {
+				return err
+			}
+			res.Products.Updated++
+			err = s.audit(ctx, r, "product.updated", "product", p.ID, p.SKU+" "+p.Name)
+		} else {
+			p.ID, p.Version = s.ids.NewID(), 0
+			if err := r.Products.Create(ctx, p); err != nil {
+				return err
+			}
+			res.Products.Created++
+			err = s.audit(ctx, r, "product.created", "product", p.ID, p.SKU+" "+p.Name)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) importSchedules(ctx context.Context, r ports.Repos, in []ScheduleImport, res *ImportResult) error {
+	if len(in) == 0 {
+		return nil
+	}
+	customers, err := allCustomers(ctx, r) // including those just imported
+	if err != nil {
+		return err
+	}
+	products, err := allProducts(ctx, r)
+	if err != nil {
+		return err
+	}
+	byCode := map[string]domain.Customer{}
+	for _, c := range customers {
+		byCode[c.Code] = c
+	}
+	bySKU := map[string]string{}
+	for _, p := range products {
+		bySKU[p.SKU] = p.ID
+	}
+	list, err := allSchedules(ctx, r)
+	if err != nil {
+		return err
+	}
+	byName := map[string]domain.Schedule{}
+	for _, sc := range list {
+		byName[sc.CustomerID+"\x00"+sc.Name] = sc
+	}
+	seen := map[string]bool{}
+	paused := 0
+	for i, in := range in {
+		sc := in.Schedule
+		code := strings.ToUpper(strings.TrimSpace(in.CustomerCode))
+		sc.Name = strings.TrimSpace(sc.Name)
+		key := itemKey(strings.TrimSpace(code+" "+sc.Name), i)
+		c, ok := byCode[code]
+		if !ok {
+			return inItem("schedules", key, &domain.ValidationError{Field: "customerCode", Reason: "no customer " + code + " in the file or on this server"})
+		}
+		sc.CustomerID = c.ID
+		if len(in.ProductSKUs) != len(sc.Lines) {
+			return inItem("schedules", key, &domain.ValidationError{Field: "productSkus", Reason: "must name one product per line"})
+		}
+		sc.Lines = slices.Clone(sc.Lines)
+		for j, sku := range in.ProductSKUs {
+			id, ok := bySKU[strings.TrimSpace(sku)]
+			if !ok {
+				return inItem("schedules", key, &domain.ValidationError{Field: "lines.product", Reason: "no product " + sku + " in the file or on this server"})
+			}
+			sc.Lines[j].ProductID = id
+			if sc.Lines[j].UnitPrice != nil && in.Currency != c.Currency {
+				return inItem("schedules", key, &domain.ValidationError{
+					Field: "lines.unitPrice", Reason: "is in " + string(in.Currency) + ", but customer " + code + " is billed in " + string(c.Currency),
+				})
+			}
+		}
+		if seen[c.ID+"\x00"+sc.Name] {
+			return inItem("schedules", key, &domain.ValidationError{Field: "name", Reason: "appears more than once in the file for this customer"})
+		}
+		seen[c.ID+"\x00"+sc.Name] = true
+		if err := checkScheduleAccess(ctx, sc); err != nil {
+			return err
+		}
+		cur, ok := byName[c.ID+"\x00"+sc.Name]
+		if !ok {
+			sc.ID, sc.CreatedAt, sc.Version = s.ids.NewID(), s.now(), 0
+			sc.Recurrence.DefaultWeekendRule()
+			if err := s.createSchedule(ctx, r, &sc, true); err != nil {
+				return inItem("schedules", key, err)
+			}
+			res.Schedules.Created++
+			paused++
+			continue
+		}
+		if err := checkScheduleAccess(ctx, cur); err != nil {
+			return err
+		}
+		sc.ID, sc.Version = cur.ID, cur.Version
+		if sc.Recurrence.Weekend == "" {
+			sc.Recurrence.Weekend = cur.Recurrence.Weekend
+		}
+		if err := s.checkSchedule(ctx, r, &sc); err != nil {
+			return inItem("schedules", key, err)
+		}
+		if sameDefinition(sc, cur) {
+			res.Schedules.Unchanged++
+			continue
+		}
+		if err := s.editSchedule(ctx, r, &cur, &sc); err != nil {
+			return inItem("schedules", key, err)
+		}
+		res.Schedules.Updated++
+	}
+	if paused > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"%d new schedule(s) are imported paused, so nothing is invoiced or e-mailed yet: resume each on Schedules when it should start.", paused))
+	}
+	return nil
+}
+
+// sameDefinition compares what a settings file can change about a schedule (not its run
+// state, id or version).
+func sameDefinition(a, b domain.Schedule) bool {
+	def := func(s domain.Schedule) domain.Schedule {
+		if len(s.Lines) == 0 {
+			s.Lines = nil
+		}
+		return domain.Schedule{
+			CustomerID: s.CustomerID, Name: s.Name, Kind: s.Kind, EmailScope: s.EmailScope, Recurrence: s.Recurrence,
+			Lines: s.Lines, Header: s.Header, Notes: s.Notes, TaxRate: s.TaxRate, AutoSend: s.AutoSend,
+			EmailDelayDays: s.EmailDelayDays, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
+		}
+	}
+	return reflect.DeepEqual(def(a), def(b))
+}
+
+// exportSchedules names each schedule's customer by code and its lines' products by SKU.
+func exportSchedules(ctx context.Context, r ports.Repos, customers []domain.Customer, products []domain.Product) ([]ScheduleImport, error) {
+	list, err := allSchedules(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]domain.Customer{}
+	for _, c := range customers {
+		byID[c.ID] = c
+	}
+	sku := map[string]string{}
+	for _, p := range products {
+		sku[p.ID] = p.SKU
+	}
+	out := make([]ScheduleImport, 0, len(list))
+	for _, sc := range list {
+		c := byID[sc.CustomerID]
+		si := ScheduleImport{CustomerCode: c.Code, Currency: c.Currency, Schedule: sc, ProductSKUs: make([]string, len(sc.Lines))}
+		for i, l := range sc.Lines {
+			si.ProductSKUs[i] = sku[l.ProductID]
+		}
+		out = append(out, si)
+	}
+	return out, nil
+}
+
+// allProducts reads every product, active or not, a page at a time.
+func allProducts(ctx context.Context, r ports.Repos) ([]domain.Product, error) {
+	var out []domain.Product
+	page := ports.Page{Limit: 200}.Normalize()
+	for {
+		ps, total, err := r.Products.List(ctx, ports.ProductFilter{IncludeInactive: true, Page: page})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ps...)
+		page.Offset += len(ps)
+		if len(ps) == 0 || page.Offset >= total {
+			return out, nil
+		}
+	}
+}
+
+// allSchedules reads every schedule, a page at a time.
+func allSchedules(ctx context.Context, r ports.Repos) ([]domain.Schedule, error) {
+	var out []domain.Schedule
+	page := ports.Page{Limit: 200}.Normalize()
+	for {
+		ss, total, err := r.Schedules.List(ctx, ports.ScheduleFilter{Page: page})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ss...)
+		page.Offset += len(ss)
+		if len(ss) == 0 || page.Offset >= total {
+			return out, nil
+		}
+	}
+}
+
+// maxSettingsFile bounds a decrypted settings file (as the HTTP body limit bounds a plain one).
+const maxSettingsFile = 16 << 20
+
+// SealSettings encrypts an exported settings file with a passphrase (age with scrypt, as a
+// downloaded backup is), so it can be opened only with that passphrase.
+func (s *Service) SealSettings(plain []byte, passphrase string) ([]byte, error) {
+	if err := domain.ValidateBackupPassphrase(passphrase); err != nil {
+		return nil, wrap("app.SealSettings", err)
+	}
+	sealer := s.backups.Sealer
+	if sealer == nil {
+		return nil, wrap("app.SealSettings", fmt.Errorf("%w: encryption", domain.ErrNotConfigured))
+	}
+	unlock, err := s.lockBackups() // scrypt needs memory: one at a time, with backups
+	if err != nil {
+		return nil, wrap("app.SealSettings", err)
+	}
+	defer unlock()
+	var buf bytes.Buffer
+	w, err := sealer.SealWithPassphrase(&buf, passphrase)
+	if err == nil {
+		_, err = w.Write(plain)
+	}
+	if err == nil {
+		err = w.Close()
+	}
+	if err != nil {
+		return nil, wrap("app.SealSettings", err)
+	}
+	return buf.Bytes(), nil
+}
+
+// OpenSettings decrypts a settings file sealed by SealSettings. A wrong passphrase or a
+// damaged file is a validation error on the passphrase.
+func (s *Service) OpenSettings(sealed []byte, passphrase string) ([]byte, error) {
+	if passphrase == "" {
+		return nil, wrap("app.OpenSettings", &domain.ValidationError{Field: "passphrase", Reason: "the file is protected: enter its passphrase"})
+	}
+	sealer := s.backups.Sealer
+	if sealer == nil {
+		return nil, wrap("app.OpenSettings", fmt.Errorf("%w: encryption", domain.ErrNotConfigured))
+	}
+	unlock, err := s.lockBackups()
+	if err != nil {
+		return nil, wrap("app.OpenSettings", err)
+	}
+	defer unlock()
+	rd, err := sealer.Open(bytes.NewReader(sealed), passphrase)
+	var plain []byte
+	if err == nil {
+		plain, err = io.ReadAll(io.LimitReader(rd, maxSettingsFile+1))
+	}
+	switch {
+	case errors.Is(err, domain.ErrBackupInvalid):
+		return nil, wrap("app.OpenSettings", &domain.ValidationError{Field: "passphrase", Reason: "is wrong, or the file is damaged"})
+	case err != nil:
+		return nil, wrap("app.OpenSettings", err)
+	case len(plain) > maxSettingsFile:
+		return nil, wrap("app.OpenSettings", &domain.ValidationError{Field: "file", Reason: "is too large"})
+	}
+	return plain, nil
 }
 
 // allCustomers reads every customer, active or not, a page at a time.

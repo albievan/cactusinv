@@ -3,10 +3,15 @@
 package mariadb_test
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 
+	"github.com/albievan/cactusinv/internal/adapters/agecrypt"
+	"github.com/albievan/cactusinv/internal/adapters/idgen"
 	"github.com/albievan/cactusinv/internal/app"
 	"github.com/albievan/cactusinv/internal/domain"
+	"github.com/albievan/cactusinv/internal/ports/fakes"
 )
 
 // TestSettingsFileImport: on MariaDB a check rolls back, the same file changes nothing
@@ -14,9 +19,17 @@ import (
 // account and points a customer at a new account by the file's id.
 func TestSettingsFileImport(t *testing.T) {
 	e := setup(t)
+	price := int64(50000)
+	must(e.svc.CreateSchedule(e.ctx, domain.Schedule{
+		CustomerID: e.customer.ID, Name: "Monthly",
+		Recurrence: domain.Recurrence{Frequency: domain.FrequencyQuarterly, DayOfMonth: 0, SendHour: 9, SendMinute: 30, StartDate: domain.NewDate(2026, 2, 1)},
+		Lines:      []domain.ScheduleLine{{ProductID: e.product.ID, Quantity: 14000}, {ProductID: e.integ.ID, Quantity: 1000, UnitPrice: &price, Discount: 500}},
+		AutoSend:   true, EmailDelayDays: 2, Notes: "Thanks",
+	}))
 	file := must(e.svc.ExportSettings(e.ctx))
 	same := must(e.svc.ImportSettings(e.ctx, file, true))
-	if same.Customers != (app.ImportCounts{Unchanged: 1}) || same.BankAccounts != (app.ImportCounts{Unchanged: 1}) ||
+	if same.Schedules != (app.ImportCounts{Unchanged: 1}) || same.Products != (app.ImportCounts{Unchanged: 2}) ||
+		same.Customers != (app.ImportCounts{Unchanged: 1}) || same.BankAccounts != (app.ImportCounts{Unchanged: 1}) ||
 		same.Currencies != (app.ImportCounts{Unchanged: 2}) || same.Business != (app.ImportCounts{Unchanged: 1}) {
 		t.Fatalf("same file: %+v", same)
 	}
@@ -59,5 +72,23 @@ func TestSettingsFileImport(t *testing.T) {
 	}
 	if b := must(e.svc.GetBusiness(e.ctx)); b.Profile.Phone != "011 555 0100" || b.NextSequence != 1195 {
 		t.Fatalf("business: %+v", b)
+	}
+
+	// Real age encryption with a passphrase.
+	sealer, err := agecrypt.New("", agecrypt.WithWorkFactor(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := app.New(app.Deps{Tx: e.store, Clock: e.clock, IDs: idgen.UUIDv7{}, Mailer: e.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}, Backups: app.BackupDeps{Sealer: sealer}})
+	plain := []byte(`{"format":"cactusinv-settings","formatVersion":1}`)
+	sealed := must(svc.SealSettings(plain, "correct horse battery staple"))
+	if !bytes.HasPrefix(sealed, []byte("age-encryption.org/v1")) {
+		t.Fatalf("not an age file: %q", sealed[:20])
+	}
+	if got := must(svc.OpenSettings(sealed, "correct horse battery staple")); !bytes.Equal(got, plain) {
+		t.Fatalf("opened %q", got)
+	}
+	if _, err := svc.OpenSettings(sealed, "the wrong passphrase, long"); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("wrong passphrase: %v", err)
 	}
 }

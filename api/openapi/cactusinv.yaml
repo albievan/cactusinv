@@ -177,12 +177,19 @@ paths:
         default: { $ref: '#/components/responses/Problem' }
 
   /settings/export:
-    get:
+    post:
       tags: [settings]
       operationId: exportSettings
       description: >-
-        The business profile, e-mail server (never its password), currencies, bank accounts and
-        customers as one settings file, for Settings → Import/Export. Recorded in the audit log.
+        The business profile, e-mail server (never its password), currencies, bank accounts,
+        products, customers and schedules as one settings file, for Settings → Import/Export
+        Settings. With a passphrase the file holds only `encrypted` (age, scrypt). Recorded in the
+        audit log. Exempt from Idempotency-Key (the body may carry a passphrase).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SettingsExportRequest' }
       responses:
         '200':
           description: The settings file.
@@ -197,17 +204,19 @@ paths:
       description: >-
         Merges a settings file, all or nothing; nothing is deleted. Currencies are matched by
         code, bank accounts by id or by currency and account number, customers by code: a
-        match is updated, anything else created. A section left out of the file is not touched.
-        The next invoice sequence only moves forward and the e-mail server keeps its stored
-        password. Without apply=true nothing is saved and the result says what would happen.
+        match is updated, anything else created; products by SKU, schedules by customer and name
+        (a new schedule is created paused). Only the chosen sections are imported. The next
+        invoice sequence only moves forward and the e-mail server keeps its stored password.
+        Without apply=true nothing is saved and the result says what would happen. Exempt from
+        Idempotency-Key (the body may carry a passphrase; importing a file twice changes nothing
+        more).
       parameters:
         - { name: apply, in: query, schema: { type: boolean, default: false } }
-        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SettingsFile' }
+            schema: { $ref: '#/components/schemas/SettingsImportRequest' }
       responses:
         '200':
           description: What was (or, without apply, would be) imported.
@@ -1623,7 +1632,41 @@ components:
           description: Never holds the password.
         currencies: { type: array, items: { $ref: '#/components/schemas/Currency' } }
         bankAccounts: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
+        products: { type: array, items: { $ref: '#/components/schemas/Product' } }
         customers: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+        schedules: { type: array, items: { $ref: '#/components/schemas/SettingsSchedule' } }
+        encrypted:
+          type: string
+          format: byte
+          description: >-
+            A file protected with a passphrase holds only this: the base64 of the plain file
+            (JSON) encrypted with age (scrypt). `age -d` opens it too.
+    SettingsSchedule:
+      type: object
+      required: [customerCode, currency, productSkus, schedule]
+      description: A schedule in a settings file; its customer and products are named by code and SKU.
+      properties:
+        customerCode: { type: string }
+        currency: { type: string, description: The customer's currency at export (the lines' unit prices). }
+        productSkus: { type: array, items: { type: string }, description: One per line. }
+        schedule: { $ref: '#/components/schemas/Schedule' }
+    SettingsSection:
+      type: string
+      enum: [business, emailServer, currencies, bankAccounts, products, customers, schedules]
+    SettingsExportRequest:
+      type: object
+      properties:
+        passphrase: { type: string, maxLength: 1024, description: 'Protect the file (at least 16 characters); omit for plain JSON.' }
+    SettingsImportRequest:
+      type: object
+      required: [file]
+      properties:
+        file: { $ref: '#/components/schemas/SettingsFile' }
+        passphrase: { type: string, maxLength: 1024, description: The file's passphrase, when it is protected. }
+        sections:
+          type: array
+          items: { $ref: '#/components/schemas/SettingsSection' }
+          description: The sections to import; omitted means all.
     ImportCounts:
       type: object
       required: [created, updated, unchanged]
@@ -1633,14 +1676,16 @@ components:
         unchanged: { type: integer }
     SettingsImportResult:
       type: object
-      required: [applied, business, emailServer, currencies, bankAccounts, customers, warnings]
+      required: [applied, business, emailServer, currencies, bankAccounts, products, customers, schedules, warnings]
       properties:
         applied: { type: boolean, description: false for a check (nothing saved). }
         business: { $ref: '#/components/schemas/ImportCounts' }
         emailServer: { $ref: '#/components/schemas/ImportCounts' }
         currencies: { $ref: '#/components/schemas/ImportCounts' }
         bankAccounts: { $ref: '#/components/schemas/ImportCounts' }
+        products: { $ref: '#/components/schemas/ImportCounts' }
         customers: { $ref: '#/components/schemas/ImportCounts' }
+        schedules: { $ref: '#/components/schemas/ImportCounts' }
         warnings: { type: array, x-omitempty: false, items: { type: string } }
 
     Currency:
