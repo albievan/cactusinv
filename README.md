@@ -95,7 +95,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   ("192,94"); "1,500" is refused as ambiguous. PDFs print names in Latin, Greek and Cyrillic
   scripts as typed.
 - **Mobile first** — designed for a phone, bottom navigation, large touch targets; scales
-  up to a desktop layout. Installable as a home-screen app.
+  up to a desktop layout. Installable as a home-screen app. Built on Bootstrap 5.3 with
+  Bootstrap Icons: compact buttons show an icon, with its name as a tooltip and for screen readers.
 
 ## Quick start (Docker Desktop)
 
@@ -252,7 +253,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
 | `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.13.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.14.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -260,7 +261,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.13.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.14.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Set `false` **only** if people open the app over plain `http://` on another address (e.g. `http://192.168.1.72:30080`), because otherwise the browser drops the cookie and sign-in fails. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |
