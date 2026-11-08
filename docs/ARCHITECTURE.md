@@ -245,6 +245,9 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 |---|---|---|
 | `CACTUSINV_HTTP_ADDR` | listen address | `:8080` |
 | `CACTUSINV_DB_HOST` / `_PORT` / `_NAME` / `_USER` | MariaDB location | – / `3306` / `cactusinv` / `cactusinv` |
+| `CACTUSINV_DB_WAIT_SECONDS` | how long start-up waits for the database | `60` |
+| `CACTUSINV_LOG_LEVEL` | `debug` / `info` / `warn` / `error` (anything else = `info`) | `info` |
+| `TZ` | IANA zone: backup times; business time zone until saved in the app | container's (UTC) |
 | `CACTUSINV_SECRETS` | `file` or `vault` | `file` |
 | `CACTUSINV_SECRETS_DIR` | directory of secret files | `/run/secrets` |
 | `CACTUSINV_VAULT_ADDR` / `_TOKEN_FILE` / `_KV_PATH` | Vault (when `CACTUSINV_SECRETS=vault`) | – / `/run/secrets/vault_token` / `secret/data/cactusinv` |
@@ -256,6 +259,11 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 | `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag | `true` |
 | `CACTUSINV_BACKUP_DIR` / `_BACKUP_TIMES` / `_BACKUP_RETENTION_DAYS` / `_BACKUP_MAX_UPLOAD_MB` | backups (§12) | `/data/backups` / `02:00` / `14` / `256` |
 | `CACTUSINV_RESTORE_DB_NAME` | restore staging database | `<db>_restore` |
+| `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never), §19 | GitHub `main` `VERSION` |
+| `CACTUSINV_DEPLOY_TARGET` / `_HOST_PROJECT_DIR` / `_HOST_BACKUP_DIR` / `_HOST_INVOICES_DIR` | set by `deploy.sh` for System Settings (folder mapping) | – |
+
+The deployment-level `.env` (what each value does, `K8S_STORAGE_CLASS`) is documented in the
+README, "Configuration — `.env`".
 
 Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (optional) — files or Vault keys
 (ADR-006). Session tokens are random and stored hashed, so no signing key exists.
@@ -522,4 +530,23 @@ the session timeouts and the host folders mapped to the container's folders.
   the first whose billing period is free; a schedule with no run left is refused.
 - **PDF**: the DRAFT/VOID/PAID mark is drawn with the footer, on every page.
 - **Web lists** page with "Show more" (`usePaged`); the invoice editor searches customers.
+
+## 19. Upgrades (M27)
+
+- `./deploy.sh --upgrade TARGET [--to REF] [--yes]` (ADR-007 amendment): clean tracked tree,
+  running install, fetch, fast-forward only; it shows versions, commits and schema change and
+  asks; then `--backup-now`, `git merge --ff-only`, the new `deploy.sh --install`, and a check
+  of `--version`. On failure: `--migrate-down-to <old head>` with the new image, `git reset
+  --keep <old>`, `--install` again, and a check that the old version runs.
+- `./deploy.sh --version` prints `cactusinv version` and `cactusinv migrate status`
+  (`schema N, this version M`) from the running install.
+- `mariadb.Migrate` refuses a schema newer than the binary's head (`SchemaNewerError`); with
+  `CACTUSINV_MIGRATE_ON_START=false` the server checks the same before it serves.
+  `MigrateDownTo(n ≥ 1)` rolls back newest first and refuses a schema it does not know.
+- System Settings → Version: `GET /settings/system/update` (`settings.system.view`) compares
+  the running version with the first line of `CACTUSINV_UPDATE_URL` (default: `VERSION` on
+  GitHub `main`; 10 s timeout, 64 bytes at most). It never fails: `problem` says why a check
+  could not be made (switched off, a development build, unreachable, unreadable). Versions
+  compare as MAJOR.MINOR.PATCH (`domain.ParseVersion`); a newer build of the same version is
+  not offered.
 

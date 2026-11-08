@@ -115,3 +115,16 @@ func (Cipher) Decrypt(c []byte) ([]byte, error) {
 	}
 	return c[4:], nil
 }
+
+// Releases is a ports.ReleaseSource that returns Version, or Err.
+type Releases struct {
+	Version string
+	Err     error
+	Calls   int
+}
+
+// LatestVersion implements ports.ReleaseSource.
+func (r *Releases) LatestVersion(context.Context) (string, error) {
+	r.Calls++
+	return r.Version, r.Err
+}

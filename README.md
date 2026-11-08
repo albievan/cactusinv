@@ -83,7 +83,9 @@ Released into the public domain — see [LICENSE](LICENSE).
   time without activity and end every sign-in after a maximum time (applies at once), and map
   the container's backup and invoice export folders to host folders, e.g. a NAS share. A new
   mapping is used by the next `./deploy.sh --install --dockerdesktop`, which copies the
-  existing files into an empty new folder. On Kubernetes the folders are volume claims.
+  existing files into an empty new folder. On Kubernetes the folders are volume claims. It also
+  shows the running version, and **Check for updates** says whether a newer one is published and
+  the command that upgrades to it (`./deploy.sh --upgrade`; see [Upgrading](#upgrading)).
 - **Users and access groups** — Settings → Users & groups: add users, reset a password,
   disable and enable; create groups, choose what each group may do — each action on its own
   (e.g. add customers but not edit or delete them; create invoices but not edit, issue or
@@ -104,6 +106,12 @@ git clone https://github.com/albievan/cactusinv.git && cd cactusinv
 ./deploy.sh --install --dockerdesktop
 ```
 
+The data folders in `.env` default to `/data/cactusinv/…`. Where `/data` cannot be created (on a
+Mac the disk root is read-only) or you are not root, set `DATA_DIR`, `MARIADB_DATA_DIR`,
+`INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` to a folder you can write, e.g. `./data/…` and
+`./secrets` (both git-ignored), **before** the first install. See
+[Configuration](#configuration--env).
+
 Open <http://localhost:8080> and sign in as **`admin` / `admin`**. You are asked to choose a
 new password straight away; nothing else works until you have (the server enforces it). Then
 add the people who need to sign in under **Settings → Users**.
@@ -117,8 +125,9 @@ the server — it works for any user and ends that user's sessions:
 echo 'a-long-new-password' | docker compose exec -T app /cactusinv admin set-password admin
 ```
 
-Test e-mails are captured by Mailpit at <http://localhost:8025>. Set real SMTP settings in
-`.env` (and the password in `secrets/smtp_password`) to deliver to customers.
+Test e-mails are captured by Mailpit at <http://localhost:8025>. To deliver to customers, set the real
+mail server in Settings → E-mail server (or the fallback in `.env`, with its password in
+`${SECRETS_DIR}/smtp_password`).
 
 First steps in the app: **Settings → Business** (business details, invoice number format and
 next number), **Settings → E-mail server**, **Settings → Currencies & bank accounts** (on a phone:
@@ -138,7 +147,8 @@ examples in [docs/PLACEHOLDERS.md](docs/PLACEHOLDERS.md).
 ```
 ./deploy.sh ACTION TARGET [--ssh-access user@host] [--yes]
 
-ACTION   --install | --uninstall | --delete-uninstall | --status | --backup-now | --restore FILE
+ACTION   --install | --upgrade [--to REF] | --version | --uninstall | --delete-uninstall | --status
+         | --backup-now | --restore FILE
 TARGET   --dockerdesktop | --k3s | --k8s
 ```
 
@@ -148,6 +158,9 @@ TARGET   --dockerdesktop | --k3s | --k8s
 | `./deploy.sh --install --dockerdesktop --ssh-access root@192.0.2.10` | copy to `/opt/cactusinv` on the host and run it there with Docker |
 | `./deploy.sh --install --k3s --ssh-access root@192.0.2.10` | build for the node's CPU, import into k3s, apply manifests (no registry needed) |
 | `./deploy.sh --install --k8s` | push the image to `K8S_REGISTRY` and apply to the current `kubectl` context |
+| `./deploy.sh --upgrade --dockerdesktop` | upgrade to the newest version (see [Upgrading](#upgrading)) |
+| `./deploy.sh --upgrade --to v1.13.0 --k3s --ssh-access root@192.0.2.10` | upgrade to a given tag, branch or commit |
+| `./deploy.sh --version --dockerdesktop` | the running version and database schema |
 | `./deploy.sh --uninstall --k3s …` | remove the app, **keep** database, invoices and backups |
 | `./deploy.sh --delete-uninstall --dockerdesktop` | remove the app **and all data** (asks to confirm; `--yes` to skip) |
 | `./deploy.sh --backup-now --dockerdesktop` | take an encrypted backup now (stored in `BACKUP_DIR`) |
@@ -178,23 +191,167 @@ node (`kubectl get pod -o wide`) or put an ingress in front. Behind NAT or a pro
 share one address and so share its limit of 10 failed password attempts a minute; a
 signed-in user also has a limit of their own.
 
+## Upgrading
+
+The app runs without rights over Docker or the cluster, so it cannot replace itself; Settings →
+System Settings → **Check for updates** says when a newer version is published and which command
+installs it. Run it in this folder (the git checkout you install from), for the same target and
+`--ssh-access` you installed with:
+
+```
+./deploy.sh --upgrade --dockerdesktop
+```
+
+1. It stops at once, changing nothing, if tracked files have local changes, the checkout is not
+   on a branch, or cactusInv is not running there.
+2. It fetches the branch's upstream (or `--to REF`) and only moves **forward**: an older version
+   is refused (going back to one needs a restore of a backup it made).
+3. It shows the running and the new version, the commits in between and whether the database
+   changes, and asks you to type `upgrade` (`--yes` skips the question).
+4. It takes a backup first; if that fails nothing is changed.
+5. It moves the checkout forward and installs with the **new** version's `deploy.sh`, then checks
+   that the new version is the one running. Nobody is signed out; the app is unavailable for a
+   minute or two while it restarts, and the new version updates the database as it starts.
+6. If the install or the check fails, it goes back: the new version undoes its own database
+   changes (`cactusinv migrate down-to N`), the checkout returns to the old commit and the old
+   version is installed again, with the data as it was. It names the backup taken in step 4.
+   On k3s/k8s the database changes can only be undone while the new version's pod runs; if it
+   does not, the script says how to recover with that backup.
+
+An older version refuses to start on a database a newer version has changed (it says which
+version to run, or which `migrate down-to` to run with the newer one), rather than running on
+tables it does not know.
+
 ## Configuration — `.env`
 
-All defaults live in [`.env`](.env) (no secrets in it):
+[`.env`](.env) holds the deployment's defaults. Docker Compose reads it on its own, and
+`deploy.sh` reads it for every target. A variable already set in your shell wins over the
+file, e.g. `HTTP_PORT=9090 ./deploy.sh --install --dockerdesktop`. It holds **no secrets**:
+passwords and keys are files in `SECRETS_DIR` (Docker) or the `cactusinv-secrets` Secret
+(k3s/k8s), generated by `--install`. A change takes effect at the next `./deploy.sh --install`
+(it is safe to re-run; data is kept). With `--ssh-access`, the folders are on the remote host.
 
-| Setting | Default | Meaning |
+"Docker" below means `--dockerdesktop`, with or without `--ssh-access`.
+
+### Folders (Docker)
+
+On k3s/k8s these are not used: the data lives in volume claims (see
+[k3s / k8s](#k3s--k8s)). Relative paths are relative to `.env`.
+
+| Setting | Default | What it does |
 |---|---|---|
-| `MARIADB_DATA_DIR` | `./data/mariadb` | database files (Docker) |
-| `INVOICES_DIR` | `./data/invoices` | exported invoice PDFs (Docker) |
-| `BACKUP_DIR` | `./data/backups` | encrypted backups (Docker) |
-| `SECRETS_DIR` | `./secrets` | generated secrets (`db_password`, `db_root_password`, `smtp_password`, `app_key`, `backup_key`) |
-| `HTTP_PORT` / `MAILPIT_PORT` | `8080` / `8025` | published ports (Docker) |
-| `CACTUSINV_DEFAULT_ADMIN_USER` / `_PASSWORD` | `admin` / `admin` | created on first start only |
-| `CACTUSINV_SMTP_*` | Mailpit | outgoing mail server |
-| `BACKUP_TIMES` / `BACKUP_RETENTION_DAYS` | `02:00` / `14` | daily backup times (in `TZ`) and how long backups are kept (0 = always) |
-| `BACKUP_MAX_UPLOAD_MB` | `256` | largest backup file that can be uploaded for a restore |
-| `K8S_*` | | namespace, NodePorts, storage class and sizes, registry |
-| `TZ` | `Africa/Johannesburg` | time zone for backups, and the business time zone until it is saved in the app (Settings → Business) |
+| `DATA_DIR` | `/data/cactusinv` | Parent of the folders below. `deploy.sh` only names it in the `--uninstall` message; the four settings below are what is used, so move them together if you change it. |
+| `MARIADB_DATA_DIR` | `…/mariadb` | MariaDB's database files. Keep it on a local disk, not a network share. |
+| `INVOICES_DIR` | `…/invoices` | Exported invoice PDFs, by year. Settings → System Settings can map it to another host folder; a value set in the shell wins over that. |
+| `BACKUP_DIR` | `…/backups` | Encrypted backups (scheduled, `--backup-now`, and uploaded ones). Can also be mapped in System Settings. Copy them off this machine. |
+| `SECRETS_DIR` | `…/secrets` | Generated secret files: `db_password`, `db_root_password`, `app_key` (encrypts the SMTP password saved in the app), `backup_key` (encrypts backups; **keep a copy elsewhere**, a backup cannot be read without it), and `smtp_password` (empty; the fallback server's password, see E-mail). `--delete-uninstall` deletes it. |
+
+### Network and image
+
+| Setting | Default | What it does |
+|---|---|---|
+| `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
+| `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.13.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+
+### Application (all targets)
+
+| Setting | Default | What it does |
+|---|---|---|
+| `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
+| `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.13.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
+`localhost` in another browser, set `false`). Set `false` **only** if people open the app over plain `http://` on another address (e.g. `http://192.168.1.72:30080`), because otherwise the browser drops the cookie and sign-in fails. |
+| `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |
+| `CACTUSINV_DEFAULT_ADMIN_PASSWORD` | `admin` | That user's first password. You are asked to change it at the first sign-in. |
+
+### Database
+
+| Setting | Default | What it does |
+|---|---|---|
+| `MARIADB_DATABASE` | `cactusinv` | Database name (1–57 letters, digits or `_`). A second database `<name>_restore` is used while restoring. Set it before the first install; changing it later starts an empty database. |
+| `MARIADB_USER` | `cactusinv` | The app's database user (1–80 letters, digits or `_`). Its password is the `db_password` secret. Set it before the first install, like the name. |
+
+### E-mail
+
+Set the real mail server in the app: Settings → E-mail server (Gmail: `smtp.gmail.com`, port
+587, STARTTLS, with a Google app password). These settings are only the **fallback** used
+until a server is enabled there. By default that is the bundled Mailpit test mailbox, which
+catches every message and sends nothing out.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `CACTUSINV_SMTP_HOST` | `mailpit` | Fallback SMTP server. Empty = no fallback (mail waits in the outbox until a server is set in the app). |
+| `CACTUSINV_SMTP_PORT` | `1025` | Its port: usually 587 with `starttls`, 465 with `tls`, 25 or 1025 with `none`. |
+| `CACTUSINV_SMTP_TLS` | `none` | `starttls` (upgrade to TLS after connecting), `tls` (TLS from the start) or `none` (plain; only for a local test server such as Mailpit). |
+| `CACTUSINV_SMTP_USER` | empty | User name for the fallback server; empty = no sign-in. Its password goes in `${SECRETS_DIR}/smtp_password` (k3s/k8s: the `smtp_password` key of the `cactusinv-secrets` Secret), never in `.env`. |
+| `CACTUSINV_SMTP_FROM` | `"PrimeSoft Accountsv <accounts@primesoft.co.za>"` | Sender of mail sent through the fallback server: `Name <address>`, quoted because of the spaces. |
+| `COMPOSE_PROFILES` | `mailpit` | Docker only: optional containers to run. `mailpit` starts the test mailbox; empty runs without it (then point `CACTUSINV_SMTP_HOST` at a real server or leave it empty). On k3s/k8s Mailpit is always deployed. |
+
+### Backups
+
+| Setting | Default | What it does |
+|---|---|---|
+| `BACKUP_TIMES` | `02:00` | Daily times, in `TZ`, when the app takes an encrypted backup: 24-hour `HH:MM`, comma separated (`02:00,14:00`). |
+| `BACKUP_RETENTION_DAYS` | `14` | Scheduled backups older than this are deleted; `0` keeps them all. |
+| `BACKUP_MAX_UPLOAD_MB` | `256` | Largest backup file that can be uploaded in the app for a restore, in MiB (1–16384). |
+
+### k3s / k8s
+
+Used only with `--k3s` and `--k8s`.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `K8S_NAMESPACE` | `cactusinv` | Namespace everything is installed in (created if missing). |
+| `K8S_NODE_PORT` | `30080` | NodePort the web app answers on (`http://<node>:30080`). It must be free and in the cluster's NodePort range (normally 30000–32767). |
+| `K8S_MAILPIT_NODE_PORT` | `30025` | NodePort for the Mailpit test mailbox's web page. Same rules. |
+| `K8S_STORAGE_CLASS` | empty | StorageClass for the three volume claims (database, invoices, backups). See below. |
+| `K8S_MARIADB_STORAGE` | `10Gi` | Size of the database claim (`Gi` = GiB, `Mi` = MiB). |
+| `K8S_INVOICES_STORAGE` | `5Gi` | Size of the invoices claim. |
+| `K8S_BACKUP_STORAGE` | `10Gi` | Size of the backups claim. Allow room for `BACKUP_RETENTION_DAYS` × backups per day. |
+| `K8S_REGISTRY` | empty | `--k8s` only: registry the image is pushed to (e.g. `registry.example.com/team`); you must be logged in to it (`docker login`). Not used by k3s, which imports the image straight into the node. |
+
+The sizes apply when a claim is created. A claim that exists keeps its size: claims cannot
+shrink, and `deploy.sh` does not grow them. To grow one, edit the claim with `kubectl` if its
+StorageClass allows expansion.
+
+#### `K8S_STORAGE_CLASS`: which values work
+
+The value is the **name of a StorageClass that exists in your cluster**; there is no fixed
+list. To see the names:
+
+```
+kubectl get storageclass                                   # k8s
+ssh root@<node> k3s kubectl get storageclass               # k3s
+```
+
+- **Empty (the default):** the claims use the class marked `(default)`. That is `local-path`
+  on k3s, `hostpath` on Docker Desktop's Kubernetes, and the cloud's disk class on a managed
+  cluster (e.g. `gp2`/`gp3` on EKS, `standard-rwo` on GKE, `default`/`managed-csi` on AKS).
+  It is the right choice unless you have a reason to pick another.
+- **A class with a provisioner** (e.g. `local-path`, `longhorn`, `nfs-client`, `ceph-rbd`,
+  `gp3`): the volume is created for you. The claims are `ReadWriteOnce`, which every class
+  supports. For the database, prefer block or local storage over NFS.
+- **A class with `kubernetes.io/no-provisioner`** (e.g. a `local-storage` class): nothing
+  creates the volume. You must create a matching PersistentVolume for each claim first, or the
+  claims stay `Pending` and the install stops after five minutes with "volume" in its message.
+
+Choose it **before the first install**. A claim's StorageClass cannot change once it exists:
+setting another class later makes `kubectl apply` fail with "spec is immutable". To move to
+another class: take a backup (`--backup-now`), copy it and the backup key off the cluster,
+`--delete-uninstall`, set the new class, `--install`, then `--restore` the backup.
+
+On k3s, `local-path` stores the data in `/var/lib/rancher/k3s/storage/` on the node. Its volumes
+are deleted with their claims (`--delete-uninstall`), so keep the backups elsewhere as well.
+
+### Set by `deploy.sh`, not in `.env`
+
+`deploy.sh` sets `CACTUSINV_VERSION`, `CACTUSINV_BUILD`, `CACTUSINV_DEPLOY_TARGET` and the
+`CACTUSINV_HOST_*` folders itself; you don't set them. The app also reads lower-level
+variables that the compose file and the manifest already set. For example, `CACTUSINV_SECRETS=vault`
+with `CACTUSINV_VAULT_*` reads the secrets from HashiCorp Vault instead of files. All of them are listed in
+[docs/ARCHITECTURE.md §6](docs/ARCHITECTURE.md#6-configuration--secrets).
 
 ## Users
 
@@ -289,7 +446,7 @@ make remote-test-int REMOTE=user@host     # REMOTE is required; runs in /data/ca
 
 `make remote-test-int` is for machines without Docker: it copies the working tree, including
 uncommitted changes, to a fresh `REMOTE_DIR` (below `/data/cactusinv/`) and runs the MariaDB
-integration tests there in the pinned `golang:1.26.9` image with the host's Docker socket.
+integration tests there in the pinned `golang:1.26.10` image with the host's Docker socket.
 
 Read [PLAN.md](PLAN.md), [docs/ENGINEERING_PRINCIPLES.md](docs/ENGINEERING_PRINCIPLES.md),
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/adr](docs/adr) before changing code.

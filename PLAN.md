@@ -563,6 +563,40 @@ Business → Time zone, then edit the "Weekly" schedule's time zone (both are no
 | 26.2 | `make build` and `make image` stamp the version and build number as `deploy.sh` does (a local binary said `dev (build 0)`) | done | Makefile |
 | 26.3 | Rebuild: web bundle, `bin/cactusinv`, image `cactusinv:latest` | done | 2026-11-08: `make build` (web lint, typecheck, 90 tests, bundle; `bin/cactusinv version` → `1.12.1 (build 30)`); `make image` (`docker run --rm cactusinv:latest version` → `1.12.1 (build 30)`); rebuilt after the commit so both carry its build number |
 
+### M27 — Upgrade to a new version (Albie, 2026-11-08) — v1.13.0
+
+> "add functionallaty to upgrade to new version of the application"
+
+The app runs in a distroless container without the Docker socket or cluster rights (by design), so
+it cannot replace itself: the upgrade is `./deploy.sh --upgrade`, and the app says when there is
+one to run. Goose starts an older binary on a newer schema without complaint, and a restore cannot
+take the live schema back (it migrates the backup up to the binary's head), so a rollback after new
+migrations runs the new version's down migrations first.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 27.1 | `mariadb.Migrate` refuses a database migrated by a newer version (`SchemaNewerError`, the app does not start); `MigrateDownTo`, `SchemaVersions` | done | `TestSchemaGuardAndDownTo` (integration); on the test stack the app refused schema 30: "the database schema (30) is newer than this version of cactusInv (23) …" |
+| 27.2 | CLI: `cactusinv migrate status` (`schema N, this version M`), `migrate down-to N` | done | `TestMigrateCommandArgs` (down-to 0, -3, 12abc refused) |
+| 27.3 | `./deploy.sh --version TARGET`: the running version and schema | done | test stack: `1.12.1 (build 32)` / `schema 22, this version 22` |
+| 27.4 | `./deploy.sh --upgrade TARGET [--to REF] [--yes]`: clean tracked tree; fetch; fast-forward only (no downgrade); show running → new version, the commits and new migrations; confirm; backup first (nothing changes if it fails); fast-forward; install with the NEW deploy.sh; verify the running version; on failure undo the new migrations with the new image, go back to the old commit and reinstall it, and name the backup | done | throwaway stack (own compose project, image and ports; live stack untouched): X→Y upgraded with backup first, schema 22→23; "already the newest"; Y→Z (migration 24 ok, 25 fails) rolled back: 24 undone with Z's image, checkout back at Y, Y reinstalled and verified, `upgrade_probe2` gone; refused: no --yes without a terminal, downgrade `--to`, local changes, unknown ref, `--to` without `--upgrade` |
+| 27.5 | Remote Docker (`--ssh-access`) keeps the build number (the copy has no .git) | done | `CACTUSINV_BUILD` passed in; deploy.sh keeps a value it is given |
+| 27.6 | System Settings → Version: running version, build and schema; "Check for updates" (on demand only) reads the published VERSION (`CACTUSINV_UPDATE_URL`: empty = GitHub `main`, `off` = never) and shows the upgrade command | done | `TestCheckForUpdate`, `TestLatestVersion`, `TestUpdateURL`, `TestParseVersion`, Vitest (2 tests) |
+| 27.7 | Found on the way: `read_folder_mappings`' fallback (`compose run … app /cactusinv system folders`) passed the binary twice (the image's entrypoint is `/cactusinv`), so it always failed when the app was not running — the M23 "could not read the folder mappings" warning was this, not only the missing table | done | `compose run --rm --no-deps -T app system folders` exit 0 on the test stack |
+| 27.8 | Gate upkeep: golangci-lint on this machine is now v2 (config migrated with `golangci-lint migrate`, same linters; 17 new findings: 12 fixed, 5 reviewed false positives excluded by rule and path with the reason); GO-2026-6809 (crypto/x509, reachable from the SMTP TLS dial) → toolchain go1.26.10, Dockerfile `golang:1.26.10-alpine`, remote-test image 1.26.10 | done | `golangci-lint run` 0 issues; govulncheck "No vulnerabilities found." |
+| 27.9 | Docs (README Upgrading, ADR-007 amendment, ARCHITECTURE §19), VERSION 1.13.0, gate, integration | done | 2026-11-08: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.5 %, app 85.2 %, no vulnerabilities, web 92 tests, build OK); integration ok 47.7 s (after pruning Docker build cache older than 24 h: the VM disk was full; live stack healthy, no errors in 72 h) |
+
+### M28 — `.env` reference; docs, rebuild, commit (Albie, 2026-11-08) — v1.13.0
+
+> "in the .env file what values can i use for K8S_STORAGE_CLASS. update the documentation with all the details of the .env file i.e. i want to know what each of the config values do"
+> "update all documentation, rebuild all the containers and commit to github"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 28.1 | README "Configuration — `.env`": every setting by group (folders, network and image, application, database, e-mail, backups, k3s/k8s), its default, accepted values and effect; `K8S_STORAGE_CLASS`: a StorageClass name from `kubectl get storageclass`, empty = cluster default, provisioner vs `no-provisioner`, fixed once a claim exists (how to move); `.env` comments point there | done | README.md, .env; the k3s node lists `local-path (default)`, `local-storage` and `cactusfs-cactusfs-local` (both `no-provisioner`); the live claims are on `local-path` |
+| 28.2 | ARCHITECTURE §6: the missing app variables (`CACTUSINV_DB_WAIT_SECONDS`, `_LOG_LEVEL`, `_UPDATE_URL`, `TZ`, the deploy-set ones); README Quick start: the `/data/cactusinv` default folders cannot be created on a Mac; ADR-006 no longer names `./secrets` | done | docs/ARCHITECTURE.md, README.md, ADR-006 |
+| 28.3 | `.env` as edited by the owner (folders `/data/cactusinv/…`, `CACTUSINV_COOKIE_SECURE=true`, sender) committed; the live installs are **not** redeployed (they use `./data`, `./secrets` and plain HTTP, so a redeploy with this `.env` would not find their data or let anyone sign in) | done | owner's choice, 2026-11-08 |
+| 28.4 | Rebuild `bin/cactusinv` and image `cactusinv:latest` from the commit | done | see the commit's report |
+
 ## Decisions
 
 | Date | Decision | Why |

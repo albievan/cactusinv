@@ -154,6 +154,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/system/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Compares the running version with the newest published one (CACTUSINV_UPDATE_URL), only when asked. The app cannot replace itself: an upgrade is ./deploy.sh --upgrade. A check that cannot be made is not an error: `problem` says why. */
+        get: operations["checkForUpdate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/export": {
         parameters: {
             query?: never;
@@ -1144,6 +1161,22 @@ export interface components {
         ChangePasswordRequest: {
             currentPassword: string;
             newPassword: string;
+        };
+        UpdateCheck: {
+            /**
+             * @description The running version.
+             * @example 1.12.1
+             */
+            current: string;
+            /**
+             * @description The newest published version ("" when it could not be read).
+             * @example 1.13.0
+             */
+            latest: string;
+            /** @description The newest published version is newer than the running one. */
+            available: boolean;
+            /** @description Why the check could not be made ("" when it was). */
+            problem: string;
         };
         Version: {
             /** @example 1.2.0 */
@@ -2315,6 +2348,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    checkForUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The running and the newest published version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateCheck"];
                 };
             };
             default: components["responses"]["Problem"];

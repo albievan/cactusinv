@@ -4,7 +4,11 @@
 #   ./deploy.sh ACTION TARGET [--ssh-access user@host] [--yes]
 #
 # ACTION
-#   --install            build and start (or upgrade) cactusInv
+#   --install            build and start (or reinstall) cactusInv from this folder
+#   --upgrade [--to REF] upgrade to the newest version: fetch it from git (the branch's
+#                        upstream, or REF: a tag, branch or commit), show what changes, take a
+#                        backup, install it and check it runs; if not, go back to this version
+#   --version            show the running version and database schema
 #   --uninstall          stop and remove cactusInv, KEEPING the database, invoices and backups
 #   --delete-uninstall   remove cactusInv AND DELETE all its data (asks for confirmation)
 #   --status             show what is running
@@ -21,7 +25,7 @@
 #
 # OPTIONS
 #   --ssh-access user@host   deploy to a remote machine over SSH, e.g. root@192.0.2.10
-#   --yes                    do not ask for confirmation (for --delete-uninstall)
+#   --yes                    do not ask for confirmation (--delete-uninstall, --restore, --upgrade)
 #   -h, --help               show this help
 #
 # Settings and default volume mappings come from .env next to this script.
@@ -30,7 +34,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-ACTION="" TARGET="" SSH_HOST="" ASSUME_YES=0 RESTORE_FILE=""
+ACTION="" TARGET="" SSH_HOST="" ASSUME_YES=0 RESTORE_FILE="" UPGRADE_TO="" DOWN_TO=""
 REMOTE_DIR="${CACTUSINV_REMOTE_DIR:-/opt/cactusinv}"
 
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -41,8 +45,13 @@ usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit "${1:-0}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --install | --uninstall | --delete-uninstall | --status | --backup-now)
+    --install | --uninstall | --delete-uninstall | --status | --backup-now | --upgrade | --version)
       [[ -z "$ACTION" ]] || die "choose one action"; ACTION="${1#--}" ;;
+    --to) UPGRADE_TO="${2:-}"; shift; [[ -n "$UPGRADE_TO" && "$UPGRADE_TO" != --* ]] || die "--to needs a tag, branch or commit" ;;
+    --migrate-down-to)
+      # Used by --upgrade to undo a failed upgrade's migrations (with the newer version).
+      [[ -z "$ACTION" ]] || die "choose one action"; ACTION=migrate-down-to; DOWN_TO="${2:-}"; shift
+      [[ "$DOWN_TO" =~ ^[1-9][0-9]*$ ]] || die "--migrate-down-to needs a schema version" ;;
     --restore)
       [[ -z "$ACTION" ]] || die "choose one action"; ACTION=restore; RESTORE_FILE="${2:-}"; shift
       [[ -n "$RESTORE_FILE" ]] || die "--restore needs a backup file name" ;;
@@ -57,6 +66,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$ACTION" ]] || usage 1
 [[ -n "$TARGET" ]] || die "choose a target: --dockerdesktop, --k3s or --k8s"
+[[ -z "$UPGRADE_TO" || "$ACTION" == upgrade ]] || die "--to goes with --upgrade"
 export TARGET # the k8s manifest names it (System Settings)
 
 # ---------------------------------------------------------------------------------------
@@ -74,14 +84,6 @@ load_env() {
     [[ -n "${!key+x}" ]] || export "$key=$val"
   done <.env
 }
-# Folders set in the environment win over System Settings, as over .env.
-EXPLICIT_BACKUP_DIR="${BACKUP_DIR+x}" EXPLICIT_INVOICES_DIR="${INVOICES_DIR+x}"
-load_env
-
-# Names that end up in SQL (database, user) are restricted to plain identifiers.
-[[ "${MARIADB_DATABASE:-}" =~ ^[A-Za-z0-9_]{1,57}$ ]] || die "MARIADB_DATABASE must be 1-57 letters, digits or _"
-[[ "${MARIADB_USER:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]] || die "MARIADB_USER must be 1-80 letters, digits or _"
-
 # confirm_word asks for a word (RESTORE) before replacing data; --yes skips it.
 # Without a terminal it fails (the caller cleans up), unless --yes was given.
 confirm_word() {
@@ -103,10 +105,150 @@ confirm() {
 
 ssh_run() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$SSH_HOST" "$@"; }
 
+# ---------------------------------------------------------------------------------------
+# --upgrade (M27): every step is this script run again (--version, --backup-now, --install,
+# --migrate-down-to), so the install is the NEW version's deploy.sh and each step reads .env
+# afresh. It runs before .env is read, so those runs see only the caller's environment.
+# ---------------------------------------------------------------------------------------
+# self runs this script (as it is on disk now) for the same target.
+self() {
+  local ssh=()
+  [[ -z "$SSH_HOST" ]] || ssh=(--ssh-access "$SSH_HOST")
+  "$ROOT/deploy.sh" "$@" "--$TARGET" ${ssh[@]+"${ssh[@]}"}
+}
+
+# running_version prints "1.12.1 (build 29)" and the schema line of the running install.
+running_version() { self --version </dev/null 2>/dev/null | tr -d '\r'; }
+
+# schema_head is the newest migration number in commit $1.
+schema_head() {
+  git -C "$ROOT" ls-tree --name-only "$1" migrations/ | sed -n 's#^migrations/0*\([0-9][0-9]*\)_.*#\1#p' | sort -n | tail -1
+}
+
+upgrade() {
+  command -v git >/dev/null || die "--upgrade needs git"
+  git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || die "--upgrade needs the git checkout cactusInv is installed from"
+  local branch remote target old running run_line run_schema new_version new_build cur_version cur_build
+  local old_head new_head changes count backup_out backup_name answer
+  branch="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD)" || die "this checkout is not on a branch; check out main first (nothing was changed)"
+  git -C "$ROOT" diff --quiet HEAD -- || die "tracked files have uncommitted changes; commit or stash them first (nothing was changed)"
+
+  info "reading the running version"
+  running="$(running_version)" || true
+  run_line="$(printf '%s\n' "$running" | grep '(build ' | tail -1 || true)"
+  run_schema="$(printf '%s\n' "$running" | sed -n 's/^schema \([0-9][0-9]*\),.*/\1/p' | tail -1)"
+  [[ -n "$run_line" ]] || die "cactusInv is not running on this target: install it with --install first (nothing was changed)"
+
+  remote="$(git -C "$ROOT" config "branch.${branch}.remote" || echo origin)"
+  info "fetching the newest version from ${remote}"
+  git -C "$ROOT" fetch --quiet --tags "$remote" || die "cannot fetch from ${remote} (nothing was changed)"
+  if [[ -n "$UPGRADE_TO" ]]; then
+    target="$(git -C "$ROOT" rev-parse --verify --quiet "${UPGRADE_TO}^{commit}" ||
+      git -C "$ROOT" rev-parse --verify --quiet "${remote}/${UPGRADE_TO}^{commit}")" || die "no such version: $UPGRADE_TO (nothing was changed)"
+  else
+    target="$(git -C "$ROOT" rev-parse --verify --quiet '@{upstream}^{commit}')" || die "branch $branch follows no remote branch; name the version with --to (nothing was changed)"
+  fi
+  old="$(git -C "$ROOT" rev-parse HEAD)"
+  git -C "$ROOT" merge-base --is-ancestor "$old" "$target" ||
+    die "$(git -C "$ROOT" rev-parse --short "$target") is not newer than this checkout: going back needs a restore, and local commits must be pushed or dropped first (nothing was changed)"
+
+  cur_version="$(tr -d '[:space:]' <"$ROOT/VERSION")" cur_build="$(git -C "$ROOT" rev-list --count HEAD)"
+  new_version="$(git -C "$ROOT" show "${target}:VERSION" | tr -d '[:space:]')" new_build="$(git -C "$ROOT" rev-list --count "$target")"
+  if [[ "$old" == "$target" && "$run_line" == "$cur_version (build $cur_build)" ]]; then
+    ok "already the newest version: $run_line"
+    return 0
+  fi
+  old_head="$(schema_head "$old")" new_head="$(schema_head "$target")"
+  count="$(git -C "$ROOT" rev-list --count "${old}..${target}")"
+  # (head stops reading early: under pipefail that is not a failure)
+  changes="$(git -C "$ROOT" log --no-decorate --format='    %h %s' "${old}..${target}" | head -25 || true)"
+  echo
+  echo "  running now:  ${run_line}${run_schema:+, database schema $run_schema}"
+  echo "  upgrade to:   ${new_version} (build ${new_build}), commit $(git -C "$ROOT" rev-parse --short "$target")"
+  if [[ "$count" -gt 0 ]]; then
+    echo "  changes (${count}):"
+    echo "$changes"
+    [[ "$count" -le 25 ]] || echo "    … and $((count - 25)) more"
+  else
+    echo "  (this checkout is already at that version; it is installed now)"
+  fi
+  if [[ "${new_head:-0}" -gt "${old_head:-0}" ]]; then
+    echo "  database:     schema ${old_head} → ${new_head} (changed when the new version starts)"
+  else
+    echo "  database:     no changes"
+  fi
+  echo
+  if [[ $ASSUME_YES -ne 1 ]]; then
+    [[ -t 0 ]] || die "re-run with --yes to upgrade non-interactively (nothing was changed)"
+    read -r -p "A backup is taken first. Type 'upgrade' to continue: " answer
+    [[ "$answer" == upgrade ]] || die "aborted; nothing was changed"
+  fi
+
+  info "taking a backup first"
+  backup_out="$(self --backup-now </dev/null 2>&1 | tr -d '\r')" || { echo "$backup_out"; die "the backup failed, so nothing was changed"; }
+  backup_name="$(printf '%s\n' "$backup_out" | grep -o 'cactusinv-[A-Za-z0-9._-]*\.age' | head -1 || true)"
+  [[ -n "$backup_name" ]] || { echo "$backup_out"; die "the backup's name could not be read, so nothing was changed"; }
+  ok "backup ${backup_name}"
+
+  if [[ "$old" != "$target" ]]; then
+    git -C "$ROOT" merge --ff-only --quiet "$target" || die "git could not move to $(git -C "$ROOT" rev-parse --short "$target") (nothing was changed; backup ${backup_name})"
+  fi
+  info "installing ${new_version} (build ${new_build})"
+  if self --install </dev/null && upgrade_verify "${new_version} (build ${new_build})"; then
+    ok "upgraded: ${run_line} → ${new_version} (build ${new_build}); the backup taken first is ${backup_name}"
+    return 0
+  fi
+  upgrade_rollback "$old" "$old_head" "$new_head" "$run_line" "$backup_name"
+}
+
+# upgrade_verify waits (up to a minute) for the running install to report version $1.
+upgrade_verify() {
+  local got
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    got="$(running_version | grep '(build ' | tail -1 || true)"
+    [[ "$got" == "$1" ]] && return 0
+    sleep 5
+  done
+  warn "the running version is '${got:-unknown}', not $1"
+  return 1
+}
+
+# upgrade_rollback goes back to commit $1 after a failed upgrade: the new version's
+# migrations are undone with the new version first (an older one cannot, and refuses a newer
+# schema), then the old version is installed again.
+upgrade_rollback() {
+  local old="$1" old_head="$2" new_head="$3" was="$4" backup="$5" undo=""
+  warn "the upgrade did not complete; going back to ${was}"
+  if [[ "${new_head:-0}" -gt "${old_head:-0}" ]]; then
+    info "undoing the new version's database changes (schema back to ${old_head})"
+    if ! self --migrate-down-to "$old_head" </dev/null; then
+      undo="failed"
+      warn "the database changes could not be undone automatically"
+    fi
+  fi
+  git -C "$ROOT" reset --keep --quiet "$old" || die "git could not go back to $(git -C "$ROOT" rev-parse --short "$old"); run: git reset --keep $old && ./deploy.sh --install --$TARGET (backup ${backup})"
+  if [[ -z "$undo" ]] && self --install </dev/null && upgrade_verify "$was"; then
+    die "the upgrade failed and ${was} is running again with the data as before (the backup taken first is ${backup}); see above for why"
+  fi
+  die "the upgrade failed and could not be rolled back completely. This checkout is back at ${was}. To recover: ./deploy.sh --install --${TARGET}, and if it does not start (database schema newer), ./deploy.sh --restore ${backup} --${TARGET} after the install, or ask for help with the output above"
+}
+
+if [[ "$ACTION" == upgrade ]]; then upgrade; exit $?; fi
+
+# Folders set in the environment win over System Settings, as over .env.
+EXPLICIT_BACKUP_DIR="${BACKUP_DIR+x}" EXPLICIT_INVOICES_DIR="${INVOICES_DIR+x}"
+load_env
+
+# Names that end up in SQL (database, user) are restricted to plain identifiers.
+[[ "${MARIADB_DATABASE:-}" =~ ^[A-Za-z0-9_]{1,57}$ ]] || die "MARIADB_DATABASE must be 1-57 letters, digits or _"
+[[ "${MARIADB_USER:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]] || die "MARIADB_USER must be 1-80 letters, digits or _"
+export CACTUSINV_UPDATE_URL="${CACTUSINV_UPDATE_URL:-}" # (an older .env has none; the manifest names it)
+
+
 # Release version (VERSION file) and build number (commit count) shown in the app.
 export CACTUSINV_VERSION CACTUSINV_BUILD
 CACTUSINV_VERSION="$(tr -d '[:space:]' <"$ROOT/VERSION" 2>/dev/null || echo dev)"
-CACTUSINV_BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)"
+CACTUSINV_BUILD="${CACTUSINV_BUILD:-$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)}"
 
 image_tag() {
   local v
@@ -257,7 +399,8 @@ read_folder_mappings() {
   if [[ -n "$(compose ps -q app 2>/dev/null || true)" ]]; then
     compose exec -T app /cactusinv system folders </dev/null 2>/dev/null && return 0
   fi
-  compose run --rm --no-deps -T app /cactusinv system folders </dev/null 2>/dev/null
+  # (the image's entrypoint is /cactusinv: the arguments follow it)
+  compose run --rm --no-deps -T app system folders </dev/null 2>/dev/null
 }
 
 # apply_folder_mappings uses the host folders set in System Settings for BACKUP_DIR and
@@ -361,6 +504,20 @@ docker_delete_uninstall() {
 }
 
 docker_status() { docker_preflight; compose ps; }
+
+docker_version() {
+  docker_preflight
+  compose exec -T app /cactusinv version </dev/null || die "cactusInv is not running here"
+  compose exec -T app /cactusinv migrate status </dev/null
+}
+
+# docker_migrate_down_to stops the app and rolls the database back to schema DOWN_TO with the
+# image installed now (--upgrade's rollback).
+docker_migrate_down_to() {
+  docker_preflight
+  compose stop app </dev/null
+  compose run --rm --no-deps -T app migrate down-to "$DOWN_TO" </dev/null
+}
 
 docker_backup_now() {
   docker_preflight
@@ -633,6 +790,17 @@ k8s_delete_uninstall() {
 
 k8s_status() { kc -n "$K8S_NAMESPACE" get deploy,pods,svc,pvc; }
 
+k8s_version() {
+  kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv version </dev/null || die "cactusInv is not running in namespace ${K8S_NAMESPACE}"
+  kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv migrate status </dev/null
+}
+
+# k8s_migrate_down_to rolls the database back to schema DOWN_TO in the running pod (it must be
+# running: a pod that does not start cannot be used; --upgrade then says how to recover).
+k8s_migrate_down_to() {
+  kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv migrate down-to "$DOWN_TO" </dev/null
+}
+
 k8s_backup_now() {
   kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv backup create </dev/null
 }
@@ -673,7 +841,8 @@ remote_docker() {
   ssh_run "mkdir -p '$REMOTE_DIR'"
   tar -C "$ROOT" --exclude=./data --exclude=./secrets --exclude=./.git --exclude=./web/node_modules \
     --exclude=./web/dist --exclude=./.deploy -czf - . | ssh_run "tar -C '$REMOTE_DIR' -xzf -"
-  local args=("--$ACTION" --dockerdesktop) pre=""
+  local args=("--$ACTION" --dockerdesktop) pre="CACTUSINV_BUILD=${CACTUSINV_BUILD}; export CACTUSINV_BUILD; "
+  [[ "$ACTION" == migrate-down-to ]] && args=(--migrate-down-to "$DOWN_TO" --dockerdesktop)
   if [[ "$ACTION" == restore ]]; then
     local file="$RESTORE_FILE"
     if [[ -f "$RESTORE_FILE" ]]; then
@@ -686,7 +855,7 @@ remote_docker() {
     if [[ -n "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]]; then
       # The passphrase goes over stdin into a private file, never on a command line.
       printf '%s' "$CACTUSINV_BACKUP_PASSPHRASE" | ssh_run "mkdir -p '$REMOTE_DIR/.deploy' && umask 077 && cat > '$REMOTE_DIR/.deploy/passphrase'"
-      pre="CACTUSINV_BACKUP_PASSPHRASE=\"\$(cat .deploy/passphrase)\"; rm -f .deploy/passphrase; export CACTUSINV_BACKUP_PASSPHRASE; "
+      pre="${pre}CACTUSINV_BACKUP_PASSPHRASE=\"\$(cat .deploy/passphrase)\"; rm -f .deploy/passphrase; export CACTUSINV_BACKUP_PASSPHRASE; "
     fi
   fi
   [[ $ASSUME_YES -eq 1 ]] && args+=(--yes)
@@ -704,6 +873,8 @@ main() {
       status) docker_status ;;
       backup-now) docker_backup_now ;;
       restore) docker_restore ;;
+      version) docker_version ;;
+      migrate-down-to) docker_migrate_down_to ;;
     esac
   else
     case "$ACTION" in
@@ -713,6 +884,8 @@ main() {
       status) k8s_status ;;
       backup-now) k8s_backup_now ;;
       restore) k8s_restore ;;
+      version) k8s_version ;;
+      migrate-down-to) k8s_migrate_down_to ;;
     esac
   fi
 }

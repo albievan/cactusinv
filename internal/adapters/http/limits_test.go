@@ -46,7 +46,7 @@ func TestDeadlinesReachTheConnection(t *testing.T) {
 		{"POST", "/api/v1/settings/export", maxBody, false, true},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest(c.method, c.path, strings.NewReader(""))
+		r := httptest.NewRequestWithContext(context.Background(), c.method, c.path, strings.NewReader(""))
 		l := limitsFor(r, 99)
 		if l.body != c.body || (l.written > 0) != c.long || skipsIdempotency(r) != c.skip {
 			t.Errorf("%s %s: %+v skip=%v", c.method, c.path, l, skipsIdempotency(r))

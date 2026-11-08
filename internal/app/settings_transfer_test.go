@@ -152,7 +152,7 @@ func TestSettingsReimportUpdatesAndNeverGoesBack(t *testing.T) {
 	if res.Products != (app.ImportCounts{Updated: 1, Unchanged: 1}) || res.Schedules != (app.ImportCounts{Updated: 1}) {
 		t.Fatalf("product and schedule changes: %+v", res)
 	}
-	if scs, _ := must3(h.svc.ListSchedules(h.ctx, ports.ScheduleFilter{})); scs[0].Schedule.Status != domain.ScheduleActive || scs[0].Schedule.Recurrence.DayOfMonth != 20 {
+	if scs, _ := must3(h.svc.ListSchedules(h.ctx, ports.ScheduleFilter{})); scs[0].Status != domain.ScheduleActive || scs[0].Recurrence.DayOfMonth != 20 {
 		t.Fatalf("a matched schedule keeps running with the new day: %+v", scs[0].Schedule)
 	}
 

@@ -205,6 +205,21 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SystemSettings' }
         default: { $ref: '#/components/responses/Problem' }
+  /settings/system/update:
+    get:
+      tags: [settings]
+      operationId: checkForUpdate
+      description: >-
+        Compares the running version with the newest published one (CACTUSINV_UPDATE_URL), only
+        when asked. The app cannot replace itself: an upgrade is ./deploy.sh --upgrade. A check that
+        cannot be made is not an error: `problem` says why.
+      responses:
+        '200':
+          description: The running and the newest published version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateCheck' }
+        default: { $ref: '#/components/responses/Problem' }
   /settings/export:
     post:
       tags: [settings]
@@ -1403,6 +1418,14 @@ components:
       properties:
         currentPassword: { type: string, maxLength: 200 }
         newPassword: { type: string, minLength: 12, maxLength: 200 }
+    UpdateCheck:
+      type: object
+      required: [current, latest, available, problem]
+      properties:
+        current: { type: string, example: 1.12.1, description: The running version. }
+        latest: { type: string, example: 1.13.0, description: 'The newest published version ("" when it could not be read).' }
+        available: { type: boolean, description: The newest published version is newer than the running one. }
+        problem: { type: string, description: 'Why the check could not be made ("" when it was).' }
     Version:
       type: object
       required: [version, build]

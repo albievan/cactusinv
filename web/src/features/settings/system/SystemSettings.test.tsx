@@ -14,12 +14,13 @@ const deployment = {
 }
 const saved = { sessionIdleMinutes: 0, sessionMaxHours: 168, backupHostDir: '', invoicesHostDir: '', version: 0, deployment, pendingFolders: false }
 
-function routes(system: object, put?: (req: Request) => Promise<Response>) {
+function routes(system: object, put?: (req: Request) => Promise<Response>, update?: object) {
   mockFetch({
     'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'admin@example.com', automationPaused: false }),
     'GET /api/v1/version': json({ version: '1.11.0', build: '30' }),
     'GET /api/v1/settings/system': json(system),
     ...(put ? { 'PUT /api/v1/settings/system': put } : {}),
+    ...(update ? { 'GET /api/v1/settings/system/update': json(update) } : {}),
   })
 }
 
@@ -53,4 +54,28 @@ test('on Kubernetes the folders are volume claims and cannot be mapped here', as
   expect(await screen.findByText(/On k3s these folders are volume claims/)).toBeInTheDocument()
   expect(screen.queryByLabelText('Host folder for backups')).not.toBeInTheDocument()
   expect(screen.getByText('/data/backups')).toBeInTheDocument()
+})
+
+test('checks for updates on request and shows the upgrade command for this deployment', async () => {
+  routes(saved, undefined, { current: '1.11.0', latest: '1.13.0', available: true, problem: '' })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  expect(await screen.findByText('cactusInv 1.11.0 (build 30)')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
+  expect(await screen.findByText('Version 1.13.0 is available (this is 1.11.0).')).toBeInTheDocument()
+  expect(screen.getByText('./deploy.sh --upgrade --dockerdesktop')).toBeInTheDocument()
+})
+
+test('says when this is the newest version, and why a check could not be made', async () => {
+  routes({ ...saved, deployment: { ...deployment, target: 'k3s' } }, undefined, { current: '1.11.0', latest: '1.11.0', available: false, problem: '' })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
+  expect(await screen.findByText('You have the newest version (1.11.0).')).toBeInTheDocument()
+  expect(screen.queryByText(/deploy.sh --upgrade/)).not.toBeInTheDocument()
+  vi.unstubAllGlobals()
+
+  routes(saved, undefined, { current: '1.11.0', latest: '', available: false, problem: 'The newest version could not be read.' })
+  await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
+  expect(await screen.findByText('The newest version could not be read.')).toBeInTheDocument()
 })

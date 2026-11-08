@@ -1574,6 +1574,25 @@ type Totals struct {
 	Vat Decimal `json:"vat"`
 }
 
+// UpdateCheck defines model for UpdateCheck.
+type UpdateCheck struct {
+	// Available The newest published version is newer than the running one.
+	Available bool `json:"available"`
+
+	// Current The running version.
+	//
+	// Example: 1.12.1
+	Current string `json:"current"`
+
+	// Latest The newest published version ("" when it could not be read).
+	//
+	// Example: 1.13.0
+	Latest string `json:"latest"`
+
+	// Problem Why the check could not be made ("" when it was).
+	Problem string `json:"problem"`
+}
+
 // User defines model for User.
 type User struct {
 	// Active False once disabled; a disabled user cannot sign in.
@@ -2067,6 +2086,9 @@ type ServerInterface interface {
 
 	// (PUT /settings/system)
 	UpdateSystemSettings(w http.ResponseWriter, r *http.Request)
+
+	// (GET /settings/system/update)
+	CheckForUpdate(w http.ResponseWriter, r *http.Request)
 
 	// (GET /statements)
 	ListStatements(w http.ResponseWriter, r *http.Request)
@@ -4120,6 +4142,20 @@ func (siw *ServerInterfaceWrapper) UpdateSystemSettings(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// CheckForUpdate operation middleware
+func (siw *ServerInterfaceWrapper) CheckForUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckForUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListStatements operation middleware
 func (siw *ServerInterfaceWrapper) ListStatements(w http.ResponseWriter, r *http.Request) {
 
@@ -4426,6 +4462,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system", wrapper.GetSystemSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/system", wrapper.UpdateSystemSettings)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system/update", wrapper.CheckForUpdate)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/import", wrapper.ImportSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
@@ -7597,6 +7634,44 @@ func (response UpdateSystemSettingsdefaultApplicationProblemPlusJSONResponse) Vi
 	return err
 }
 
+type CheckForUpdateRequestObject struct {
+}
+
+type CheckForUpdateResponseObject interface {
+	VisitCheckForUpdateResponse(w http.ResponseWriter) error
+}
+
+type CheckForUpdate200JSONResponse UpdateCheck
+
+func (response CheckForUpdate200JSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckForUpdatedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CheckForUpdatedefaultApplicationProblemPlusJSONResponse) VisitCheckForUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListStatementsRequestObject struct {
 }
 
@@ -8393,6 +8468,9 @@ type StrictServerInterface interface {
 
 	// (PUT /settings/system)
 	UpdateSystemSettings(ctx context.Context, request UpdateSystemSettingsRequestObject) (UpdateSystemSettingsResponseObject, error)
+
+	// (GET /settings/system/update)
+	CheckForUpdate(ctx context.Context, request CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error)
 
 	// (GET /statements)
 	ListStatements(ctx context.Context, request ListStatementsRequestObject) (ListStatementsResponseObject, error)
@@ -10548,6 +10626,30 @@ func (sh *strictHandler) UpdateSystemSettings(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateSystemSettingsResponseObject); ok {
 		if err := validResponse.VisitUpdateSystemSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CheckForUpdate operation middleware
+func (sh *strictHandler) CheckForUpdate(w http.ResponseWriter, r *http.Request) {
+	var request CheckForUpdateRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CheckForUpdate(ctx, request.(CheckForUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CheckForUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckForUpdateResponseObject); ok {
+		if err := validResponse.VisitCheckForUpdateResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

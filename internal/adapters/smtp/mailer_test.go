@@ -29,7 +29,7 @@ type fakeServer struct {
 
 func startFake(t *testing.T, features ...string) *fakeServer {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestSendErrors(t *testing.T) {
 		t.Fatalf("rcpt: %v", err)
 	}
 	// Nothing listening.
-	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	ln, _ := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 	m3, _ := New(Config{Host: "127.0.0.1", Port: port, From: "a@b.example", TLS: TLSNone, Timeout: time.Second})

@@ -2,7 +2,9 @@
 // application. It serves the API and web app and runs the background workers.
 //
 //	cactusinv [serve]                    run the server (default)
-//	cactusinv migrate up|down            apply or roll back database migrations
+//	cactusinv migrate up|down            apply or roll back (all) database migrations
+//	cactusinv migrate down-to <N>        roll back the migrations after N (undo an upgrade)
+//	cactusinv migrate status             the database's schema and this version's
 //	cactusinv admin create <login>       create an administrator (password on stdin)
 //	cactusinv admin set-password <login> reset a password (password on stdin)
 //	cactusinv backup keygen|create|list|restore|note-legacy-restore
@@ -21,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -37,6 +40,7 @@ import (
 	"github.com/albievan/cactusinv/internal/adapters/idgen"
 	"github.com/albievan/cactusinv/internal/adapters/mariadb"
 	"github.com/albievan/cactusinv/internal/adapters/pdf"
+	"github.com/albievan/cactusinv/internal/adapters/release"
 	"github.com/albievan/cactusinv/internal/adapters/smtp"
 	"github.com/albievan/cactusinv/internal/adapters/worker"
 	"github.com/albievan/cactusinv/internal/app"
@@ -82,15 +86,7 @@ func run(args []string) error {
 	case "serve":
 		return serve(ctx, cfg, log)
 	case "migrate":
-		if len(args) < 2 || (args[1] != "up" && args[1] != "down") {
-			return errors.New("usage: cactusinv migrate up|down")
-		}
-		db, err := openDB(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-		return mariadb.Migrate(ctx, db, args[1] == "down")
+		return migrateCommand(ctx, cfg, args[1:], os.Stdout)
 	case "admin":
 		return adminCommand(ctx, cfg, args[1:])
 	case "system":
@@ -100,6 +96,41 @@ func run(args []string) error {
 		return backupCommand(ctx, cfg, args[1:], os.Stdin, os.Stdout, st != nil && st.Mode()&os.ModeCharDevice != 0)
 	default:
 		return fmt.Errorf("unknown command %q", cmd)
+	}
+}
+
+// migrateCommand runs cactusinv migrate up|down|down-to N|status.
+func migrateCommand(ctx context.Context, cfg config, args []string, out io.Writer) error {
+	usage := errors.New("usage: cactusinv migrate up|down|down-to <version>|status")
+	var to int64
+	switch {
+	case len(args) == 1 && (args[0] == "up" || args[0] == "down" || args[0] == "status"):
+	case len(args) == 2 && args[0] == "down-to":
+		n, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil || n < 1 {
+			return errors.New("migrate down-to: the version must be a number, 1 or more")
+		}
+		to = n
+	default:
+		return usage
+	}
+	db, err := openDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	switch args[0] {
+	case "status":
+		cur, head, err := mariadb.SchemaVersions(ctx, db)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(out, "schema %d, this version %d\n", cur, head)
+		return err
+	case "down-to":
+		return mariadb.MigrateDownTo(ctx, db, to)
+	default:
+		return mariadb.Migrate(ctx, db, args[0] == "down")
 	}
 }
 
@@ -140,11 +171,14 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 	deps := app.Deps{
 		Tx: mariadb.NewStore(db), Clock: clock.System{}, IDs: idgen.UUIDv7{}, Renderer: pdf.Renderer{},
 		Hasher: argon2.New(argon2.DefaultConcurrency), Logger: log, Archive: archive.Dir{Root: cfg.InvoicesDir},
-		TimeZone: cfg.BackupLocation.String(),
+		TimeZone: cfg.BackupLocation.String(), Version: version,
 		Deployment: app.Deployment{
 			Target: cfg.DeployTarget, BackupDir: cfg.BackupDir, InvoicesDir: cfg.InvoicesDir,
 			ProjectDir: cfg.HostProjectDir, BackupHostDir: cfg.HostBackupDir, InvoicesHostDir: cfg.HostInvoicesDir,
 		},
+	}
+	if cfg.UpdateURL != "" {
+		deps.Releases = release.New(cfg.UpdateURL)
 	}
 	dc, err := dbConfig(ctx, cfg)
 	if err != nil {
@@ -214,6 +248,10 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 			return err
 		}
 		log.Info("migrations applied")
+	} else if cur, head, err := mariadb.SchemaVersions(ctx, db); err != nil {
+		return err
+	} else if cur > head {
+		return &mariadb.SchemaNewerError{Database: cur, Code: head}
 	}
 	if err := os.MkdirAll(cfg.InvoicesDir, 0o750); err != nil {
 		return fmt.Errorf("invoices dir: %w", err)

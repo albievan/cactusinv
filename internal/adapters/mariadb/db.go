@@ -100,21 +100,48 @@ func migrationLock(ctx context.Context, db *sql.DB) (release func(), err error) 
 	}, nil
 }
 
-// Migrate applies (or with down=true, rolls back all) embedded goose migrations.
+// SchemaNewerError: the database was migrated by a newer version of cactusInv. Goose would
+// start this version on it without complaint (it only applies what is missing), and its
+// queries may not fit the newer tables: it refuses instead (M27).
+type SchemaNewerError struct{ Database, Code int64 }
+
+func (e *SchemaNewerError) Error() string {
+	return fmt.Sprintf("the database schema (%d) is newer than this version of cactusInv (%d): "+
+		"run the newer version, or undo its migrations with it first (cactusinv migrate down-to %d)", e.Database, e.Code, e.Code)
+}
+
+func newProvider(db *sql.DB) (*goose.Provider, error) {
+	return goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
+}
+
+// head is the newest migration this binary carries.
+func head(p *goose.Provider) int64 {
+	src := p.ListSources()
+	return src[len(src)-1].Version
+}
+
+// Migrate applies (or with down=true, rolls back all) embedded goose migrations. It
+// refuses a database migrated by a newer version (*SchemaNewerError).
 func Migrate(ctx context.Context, db *sql.DB, down bool) error {
 	release, err := migrationLock(ctx, db)
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: lock: %w", err)
 	}
 	defer release()
-	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
+	provider, err := newProvider(db)
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
 	}
 	if down {
 		_, err = provider.DownTo(ctx, 0)
 	} else {
-		_, err = provider.Up(ctx)
+		var cur int64
+		if cur, err = provider.GetDBVersion(ctx); err == nil {
+			if h := head(provider); cur > h {
+				return &SchemaNewerError{Database: cur, Code: h}
+			}
+			_, err = provider.Up(ctx)
+		}
 	}
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
@@ -129,7 +156,7 @@ func MigrateTo(ctx context.Context, db *sql.DB, version int64) error {
 		return fmt.Errorf("mariadb.MigrateTo: lock: %w", err)
 	}
 	defer release()
-	provider, err := goose.NewProvider(goose.DialectMySQL, db, migrations.FS, goose.WithGoMigrations(migrations.GoMigrations()...))
+	provider, err := newProvider(db)
 	if err != nil {
 		return fmt.Errorf("mariadb.MigrateTo: %w", err)
 	}
@@ -137,6 +164,47 @@ func MigrateTo(ctx context.Context, db *sql.DB, version int64) error {
 		return fmt.Errorf("mariadb.MigrateTo: %w", err)
 	}
 	return nil
+}
+
+// MigrateDownTo rolls back the migrations after version (≥ 1), newest first: how a failed
+// upgrade is undone before the older version starts again. Only the version that added a
+// migration can roll it back.
+func MigrateDownTo(ctx context.Context, db *sql.DB, version int64) error {
+	if version < 1 {
+		return errors.New("mariadb.MigrateDownTo: the version must be 1 or more")
+	}
+	release, err := migrationLock(ctx, db)
+	if err != nil {
+		return fmt.Errorf("mariadb.MigrateDownTo: lock: %w", err)
+	}
+	defer release()
+	provider, err := newProvider(db)
+	if err != nil {
+		return fmt.Errorf("mariadb.MigrateDownTo: %w", err)
+	}
+	cur, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		return fmt.Errorf("mariadb.MigrateDownTo: %w", err)
+	}
+	if h := head(provider); cur > h {
+		return &SchemaNewerError{Database: cur, Code: h}
+	}
+	if _, err := provider.DownTo(ctx, version); err != nil {
+		return fmt.Errorf("mariadb.MigrateDownTo: %w", err)
+	}
+	return nil
+}
+
+// SchemaVersions returns the database's schema version and the newest this binary carries.
+func SchemaVersions(ctx context.Context, db *sql.DB) (database, code int64, err error) {
+	provider, err := newProvider(db)
+	if err != nil {
+		return 0, 0, fmt.Errorf("mariadb.SchemaVersions: %w", err)
+	}
+	if database, err = provider.GetDBVersion(ctx); err != nil {
+		return 0, 0, fmt.Errorf("mariadb.SchemaVersions: %w", err)
+	}
+	return database, head(provider), nil
 }
 
 // Store implements ports.TxManager on a *sql.DB.

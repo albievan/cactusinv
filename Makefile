@@ -54,7 +54,7 @@ test-int: ## integration tests against MariaDB 11 (Docker); migrations up/down/u
 REMOTE      ?=
 REMOTE_DIR  ?= /data/cactusinv/src
 REMOTE_GOCACHE ?= /data/cactusinv/gocache
-GO_IMAGE    ?= golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c
+GO_IMAGE    ?= golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473
 
 remote-test-int: ## integration tests on REMOTE=user@host (required) via ssh + Docker (working tree incl. uncommitted changes)
 	@[ -n "$(REMOTE)" ] || { echo "set REMOTE=user@host (a Docker host for the integration tests)"; exit 1; }

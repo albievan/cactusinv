@@ -193,7 +193,7 @@ func backupCommand(ctx context.Context, cfg config, args []string, stdin io.Read
 		if err != nil {
 			return err
 		}
-		if !*yes && !(interactive && pos[0] != "-" && confirmRestore(stdin, stdout)) {
+		if !*yes && (!interactive || pos[0] == "-" || !confirmRestore(stdin, stdout)) {
 			if err := svc.DiscardRestore(ctx, p.ID); err != nil {
 				return err
 			}

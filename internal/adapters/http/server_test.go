@@ -486,7 +486,7 @@ func TestReadyzUnavailable(t *testing.T) {
 	svc := app.New(app.Deps{Tx: store, Clock: &fakes.Clock{}, IDs: &fakes.IDs{}})
 	h := httpapi.NewHandler(httpapi.Options{Service: svc, Clock: &fakes.Clock{}, Ready: map[string]httpapi.ReadyCheck{"db": func(context.Context) error { return errors.New("down") }}})
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("GET", "/readyz", nil))
+	h.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), "GET", "/readyz", nil))
 	if rec.Code != 503 || !strings.Contains(rec.Body.String(), "unavailable") {
 		t.Fatalf("readyz = %d %s", rec.Code, rec.Body)
 	}

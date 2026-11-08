@@ -345,14 +345,11 @@ func (s *Service) ListBackups(ctx context.Context) (BackupOverview, error) {
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return BackupOverview{}, wrap("app.ListBackups", err)
 	}
-	switch {
-	case b.Stager == nil:
+	if b.Stager == nil {
 		out.RestoreUnavailable = "restores are not configured"
-	default:
-		if err := b.Stager.Ready(ctx); err != nil {
-			s.log.WarnContext(ctx, "restore staging database unavailable", "err", err)
-			out.RestoreUnavailable = "the staging database is not available; run deploy.sh --install to create and grant it"
-		}
+	} else if err := b.Stager.Ready(ctx); err != nil {
+		s.log.WarnContext(ctx, "restore staging database unavailable", "err", err)
+		out.RestoreUnavailable = "the staging database is not available; run deploy.sh --install to create and grant it"
 	}
 	files, err := s.backupFiles(ctx)
 	out.Files = files

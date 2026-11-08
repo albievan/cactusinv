@@ -9,7 +9,7 @@ without any external secret store having to exist first.
 ## Decision
 Secrets (`db_password`, `smtp_password`) are read through `ports.Secrets`:
 - **file** (default): one file per secret in `CACTUSINV_SECRETS_DIR` (`/run/secrets`). Docker
-  Compose mounts them from `${SECRETS_DIR}` (`./secrets`, git-ignored, mode 700); Kubernetes
+  Compose mounts them from `${SECRETS_DIR}` (set in `.env`, outside git, mode 700); Kubernetes
   mounts the `cactusinv-secrets` Secret. `deploy.sh --install` generates random database
   passwords once; on Kubernetes they are generated straight into the cluster Secret and
   never written to disk locally.

@@ -36,6 +36,11 @@ type Deps struct {
 	// Deployment says how the installation was deployed and which host folders are mapped
 	// now (System Settings shows them; set by deploy.sh).
 	Deployment Deployment
+	// Version is the running release (VERSION, stamped at build time; "dev" by hand).
+	Version string
+	// Releases tells the newest published version (System Settings → Check for updates);
+	// nil switches the check off.
+	Releases ports.ReleaseSource
 }
 
 // Deployment describes the running deployment's folder mapping.
@@ -66,6 +71,8 @@ type Service struct {
 	backups  BackupDeps
 	zone     string
 	deploy   Deployment
+	version  string
+	releases ports.ReleaseSource
 	// dummy is the hash checked for unknown logins (dummyHash).
 	dummyOnce sync.Once
 	dummy     string
@@ -88,7 +95,7 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
-		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, backupSlot: make(chan struct{}, 1),
+		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, version: d.Version, releases: d.Releases, backupSlot: make(chan struct{}, 1),
 	}
 }
 

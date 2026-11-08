@@ -6,6 +6,7 @@ import { SettingsPage } from '../Settings'
 import { useCan } from '../../../components/auth'
 
 type System = Schemas['SystemSettings']
+type UpdateCheck = Schemas['UpdateCheck']
 
 /** SystemSettingsPage is /settings/system: session timeouts and the folder mapping. */
 export function SystemSettingsPage() {
@@ -19,6 +20,11 @@ export function SystemSettingsPage() {
 /** deployCommand is what applies a folder mapping on this deployment. */
 function deployCommand(target: string): string {
   return target === 'dockerdesktop' ? './deploy.sh --install --dockerdesktop' : './deploy.sh --install'
+}
+
+/** upgradeCommand installs the newest version on this deployment (M27). */
+export function upgradeCommand(target: string): string {
+  return target ? `./deploy.sh --upgrade --${target}` : './deploy.sh --upgrade --dockerdesktop|--k3s|--k8s'
 }
 
 function SystemForm() {
@@ -63,6 +69,7 @@ function SystemForm() {
   ]
 
   return (
+    <div className="space-y-4">
     <form onSubmit={submit} className="space-y-4" aria-labelledby="system-heading">
       <fieldset disabled={!edit} className="contents">
       <h2 id="system-heading" className="text-xl font-bold text-brand-900">
@@ -141,5 +148,63 @@ function SystemForm() {
         </div>
       )}
     </form>
+    <VersionCard target={d.target} />
+    </div>
+  )
+}
+
+/** VersionCard shows the running version and, when asked, whether a newer one is published. */
+function VersionCard({ target }: { target: string }) {
+  const ver = useAsync(() => unwrap(api.GET('/version')), [])
+  const [check, setCheck] = useState<UpdateCheck | null>(null)
+  const [err, setErr] = useState<Error | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const run = async () => {
+    setErr(null)
+    setCheck(null)
+    setBusy(true)
+    try {
+      setCheck(await unwrap(api.GET('/settings/system/update')))
+    } catch (x) {
+      setErr(x as Error)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="card space-y-3" aria-labelledby="version-heading">
+      <h3 id="version-heading" className="font-semibold">Version</h3>
+      <p className="text-sm">
+        {ver.data ? `cactusInv ${ver.data.version} (build ${ver.data.build})` : 'cactusInv'}
+      </p>
+      <ErrorBanner error={err} />
+      <button type="button" className="btn-secondary" disabled={busy} onClick={() => void run()}>
+        {busy ? 'Checking…' : 'Check for updates'}
+      </button>
+      {check?.problem && (
+        <p role="status" className="text-sm text-amber-800">{check.problem}</p>
+      )}
+      {check && !check.problem && !check.available && (
+        <p role="status" className="text-sm text-green-700">You have the newest version ({check.current}).</p>
+      )}
+      {check?.available && (
+        <div role="status" className="space-y-2 text-sm">
+          <p className="font-medium text-brand-900">
+            Version {check.latest} is available (this is {check.current}).
+          </p>
+          <p className="text-slate-600">
+            The app cannot replace itself. To upgrade, run this in the cactusInv folder on the machine you deploy from
+            {target && target !== 'dockerdesktop' ? ' (add --ssh-access user@host if you deploy over SSH)' : ''}:
+          </p>
+          <code className="block break-all rounded bg-cream-100 px-2 py-1">{upgradeCommand(target)}</code>
+          <p className="text-slate-600">
+            It shows what changes and asks first, takes a backup, and goes back to this version if the new one does not start.
+            The app is unavailable for a minute or two while it restarts; nobody is signed out.
+          </p>
+        </div>
+      )}
+    </section>
   )
 }

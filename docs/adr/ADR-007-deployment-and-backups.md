@@ -55,3 +55,24 @@ volume is ReadWriteOnce; with a ReadWriteMany class it can scale out.
   storage class allows it).
 - A rollout not ready within five minutes prints pods, claims, events and the current and
   previous container logs before the script stops.
+
+## Amendment — upgrades (2026-11-08, M27)
+- **The app never upgrades itself.** It runs distroless, non-root, without the Docker socket or
+  cluster rights; giving it those to pull and restart its own image would hand the web process
+  control of the host. `./deploy.sh --upgrade` does it from the checkout the install came from;
+  System Settings → Check for updates (on demand only; `CACTUSINV_UPDATE_URL`, `off` to disable)
+  just says a newer published version exists and prints the command.
+- **Forward only, backup first, new script installs.** The upgrade fast-forwards to the branch's
+  upstream or `--to REF` (refusing anything that is not a descendant: a downgrade needs a
+  restore), takes a backup before changing anything, and runs the *new* `deploy.sh --install`
+  (each step is the script run again, before `.env` is read, so every step reads it afresh). It
+  then checks the running version is the new one.
+- **Rollback undoes migrations with the newer binary.** A restore cannot take the live schema
+  back (ADR-010: a backup is migrated *up* to the binary's head), and goose would start an older
+  binary on a newer schema without complaint. So `mariadb.Migrate` now refuses a database whose
+  schema is newer than the binary's (`SchemaNewerError`: the app does not start), and a failed
+  upgrade runs the new image's `cactusinv migrate down-to <old head>` (Docker: a one-off
+  container with the app stopped; k3s/k8s: in the running pod, else the script stops and names
+  the backup), then resets the checkout and reinstalls the old version. Down migrations are
+  already required and tested for every migration (CLAUDE.md §3).
+- Remote Docker (`--ssh-access`) passes the build number to the copy, which has no `.git`.

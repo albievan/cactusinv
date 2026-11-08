@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/filesecrets"
+	"github.com/albievan/cactusinv/internal/adapters/release"
 	"github.com/albievan/cactusinv/internal/adapters/vault"
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
@@ -48,6 +50,9 @@ type config struct {
 	HostProjectDir  string
 	HostBackupDir   string
 	HostInvoicesDir string
+	// UpdateURL is the published VERSION file (System Settings → Check for updates);
+	// "" when CACTUSINV_UPDATE_URL=off.
+	UpdateURL string
 	// Backups (ADR-010).
 	BackupDir           string
 	BackupTimes         []domain.TimeOfDay
@@ -119,6 +124,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 	c.HostProjectDir = getenv("CACTUSINV_HOST_PROJECT_DIR")
 	c.HostBackupDir = getenv("CACTUSINV_HOST_BACKUP_DIR")
 	c.HostInvoicesDir = getenv("CACTUSINV_HOST_INVOICES_DIR")
+	if c.UpdateURL = str("CACTUSINV_UPDATE_URL", release.DefaultURL); c.UpdateURL == "off" {
+		c.UpdateURL = ""
+	} else if u, err := url.Parse(c.UpdateURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return config{}, fmt.Errorf("CACTUSINV_UPDATE_URL must be an http(s) URL or off, not %q", c.UpdateURL)
+	}
 	c.BackupRetentionDays = integer("CACTUSINV_BACKUP_RETENTION_DAYS", 14)
 	c.BackupMaxUploadMB = integer("CACTUSINV_BACKUP_MAX_UPLOAD_MB", 256)
 	c.RestoreDBName = str("CACTUSINV_RESTORE_DB_NAME", c.DBName+"_restore")

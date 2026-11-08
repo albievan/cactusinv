@@ -53,3 +53,22 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("optional secret = %q %v", v, err)
 	}
 }
+
+// TestUpdateURL (M27): the published VERSION file by default; off switches the check off;
+// anything but an http(s) URL is refused at start.
+func TestUpdateURL(t *testing.T) {
+	if c, err := loadConfig(env(nil)); err != nil || c.UpdateURL != "https://raw.githubusercontent.com/albievan/cactusinv/main/VERSION" {
+		t.Fatalf("default %q %v", c.UpdateURL, err)
+	}
+	if c, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": "off"})); err != nil || c.UpdateURL != "" {
+		t.Fatalf("off %q %v", c.UpdateURL, err)
+	}
+	if c, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": "https://mirror.example/cactusinv/VERSION"})); err != nil || c.UpdateURL != "https://mirror.example/cactusinv/VERSION" {
+		t.Fatalf("mirror %q %v", c.UpdateURL, err)
+	}
+	for _, bad := range []string{"file:///etc/passwd", "ftp://x/VERSION", "https://", "not a url"} {
+		if _, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": bad})); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

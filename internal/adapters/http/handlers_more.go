@@ -253,3 +253,8 @@ func (h *handlers) UpdateSystemSettings(ctx context.Context, req UpdateSystemSet
 	}
 	return UpdateSystemSettings200JSONResponse(toAPISystemSettings(v)), nil
 }
+
+func (h *handlers) CheckForUpdate(ctx context.Context, _ CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error) {
+	c := h.svc.CheckForUpdate(ctx)
+	return CheckForUpdate200JSONResponse{Current: c.Current, Latest: c.Latest, Available: c.Available, Problem: c.Problem}, nil
+}

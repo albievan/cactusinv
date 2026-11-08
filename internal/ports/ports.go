@@ -114,6 +114,11 @@ type SMTPRepository interface {
 	Save(ctx context.Context, s domain.SMTPSettings, passwordEnc []byte) error
 }
 
+// ReleaseSource tells the newest published version of cactusInv, e.g. "1.13.0" (M27).
+type ReleaseSource interface {
+	LatestVersion(ctx context.Context) (string, error)
+}
+
 // Cipher encrypts small secrets at rest (AES-256-GCM).
 type Cipher interface {
 	Encrypt(plaintext []byte) ([]byte, error)
