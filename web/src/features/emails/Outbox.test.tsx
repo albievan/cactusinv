@@ -15,17 +15,19 @@ test('the status filter tabs are readable whether selected or not', async () => 
   expect(tabs.map((t) => t.textContent)).toEqual(['pending', 'sending', 'failed', 'sent', 'cancelled'])
   const selected = screen.getByRole('tab', { name: 'pending' })
   expect(selected).toHaveAttribute('aria-selected', 'true')
-  expect(selected).toHaveClass('bg-brand-500', 'text-white')
+  expect(selected).toHaveClass('nav-link', 'active')
   for (const name of ['failed', 'sent', 'cancelled']) {
     const tab = screen.getByRole('tab', { name })
     expect(tab).toHaveAttribute('aria-selected', 'false')
-    expect(tab).toHaveClass('bg-white', 'text-brand-900', 'ring-cream-300')
+    expect(tab).toHaveClass('nav-link', 'bg-white')
+    expect(tab).not.toHaveClass('active')
     expect(tab.className).not.toMatch(/dark:/)
   }
 
   await userEvent.click(screen.getByRole('tab', { name: 'failed' }))
-  expect(screen.getByRole('tab', { name: 'failed' })).toHaveClass('bg-brand-500', 'text-white')
-  expect(screen.getByRole('tab', { name: 'pending' })).toHaveClass('bg-white', 'text-brand-900')
+  expect(screen.getByRole('tab', { name: 'failed' })).toHaveClass('nav-link', 'active')
+  expect(screen.getByRole('tab', { name: 'pending' })).toHaveClass('nav-link', 'bg-white')
+  expect(screen.getByRole('tab', { name: 'pending' })).not.toHaveClass('active')
 })
 
 test('older messages page in, and a message being sent can be seen', async () => {

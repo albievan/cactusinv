@@ -71,11 +71,11 @@ function download(name: string, text: string) {
 export function ImportExportSettingsPage() {
   return (
     <SettingsPage>
-      <section className="space-y-4" aria-labelledby="transfer-heading">
-        <h2 id="transfer-heading" className="text-xl font-bold text-brand-900">
+      <section className="vstack gap-3" aria-labelledby="transfer-heading">
+        <h2 id="transfer-heading" className="fs-5 fw-bold mb-0">
           Import/Export Settings
         </h2>
-        <p className="text-sm text-slate-600">
+        <p className="small text-body-secondary mb-0">
           Move the business details, e-mail server, currencies, bank accounts, products, customers and schedules to another cactusInv as
           one file. Invoices are not included: a full copy is a backup (Settings → Backup & restore).
         </p>
@@ -124,31 +124,31 @@ function Export() {
     }
   }
   return (
-    <form onSubmit={submit} className="card space-y-3">
-      <h3 className="font-semibold">Export</h3>
+    <form onSubmit={submit} className="card card-body vstack gap-3">
+      <h3 className="fs-6 fw-semibold mb-0">Export</h3>
       <ErrorBanner error={err} />
-      <p className="text-sm text-slate-600">
+      <p className="small text-body-secondary mb-0">
         The file holds customer contact details and bank account numbers. It is protected with a passphrase unless you choose otherwise. The
         e-mail server password is never exported.
       </p>
       {!plain && (
         <>
           <Field label="Passphrase" hint={`At least ${MIN_PASSPHRASE} characters. It cannot be recovered.`}>
-            {(id) => <input id={id} type="password" autoComplete="new-password" className="input" value={pass} onChange={(e) => setPass(e.target.value)} />}
+            {(id) => <input id={id} type="password" autoComplete="new-password" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} />}
           </Field>
           <Field label="Passphrase again">
-            {(id) => <input id={id} type="password" autoComplete="new-password" className="input" value={again} onChange={(e) => setAgain(e.target.value)} />}
+            {(id) => <input id={id} type="password" autoComplete="new-password" className="form-control" value={again} onChange={(e) => setAgain(e.target.value)} />}
           </Field>
         </>
       )}
-      <label className="flex min-h-11 items-center gap-3 text-sm">
-        <input type="checkbox" className="h-5 w-5" checked={plain} onChange={(e) => setPlain(e.target.checked)} />
+      <label className="d-flex align-items-center gap-3 small" style={{ minHeight: 44 }}>
+        <input type="checkbox" className="form-check-input mt-0 flex-shrink-0" checked={plain} onChange={(e) => setPlain(e.target.checked)} />
         Without a passphrase (readable JSON, not protected)
       </label>
-      <button className="btn-primary" disabled={busy}>
+      <button className="btn btn-primary align-self-start" disabled={busy}>
         {busy ? 'Exporting…' : 'Export to a JSON file'}
       </button>
-      {done && <p className="text-sm text-green-700">{done}</p>}
+      {done && <p className="small text-success mb-0">{done}</p>}
     </form>
   )
 }
@@ -262,19 +262,19 @@ function Import() {
   }
 
   return (
-    <div className="card space-y-3">
-      <h3 className="font-semibold">Import</h3>
-      <p className="text-sm text-slate-600">
+    <div className="card card-body vstack gap-3">
+      <h3 className="fs-6 fw-semibold mb-0">Import</h3>
+      <p className="small text-body-secondary mb-0">
         Currencies, customers and products are matched by code or SKU, bank accounts by account number, schedules by customer and name: a
         match is updated, anything else is added. Nothing is deleted. New schedules are added paused, so nothing is invoiced until you resume
         them. The next invoice number only moves forward, and the e-mail server keeps the password stored here.
       </p>
-      <label className={`btn-secondary cursor-pointer ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+      <label className={`btn btn-outline-primary align-self-start mb-0${busy ? ' disabled' : ''}`}>
         Choose a settings file
         <input
           type="file"
           accept=".json,application/json"
-          className="sr-only"
+          className="visually-hidden"
           aria-label="Choose a settings file"
           disabled={busy}
           onChange={(e) => {
@@ -286,51 +286,51 @@ function Import() {
       </label>
       <ErrorBanner error={err} />
       {file && (
-        <p className="text-sm">
-          <span className="break-all font-medium">{file.name}</span>
+        <p className="small mb-0">
+          <span className="text-break fw-medium">{file.name}</span>
           {file.data.exportedAt && <> · exported {formatDateTime(file.data.exportedAt)}</>}
           {file.data.appVersion && <> · cactusInv {file.data.appVersion}</>}
           {file.protected && <> · protected with a passphrase</>}
         </p>
       )}
       {file?.protected && !opened && (
-        <form onSubmit={open} className="space-y-3">
+        <form onSubmit={open} className="vstack gap-3">
           <Field label="The file's passphrase">
-            {(id) => <input id={id} type="password" autoComplete="off" className="input" value={pass} onChange={(e) => setPass(e.target.value)} required />}
+            {(id) => <input id={id} type="password" autoComplete="off" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} required />}
           </Field>
-          <button className="btn-primary" disabled={busy || !pass}>
+          <button className="btn btn-primary align-self-start" disabled={busy || !pass}>
             Open
           </button>
         </form>
       )}
       {file && opened && (
-        <fieldset className="space-y-1">
-          <legend className="text-sm font-medium">Import</legend>
+        <fieldset className="vstack gap-1">
+          <legend className="small fw-medium mb-0">Import</legend>
           {sections.map((s) => {
             const n = opened.counts[s.key] ?? 0
             return (
-              <label key={s.key} className={`flex min-h-11 items-center gap-3 text-sm ${n === 0 ? 'text-slate-400' : ''}`}>
-                <input type="checkbox" className="h-5 w-5" checked={chosen.has(s.key)} disabled={n === 0 || busy} onChange={() => toggle(s.key)} />
+              <label key={s.key} className={`d-flex align-items-center gap-3 small${n === 0 ? ' text-body-tertiary' : ''}`} style={{ minHeight: 44 }}>
+                <input type="checkbox" className="form-check-input mt-0 flex-shrink-0" checked={chosen.has(s.key)} disabled={n === 0 || busy} onChange={() => toggle(s.key)} />
                 <span>
                   {s.label}
-                  {s.many && <span className="text-slate-500"> ({n})</span>}
-                  {n === 0 && <span className="text-slate-500"> — not in the file</span>}
+                  {s.many && <span className="text-body-secondary"> ({n})</span>}
+                  {n === 0 && <span className="text-body-secondary"> — not in the file</span>}
                 </span>
               </label>
             )
           })}
         </fieldset>
       )}
-      {busy && <p className="text-sm text-slate-500">Checking…</p>}
+      {busy && <p className="small text-body-secondary mb-0">Checking…</p>}
       {check && file && <Changes result={check} chosen={chosen} />}
       {check && file && (
-        <button className="btn-primary" onClick={apply} disabled={busy || chosen.size === 0}>
+        <button className="btn btn-primary align-self-start" onClick={apply} disabled={busy || chosen.size === 0}>
           Import
         </button>
       )}
       {done && (
         <>
-          <p className="text-sm font-medium text-green-700">Imported.</p>
+          <p className="small fw-medium text-success mb-0">Imported.</p>
           <Changes result={done} chosen={chosen} />
         </>
       )}
@@ -341,27 +341,27 @@ function Import() {
 function Changes({ result, chosen }: { result: Result; chosen: Set<Section> }) {
   const rows = sections.filter((s) => chosen.has(s.key))
   return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <caption className="sr-only">{result.applied ? 'What was imported' : 'What an import would change'}</caption>
-          <thead className="text-left text-xs uppercase tracking-wide text-slate-600">
+    <div className="vstack gap-2">
+      <div className="table-responsive">
+        <table className="table table-sm align-middle mb-0 small">
+          <caption className="visually-hidden">{result.applied ? 'What was imported' : 'What an import would change'}</caption>
+          <thead>
             <tr>
-              <th className="py-1 pr-3">Section</th>
-              <th className="py-1 pr-3 text-right">New</th>
-              <th className="py-1 pr-3 text-right">Changed</th>
-              <th className="py-1 text-right">Unchanged</th>
+              <th>Section</th>
+              <th className="text-end">New</th>
+              <th className="text-end">Changed</th>
+              <th className="text-end">Unchanged</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => {
               const c = result[s.key]
               return (
-                <tr key={s.key} className="border-t border-cream-200">
-                  <td className="py-1 pr-3">{s.label}</td>
-                  <td className="py-1 pr-3 text-right">{c.created}</td>
-                  <td className="py-1 pr-3 text-right">{c.updated}</td>
-                  <td className="py-1 text-right">{c.unchanged}</td>
+                <tr key={s.key}>
+                  <td>{s.label}</td>
+                  <td className="text-end">{c.created}</td>
+                  <td className="text-end">{c.updated}</td>
+                  <td className="text-end">{c.unchanged}</td>
                 </tr>
               )
             })}
@@ -369,7 +369,7 @@ function Changes({ result, chosen }: { result: Result; chosen: Set<Section> }) {
         </table>
       </div>
       {result.warnings.map((w) => (
-        <p key={w} role="note" className="text-sm font-medium text-amber-800">
+        <p key={w} role="note" className="small fw-medium text-warning-emphasis mb-0">
           {w}
         </p>
       ))}

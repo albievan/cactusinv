@@ -60,8 +60,8 @@ function BackupAndRestore() {
 
   if (overview.loading && !overview.data) return <Spinner />
   return (
-    <section className="space-y-4" aria-labelledby="backup-heading">
-      <h2 id="backup-heading" className="text-xl font-bold text-brand-900">Backup & restore</h2>
+    <section className="vstack gap-3" aria-labelledby="backup-heading">
+      <h2 id="backup-heading" className="fs-5 fw-bold mb-0">Backup & restore</h2>
       <ErrorBanner error={overview.error} />
       {overview.data && <Schedule ov={overview.data} />}
       {preview ? (
@@ -92,31 +92,31 @@ function BackupAndRestore() {
 function Schedule({ ov }: { ov: Overview }) {
   const last = ov.lastRun
   return (
-    <div className="card space-y-2 text-sm">
-      <h3 className="font-semibold">Automatic backups</h3>
+    <div className="card card-body vstack gap-2 small">
+      <h3 className="fs-6 fw-semibold mb-0">Automatic backups</h3>
       {ov.keyConfigured ? (
-        <p>
+        <p className="mb-0">
           Daily at <strong>{ov.times.join(', ') || '—'}</strong> ({ov.timeZone}), kept for{' '}
           <strong>{ov.retentionDays > 0 ? `${ov.retentionDays} days` : 'ever'}</strong>.
           {ov.nextRun && <> Next: {formatDateTime(ov.nextRun)}.</>}
         </p>
       ) : (
-        <p role="alert" className="font-medium text-amber-800">
+        <p role="alert" className="fw-medium text-warning-emphasis mb-0">
           The server backup key (backup_key) is not set up, so backups are not stored here or taken automatically. You can still download a
           backup protected with a passphrase.
         </p>
       )}
       {last && (
-        <p>
+        <p className="mb-0">
           Last scheduled backup: {formatDateTime(last.slot)} —{' '}
-          <span className={last.result === 'failed' ? 'font-semibold text-red-700' : 'font-semibold text-green-700'}>
+          <span className={`fw-semibold ${last.result === 'failed' ? 'text-danger' : 'text-success'}`}>
             {last.result === 'ok' ? 'done' : last.result}
           </span>
-          {last.result === 'failed' && last.error && <span className="block text-red-700">Reason: {failureText[last.error] ?? last.error}.</span>}
+          {last.result === 'failed' && last.error && <span className="d-block text-danger">Reason: {failureText[last.error] ?? last.error}.</span>}
         </p>
       )}
-      <p className="text-xs text-slate-500">The schedule and how long backups are kept are set by the deployment (.env).</p>
-      {ov.restoreUnavailable && <p className="font-medium text-amber-800">Restoring is not available: {ov.restoreUnavailable}.</p>}
+      <p className="fs-8 text-body-secondary mb-0">The schedule and how long backups are kept are set by the deployment (.env).</p>
+      {ov.restoreUnavailable && <p className="fw-medium text-warning-emphasis mb-0">Restoring is not available: {ov.restoreUnavailable}.</p>}
     </div>
   )
 }
@@ -169,21 +169,21 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
   }
 
   return (
-    <div className="card space-y-3">
+    <div className="card card-body vstack gap-3">
       <ErrorBanner error={err} />
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-primary" onClick={backupNow} disabled={busy || !ov.keyConfigured}>
+      <div className="d-flex flex-wrap gap-2">
+        <button className="btn btn-primary" onClick={backupNow} disabled={busy || !ov.keyConfigured}>
           Back up now
         </button>
-        <button className="btn-secondary" onClick={() => setDownload(true)} disabled={busy}>
+        <button className="btn btn-outline-primary" onClick={() => setDownload(true)} disabled={busy}>
           Download a backup
         </button>
-        <label className={`btn-secondary cursor-pointer ${busy || ov.restoreUnavailable ? 'pointer-events-none opacity-50' : ''}`}>
+        <label className={`btn btn-outline-primary mb-0${busy || ov.restoreUnavailable ? ' disabled' : ''}`}>
           Restore from file
           <input
             type="file"
             accept=".age"
-            className="sr-only"
+            className="visually-hidden"
             aria-label="Restore from file"
             disabled={busy || !!ov.restoreUnavailable}
             onChange={(e) => {
@@ -194,8 +194,8 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
           />
         </label>
       </div>
-      {busy && <p className="text-sm text-slate-500">Working…</p>}
-      {msg && <p className="text-sm text-green-700">{msg}</p>}
+      {busy && <p className="small text-body-secondary mb-0">Working…</p>}
+      {msg && <p className="small text-success mb-0">{msg}</p>}
       <DownloadSheet open={download} onClose={() => setDownload(false)} />
     </div>
   )
@@ -251,24 +251,24 @@ function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }
   }
   return (
     <Sheet title="Download a backup" open={open} onClose={close}>
-      <form onSubmit={submit} className="space-y-3">
-        <p className="text-sm text-slate-600">
+      <form onSubmit={submit} className="vstack gap-3">
+        <p className="small text-body-secondary mb-0">
           A complete backup is made now and encrypted with your passphrase. It contains customer details and bank accounts, so store it
           safely. Invoice PDFs are not included; they are recreated after a restore.
         </p>
         <ErrorBanner error={err} />
         <Field label="Passphrase" hint={`At least ${MIN_PASSPHRASE} characters. It cannot be recovered.`}>
-          {(f) => <input id={f} type="password" autoComplete="new-password" className="input" value={pass} onChange={(e) => setPass(e.target.value)} required />}
+          {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} required />}
         </Field>
         <Field label="Passphrase again">
-          {(f) => <input id={f} type="password" autoComplete="new-password" className="input" value={again} onChange={(e) => setAgain(e.target.value)} required />}
+          {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={again} onChange={(e) => setAgain(e.target.value)} required />}
         </Field>
-        {done && <p className="text-sm text-green-700">{done}</p>}
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={close}>
+        {done && <p className="small text-success mb-0">{done}</p>}
+        <div className="d-flex justify-content-end gap-2">
+          <button type="button" className="btn btn-outline-primary" onClick={close}>
             Close
           </button>
-          <button className="btn-primary" disabled={busy}>
+          <button className="btn btn-primary" disabled={busy}>
             {busy ? 'Preparing…' : 'Download'}
           </button>
         </div>
@@ -281,40 +281,42 @@ function StoredBackups({ ov, onRestore }: { ov: Overview; onRestore: (f: BackupF
   if (ov.files.length === 0) return <Empty>No backups are stored yet.</Empty>
   const canRestore = (f: BackupFile) => !f.legacy && !ov.restoreUnavailable
   return (
-    <div className="card overflow-x-auto p-0">
-      <table className="w-full text-sm">
-        <caption className="sr-only">Stored backups</caption>
-        <thead className="bg-cream-100 text-left text-xs uppercase tracking-wide text-slate-600">
+    <div className="card overflow-hidden">
+      <div className="table-responsive">
+      <table className="table table-hover align-middle mb-0 small">
+        <caption className="visually-hidden">Stored backups</caption>
+        <thead>
           <tr>
-            <th className="px-3 py-2">Taken</th>
-            <th className="px-3 py-2">Kind</th>
-            <th className="hidden px-3 py-2 md:table-cell">File</th>
-            <th className="px-3 py-2 text-right">Size</th>
-            <th className="px-3 py-2">
-              <span className="sr-only">Actions</span>
+            <th>Taken</th>
+            <th>Kind</th>
+            <th className="d-none d-md-table-cell">File</th>
+            <th className="text-end">Size</th>
+            <th>
+              <span className="visually-hidden">Actions</span>
             </th>
           </tr>
         </thead>
         <tbody>
           {ov.files.map((f) => (
-            <tr key={f.name} className="border-t border-cream-200">
-              <td className="whitespace-nowrap px-3 py-2">{formatDateTime(f.createdAt)}</td>
-              <td className="px-3 py-2">{kindLabels[f.kind] ?? f.kind}</td>
-              <td className="hidden break-all px-3 py-2 font-mono text-xs md:table-cell">{f.name}</td>
-              <td className="whitespace-nowrap px-3 py-2 text-right">{formatSize(f.size)}</td>
-              <td className="px-3 py-2 text-right">
+            <tr key={f.name}>
+              <td className="text-nowrap">{formatDateTime(f.createdAt)}</td>
+              <td>{kindLabels[f.kind] ?? f.kind}</td>
+              <td className="d-none d-md-table-cell text-break font-monospace fs-8">{f.name}</td>
+              <td className="text-nowrap text-end">{formatSize(f.size)}</td>
+              <td className="text-end">
                 {canRestore(f) ? (
-                  <button className="btn-secondary" onClick={() => onRestore(f)} aria-label={`Restore ${f.name}`}>
+                  <button className="btn btn-sm btn-outline-primary" onClick={() => onRestore(f)} aria-label={`Restore ${f.name}`}>
                     Restore…
                   </button>
                 ) : f.legacy ? (
-                  <span className="text-xs text-slate-500">deploy.sh --restore</span>
+                  <span className="fs-8 text-body-secondary">deploy.sh --restore</span>
                 ) : null}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -337,19 +339,19 @@ function StageSheet({ name, needsPassphrase, onClose, onStaged }: { name: string
   }
   return (
     <Sheet title="Check a backup" open onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3">
-        <p className="text-sm text-slate-600">
-          The backup is opened and checked first; nothing changes until you confirm the restore. <span className="break-all font-mono text-xs">{name}</span>
+      <form onSubmit={submit} className="vstack gap-3">
+        <p className="small text-body-secondary mb-0">
+          The backup is opened and checked first; nothing changes until you confirm the restore. <span className="text-break font-monospace fs-8">{name}</span>
         </p>
         <ErrorBanner error={err} />
         <Field label="Passphrase" hint={needsPassphrase ? 'The passphrase the file was downloaded with.' : 'Leave empty for backups stored by this server.'}>
-          {(f) => <input id={f} type="password" autoComplete="off" className="input" value={pass} onChange={(e) => setPass(e.target.value)} required={needsPassphrase} />}
+          {(f) => <input id={f} type="password" autoComplete="off" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} required={needsPassphrase} />}
         </Field>
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+        <div className="d-flex justify-content-end gap-2">
+          <button type="button" className="btn btn-outline-primary" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn-primary" disabled={busy}>
+          <button className="btn btn-primary" disabled={busy}>
             {busy ? 'Checking…' : 'Check backup'}
           </button>
         </div>
@@ -371,49 +373,49 @@ function RestorePreviewCard({ preview, onDiscarded }: { preview: Preview; onDisc
     }
   }
   return (
-    <div className="card space-y-3" aria-label="Restore preview">
-      <h3 className="font-semibold">Ready to restore</h3>
+    <div className="card card-body vstack gap-3" aria-label="Restore preview">
+      <h3 className="fs-6 fw-semibold mb-0">Ready to restore</h3>
       <ErrorBanner error={err} />
-      <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
-        <dt className="text-slate-500">Backup taken</dt>
-        <dd>
+      <dl className="row small mb-0">
+        <dt className="col-sm-4 fw-normal text-body-secondary">Backup taken</dt>
+        <dd className="col-sm-8 mb-1">
           {formatDateTime(preview.createdAt)} by {preview.createdBy} (version {preview.appVersion || '—'})
         </dd>
-        <dt className="text-slate-500">Invoices made since</dt>
-        <dd className={preview.invoicesSince > 0 ? 'font-semibold text-red-700' : ''}>{preview.invoicesSince}</dd>
-        <dt className="text-slate-500">Audit log</dt>
-        <dd>{preview.audit.summary}</dd>
-        <dt className="text-slate-500">Safety backup</dt>
-        <dd>{preview.safetyBackup ? 'The current data is backed up first, so this can be undone.' : 'None (no server backup key) — download a backup first.'}</dd>
-        <dt className="text-slate-500">Expires</dt>
-        <dd>{formatDateTime(preview.expiresAt)}</dd>
+        <dt className="col-sm-4 fw-normal text-body-secondary">Invoices made since</dt>
+        <dd className={`col-sm-8 mb-1${preview.invoicesSince > 0 ? ' fw-semibold text-danger' : ''}`}>{preview.invoicesSince}</dd>
+        <dt className="col-sm-4 fw-normal text-body-secondary">Audit log</dt>
+        <dd className="col-sm-8 mb-1">{preview.audit.summary}</dd>
+        <dt className="col-sm-4 fw-normal text-body-secondary">Safety backup</dt>
+        <dd className="col-sm-8 mb-1">{preview.safetyBackup ? 'The current data is backed up first, so this can be undone.' : 'None (no server backup key) — download a backup first.'}</dd>
+        <dt className="col-sm-4 fw-normal text-body-secondary">Expires</dt>
+        <dd className="col-sm-8 mb-1">{formatDateTime(preview.expiresAt)}</dd>
       </dl>
       {preview.warnings.length > 0 && (
-        <ul aria-label="Warnings" className="list-disc space-y-1 rounded-xl bg-amber-50 p-3 pl-7 text-sm text-amber-900">
+        <ul aria-label="Warnings" className="alert alert-warning small mb-0 ps-5">
           {preview.warnings.map((w) => (
             <li key={w}>{w}</li>
           ))}
         </ul>
       )}
-      <details className="text-sm">
-        <summary className="cursor-pointer font-medium">Rows in the backup and now</summary>
-        <table className="mt-2 w-full">
+      <details className="small">
+        <summary className="fw-medium">Rows in the backup and now</summary>
+        <table className="table table-sm mt-2 mb-0">
           <tbody>
             {preview.tables.map((t) => (
-              <tr key={t.name} className="border-t border-cream-200">
-                <td className="py-1 font-mono text-xs">{t.name}</td>
-                <td className="py-1 text-right">{t.backup}</td>
-                <td className="py-1 text-right text-slate-500">now {t.live}</td>
+              <tr key={t.name}>
+                <td className="font-monospace fs-8">{t.name}</td>
+                <td className="text-end">{t.backup}</td>
+                <td className="text-end text-body-secondary">now {t.live}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </details>
-      <div className="flex justify-end gap-2">
-        <button className="btn-secondary" onClick={discard}>
+      <div className="d-flex justify-content-end gap-2">
+        <button className="btn btn-outline-primary" onClick={discard}>
           Discard
         </button>
-        <button className="btn-danger" onClick={() => setConfirming(true)}>
+        <button className="btn btn-outline-danger" onClick={() => setConfirming(true)}>
           Restore…
         </button>
       </div>
@@ -445,28 +447,28 @@ function ConfirmRestore({ preview, onClose }: { preview: Preview; onClose: () =>
   }
   return (
     <Sheet title="Replace all data with this backup?" open onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3">
-        <p className="text-sm text-slate-700">
+      <form onSubmit={submit} className="vstack gap-3">
+        <p className="small mb-0">
           Everything is replaced by the backup from {formatDateTime(preview.createdAt)}. Invoice numbers already used are not reused. Everyone,
           you included, is signed out.
         </p>
-        <p className={`text-sm font-medium ${preview.safetyBackup ? 'text-green-800' : 'text-amber-800'}`}>
+        <p className={`small fw-medium mb-0 ${preview.safetyBackup ? 'text-success-emphasis' : 'text-warning-emphasis'}`}>
           {preview.safetyBackup
             ? 'The current data is saved first as a stored backup ("Before a restore"); restore that to undo this.'
             : 'No safety backup will be taken: without the server backup key the current data cannot be saved first.'}
         </p>
         <ErrorBanner error={err} />
         <Field label="Your password">
-          {(f) => <input id={f} type="password" autoComplete="current-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required />}
+          {(f) => <input id={f} type="password" autoComplete="current-password" className="form-control" value={password} onChange={(e) => setPassword(e.target.value)} required />}
         </Field>
         <Field label="Type RESTORE to confirm">
-          {(f) => <input id={f} className="input" autoComplete="off" value={word} onChange={(e) => setWord(e.target.value)} required />}
+          {(f) => <input id={f} className="form-control" autoComplete="off" value={word} onChange={(e) => setWord(e.target.value)} required />}
         </Field>
-        <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={onClose}>
+        <div className="d-flex justify-content-end gap-2">
+          <button type="button" className="btn btn-outline-primary" onClick={onClose}>
             Cancel
           </button>
-          <button className="btn-danger" disabled={busy || word.trim() !== 'RESTORE'}>
+          <button className="btn btn-danger" disabled={busy || word.trim() !== 'RESTORE'}>
             {busy ? 'Restoring…' : 'Restore'}
           </button>
         </div>

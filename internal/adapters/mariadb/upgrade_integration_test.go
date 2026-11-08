@@ -57,3 +57,25 @@ func TestSchemaGuardAndDownTo(t *testing.T) {
 		t.Fatalf("the refusal changed the schema: %d", cur)
 	}
 }
+
+// TestMigrateFinishesAfterCancel: a shutdown (SIGTERM cancels the context) during the
+// migrations does not stop them halfway; MariaDB cannot roll back DDL, so a half-applied
+// migration made every later start fail ("Duplicate column name", k3s 2026-11-08).
+func TestMigrateFinishesAfterCancel(t *testing.T) {
+	setup(t)
+	bg := context.Background()
+	if err := mariadb.MigrateDownTo(bg, testDB, headSchema-3); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(bg)
+	defer mariadb.SetAfterMigrationLock(cancel)()
+	if err := mariadb.Migrate(ctx, testDB, false); err != nil {
+		t.Fatalf("migrate cancelled after the lock: %v", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the context was not cancelled")
+	}
+	if cur, _, _ := mariadb.SchemaVersions(bg, testDB); cur != headSchema {
+		t.Fatalf("schema %d, want %d", cur, headSchema)
+	}
+}

@@ -9,6 +9,8 @@ import { Badge, Empty, ErrorBanner, ShowMore, Page, SearchBox, Spinner } from '.
 import { IconPlus } from '../../components/icons'
 import { InvoiceActions } from '../../components/InvoiceActions'
 
+const tnum = { fontVariantNumeric: 'tabular-nums' } as const
+
 const filters = [
   { key: 'all', label: 'All' },
   { key: 'draft', label: 'Draft' },
@@ -46,17 +48,17 @@ export function InvoiceList() {
   )
   const { data, error, loading, reload } = list
   return (
-    <Page title="Invoices" actions={<Can need="invoices.create"><Link to="/invoices/new" className="btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
+    <Page title="Invoices" actions={<Can need="invoices.create"><Link to="/invoices/new" className="btn btn-primary"><IconPlus width={16} height={16} /> New invoice</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search number or customer" />
-      <div className="-mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:px-0" role="tablist" aria-label="Stage filter">
+      <div className="nav nav-pills flex-nowrap gap-2 mb-3 pb-1 overflow-x-auto" role="tablist" aria-label="Stage filter">
         {filters.map((f) => (
-          <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => setFilter(f.key)} className={`chip min-h-[34px] px-3.5 ${filter === f.key ? 'bg-brand-600 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300'}`}>
+          <button key={f.key} role="tab" aria-selected={filter === f.key} onClick={() => setFilter(f.key)} className={`nav-link rounded-pill text-nowrap small fw-semibold px-3 py-1 ${filter === f.key ? 'active' : 'bg-white border'}`}>
             {f.label}
           </button>
         ))}
       </div>
       <ErrorBanner error={actionError ?? error} />
-      {notice && <div role="status" className="mb-3 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
+      {notice && <div role="status" className="mb-3 rounded-3 border-start border-4 border-primary bg-white p-3 small fw-medium text-primary-emphasis shadow-sm">{notice}</div>}
       {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No invoices match.</Empty> : (
         <InvoiceTable
           items={data?.items ?? []}
@@ -72,59 +74,61 @@ export function InvoiceList() {
 export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; onChanged?: (msg: string) => void; onError?: (e: Error) => void }) {
   return (
     <>
-      <ul className="space-y-2 md:hidden">
+      <ul className="list-unstyled vstack gap-2 mb-0 d-md-none">
         {items.map((inv) => (
           <li key={inv.id}>
-            <Link to={`/invoices/${inv.id}`} className="card flex items-center gap-3 p-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-brand-900">{inv.number || 'Draft'}</span>
+            <Link to={`/invoices/${inv.id}`} className="card card-body d-flex flex-row align-items-center gap-3 text-reset text-decoration-none">
+              <div className="min-w-0 flex-grow-1">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="fw-semibold text-primary-emphasis">{inv.number || 'Draft'}</span>
                   <Badge status={inv.stage} />
                 </div>
-                <div className="truncate text-sm text-slate-500">{inv.billTo.name}</div>
+                <div className="text-truncate small text-body-secondary">{inv.billTo.name}</div>
               </div>
-              <div className="text-right">
-                <div className="font-semibold tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</div>
-                <div className="text-xs text-slate-500">{inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : formatDate(inv.issueDate)}</div>
+              <div className="text-end">
+                <div className="fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</div>
+                <div className="fs-8 text-body-secondary">{inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : formatDate(inv.issueDate)}</div>
               </div>
             </Link>
-            {onChanged && onError && <div className="mt-1 flex justify-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>}
+            {onChanged && onError && <div className="mt-1 d-flex justify-content-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>}
           </li>
         ))}
       </ul>
-      <div className="card hidden overflow-hidden p-0 md:block">
-        <table className="w-full text-sm">
-          <thead className="table-head">
+      <div className="card overflow-hidden d-none d-md-block">
+        <div className="table-responsive">
+        <table className="table table-hover align-middle mb-0 small">
+          <thead>
             <tr>
-              <th className="px-4 py-3">Number</th>
-              <th className="px-4 py-3">Customer</th>
-              <th className="px-4 py-3">Issued</th>
-              <th className="px-4 py-3">Due</th>
-              <th className="px-4 py-3">Stage</th>
-              <th className="px-4 py-3 text-right">Total</th>
-              {onChanged && <th className="px-4 py-3 text-right">Actions</th>}
+              <th>Number</th>
+              <th>Customer</th>
+              <th>Issued</th>
+              <th>Due</th>
+              <th>Stage</th>
+              <th className="text-end">Total</th>
+              {onChanged && <th className="text-end">Actions</th>}
             </tr>
           </thead>
-          <tbody className="divide-y divide-cream-200">
+          <tbody>
             {items.map((inv) => (
-              <tr key={inv.id} className="hover:bg-cream-50">
-                <td className="whitespace-nowrap px-4 py-3 font-semibold">
-                  <Link to={`/invoices/${inv.id}`} className="text-brand-700 hover:underline">{inv.number || 'Draft'}</Link>
+              <tr key={inv.id}>
+                <td className="text-nowrap fw-semibold">
+                  <Link to={`/invoices/${inv.id}`}>{inv.number || 'Draft'}</Link>
                 </td>
-                <td className="px-4 py-3">{inv.billTo.name}</td>
-                <td className="whitespace-nowrap px-4 py-3">{formatDate(inv.issueDate)}</td>
-                <td className="whitespace-nowrap px-4 py-3">{formatDate(inv.dueDate)}</td>
-                <td className="px-4 py-3"><Badge status={inv.stage} /></td>
-                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums">{formatMoney(inv.totals.total, inv.currency)}</td>
+                <td>{inv.billTo.name}</td>
+                <td className="text-nowrap">{formatDate(inv.issueDate)}</td>
+                <td className="text-nowrap">{formatDate(inv.dueDate)}</td>
+                <td><Badge status={inv.stage} /></td>
+                <td className="text-nowrap text-end fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</td>
                 {onChanged && onError && (
-                  <td className="px-4 py-2">
-                    <div className="flex justify-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>
+                  <td>
+                    <div className="d-flex justify-content-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   )

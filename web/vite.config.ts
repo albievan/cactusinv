@@ -14,6 +14,8 @@ const keepDist: Plugin = {
 
 export default defineConfig({
   plugins: [react(), keepDist],
+  // Bootstrap 5.3's Sass still uses @import and global functions: its own deprecation notes are muted.
+  css: { preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: ['import', 'global-builtin', 'color-functions', 'mixed-decls', 'if-function'] } } },
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: false },
   server: { proxy: { '/api': 'http://localhost:8080' } },
   test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], globals: true },

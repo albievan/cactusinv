@@ -60,62 +60,70 @@ export function AuditLog() {
       title="Audit log"
       actions={
         <Can need="audit.verify">
-          <button className="btn-secondary" onClick={runVerify} disabled={verifying}>
-            <IconShield width={16} height={16} /> {verifying ? 'Verifying…' : 'Verify integrity'}
+          <button className="btn btn-outline-primary" onClick={runVerify} disabled={verifying}>
+            <IconShield width={16} /> {verifying ? 'Verifying…' : 'Verify integrity'}
           </button>
         </Can>
       }
     >
-      <p className="mb-4 text-sm text-slate-600">
+      <p className="mb-3 small text-body-secondary">
         Every change and every sign-in is recorded here with who did it. Entries can never be edited or deleted — the database refuses it — and each entry is
         chained to the previous one by a SHA-256 hash, so any tampering is detected by <em>Verify integrity</em>.
       </p>
       {verify && (
-        <div role="status" className={`mb-4 rounded-xl border-l-4 bg-white p-3 text-sm font-semibold shadow-sm ${verify.ok ? 'border-green-600 text-green-800' : 'border-red-600 text-red-800'}`}>
+        <div role="status" className={`mb-3 rounded-3 border-start border-4 bg-white p-3 small fw-semibold shadow-sm ${verify.ok ? 'border-success text-success-emphasis' : 'border-danger text-danger-emphasis'}`}>
           {verify.ok
             ? `Intact: all ${verify.entries} entries verify — nothing has been changed or removed.`
             : `Tampering detected at entry #${verify.brokenAt}: ${verify.reason} (${verify.entries} entries before it verify).`}
         </div>
       )}
       <ErrorBanner error={verifyError ?? error} />
-      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <select aria-label="Area" className="input" value={filter.entityType} onChange={(e) => setFilter('entityType', e.target.value)}>
-          {entityTypes.map((t) => <option key={t} value={t}>{t ? t.replace('_', ' ') : 'All areas'}</option>)}
-        </select>
-        <input aria-label="Action" className="input" placeholder="Action, e.g. invoice.voided" value={filter.action} onChange={(e) => setFilter('action', e.target.value)} />
-        <input aria-label="User" className="input" placeholder="User" value={filter.actor} onChange={(e) => setFilter('actor', e.target.value)} />
-        <input aria-label="Record id" className="input" placeholder="Record id" value={filter.entityId} onChange={(e) => setFilter('entityId', e.target.value)} />
+      <div className="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-2 mb-3">
+        <div>
+          <select aria-label="Area" className="form-select" value={filter.entityType} onChange={(e) => setFilter('entityType', e.target.value)}>
+            {entityTypes.map((t) => <option key={t} value={t}>{t ? t.replace('_', ' ') : 'All areas'}</option>)}
+          </select>
+        </div>
+        <div>
+          <input aria-label="Action" className="form-control" placeholder="Action, e.g. invoice.voided" value={filter.action} onChange={(e) => setFilter('action', e.target.value)} />
+        </div>
+        <div>
+          <input aria-label="User" className="form-control" placeholder="User" value={filter.actor} onChange={(e) => setFilter('actor', e.target.value)} />
+        </div>
+        <div>
+          <input aria-label="Record id" className="form-control" placeholder="Record id" value={filter.entityId} onChange={(e) => setFilter('entityId', e.target.value)} />
+        </div>
       </div>
       {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No entries match.</Empty> : (
-        <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[820px] text-sm">
-            <thead className="table-head">
+        <div className="card table-responsive">
+          <table className="table table-hover align-top mb-0 small" style={{ minWidth: 820 }}>
+            <thead>
               <tr>
-                <th className="px-4 py-3">#</th>
-                <th className="px-4 py-3">When</th>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Record</th>
-                <th className="px-4 py-3">Details</th>
+                <th>#</th>
+                <th>When</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Record</th>
+                <th>Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-cream-200">
+            <tbody>
               {data?.items.map((e) => {
                 const link = entityLink(e)
                 return (
-                  <tr key={e.seq} className="align-top hover:bg-cream-50">
-                    <td className="px-4 py-2.5 tabular-nums text-slate-500" title={`hash ${e.hash}`}>{e.seq}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5">{formatDateTime(e.at)}</td>
-                    <td className="px-4 py-2.5 font-medium">{e.actor}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="font-semibold text-brand-900">{actionLabel(e.action)}</span>
-                      <div className="text-xs text-slate-500">{e.action}</div>
+                  <tr key={e.seq}>
+                    <td className="text-body-secondary" style={{ fontVariantNumeric: 'tabular-nums' }} title={`hash ${e.hash}`}>{e.seq}</td>
+                    <td className="text-nowrap">{formatDateTime(e.at)}</td>
+                    <td className="fw-medium">{e.actor}</td>
+                    <td>
+                      <span className="fw-semibold text-primary-emphasis">{actionLabel(e.action)}</span>
+                      <div className="fs-8 text-body-secondary">{e.action}</div>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span className="text-xs uppercase tracking-wide text-slate-500">{e.entityType.replace('_', ' ')}</span>
-                      <div>{link ? <Link to={link} className="text-brand-700 hover:underline">open</Link> : <span className="text-xs text-slate-400">{e.entityId ? e.entityId.slice(-8) : '—'}</span>}</div>
+                    <td>
+                      <span className="fs-8 text-uppercase text-body-secondary">{e.entityType.replace('_', ' ')}</span>
+                      <div>{link ? <Link to={link}>open</Link> : <span className="fs-8 text-body-secondary">{e.entityId ? e.entityId.slice(-8) : '—'}</span>}</div>
                     </td>
-                    <td className="break-words px-4 py-2.5 text-slate-600">{e.summary}</td>
+                    <td className="text-break text-body-secondary">{e.summary}</td>
                   </tr>
                 )
               })}
@@ -124,11 +132,11 @@ export function AuditLog() {
         </div>
       )}
       {data && data.total > pageSize && (
-        <div className="mt-3 flex items-center justify-between text-sm">
-          <span className="text-slate-500">{offset + 1}–{Math.min(offset + pageSize, data.total)} of {data.total}</span>
-          <div className="flex gap-2">
-            <button className="btn-secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Newer</button>
-            <button className="btn-secondary" disabled={offset + pageSize >= data.total} onClick={() => setOffset(offset + pageSize)}>Older</button>
+        <div className="mt-3 d-flex align-items-center justify-content-between small">
+          <span className="text-body-secondary">{offset + 1}–{Math.min(offset + pageSize, data.total)} of {data.total}</span>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-primary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Newer</button>
+            <button className="btn btn-outline-primary" disabled={offset + pageSize >= data.total} onClick={() => setOffset(offset + pageSize)}>Older</button>
           </div>
         </div>
       )}

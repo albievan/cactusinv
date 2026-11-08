@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { Can } from '../../components/Access'
 import { useCan } from '../../components/auth'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -7,44 +7,46 @@ import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { usePaged } from '../../lib/usePaged'
 import { Badge, ConfirmButton, Empty, ErrorBanner, ShowMore, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
-import { IconPlus } from '../../components/icons'
+import { IconClose, IconPlus } from '../../components/icons'
 
 export function ProductList() {
   const [q, setQ] = useState('')
   const list = usePaged((offset, limit) => unwrap(api.GET('/products', { params: { query: { q: q || undefined, includeInactive: true, limit, offset } } })), [q])
   const { data, error, loading } = list
   return (
-    <Page title="Products" actions={<Can need="products.create"><Link to="/products/new" className="btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
+    <Page title="Products" actions={<Can need="products.create"><Link to="/products/new" className="btn btn-primary"><IconPlus width={16} height={16} /> New product</Link></Can>}>
       <SearchBox value={q} onChange={setQ} placeholder="Search name or SKU" />
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No products yet.</Empty> : (
-        <div className="card overflow-x-auto p-0">
-          <table className="w-full min-w-[560px] text-sm">
-            <thead className="table-head">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Unit</th>
-                <th className="px-4 py-3">Unit cost</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-cream-200">
-              {data?.items.map((p) => (
-                <tr key={p.id} className="hover:bg-cream-50">
-                  <td className="px-4 py-3 font-medium"><Link to={`/products/${p.id}`} className="text-brand-800 hover:underline">{p.name}</Link></td>
-                  <td className="px-4 py-3 text-slate-600">{p.sku}</td>
-                  <td className="px-4 py-3 text-slate-600">{p.unit}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {p.prices.map((pr) => <span key={pr.currency} className="chip bg-brand-50 text-brand-700 ring-1 ring-brand-200">{pr.currency} {pr.unitPrice}</span>)}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3"><Badge status={p.active ? 'active' : 'ended'} label={p.active ? 'Active' : 'Inactive'} /></td>
+        <div className="card overflow-hidden">
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0 small" style={{ minWidth: 560 }}>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>SKU</th>
+                  <th>Unit</th>
+                  <th>Unit cost</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data?.items.map((p) => (
+                  <tr key={p.id}>
+                    <td className="fw-medium"><Link to={`/products/${p.id}`} className="text-primary-emphasis">{p.name}</Link></td>
+                    <td className="text-body-secondary">{p.sku}</td>
+                    <td className="text-body-secondary">{p.unit}</td>
+                    <td>
+                      <div className="d-flex flex-wrap gap-1">
+                        {p.prices.map((pr) => <span key={pr.currency} className="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle">{pr.currency} {pr.unitPrice}</span>)}
+                      </div>
+                    </td>
+                    <td><Badge status={p.active ? 'active' : 'ended'} label={p.active ? 'Active' : 'Inactive'} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     <ShowMore list={list} />
@@ -56,6 +58,7 @@ const blank: Product = { sku: '', name: '', description: '', unit: '', prices: [
 
 export function ProductEditor() {
   const can = useCan()
+  const activeId = useId()
   const { id } = useParams()
   const nav = useNavigate()
   const { currencies } = useCurrencies()
@@ -97,42 +100,49 @@ export function ProductEditor() {
   if (id && existing.loading) return <Spinner />
   return (
     <Page title={id ? p.name || 'Product' : 'New product'} back="/products">
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} className="vstack gap-3">
         <ErrorBanner error={error ?? existing.error} />
-        <div className="card grid gap-4 md:grid-cols-2">
-          <Field label="Name">{(f) => <input id={f} className="input" value={p.name} onChange={(e) => set({ name: e.target.value })} required />}</Field>
-          <Field label="SKU">{(f) => <input id={f} className="input" value={p.sku} onChange={(e) => set({ sku: e.target.value })} required />}</Field>
-          <Field label="Unit" hint="e.g. user, hour, month">{(f) => <input id={f} className="input" value={p.unit} onChange={(e) => set({ unit: e.target.value })} />}</Field>
-          <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={p.active} onChange={(e) => set({ active: e.target.checked })} /> Active</label>
-          <div className="md:col-span-2">
-            <Field label="Invoice line description">{(f) => <textarea id={f} className="input" value={p.description} onChange={(e) => set({ description: e.target.value })} />}</Field>
+        <div className="card card-body">
+          <div className="row row-cols-1 row-cols-md-2 g-3">
+            <Field label="Name">{(f) => <input id={f} className="form-control" value={p.name} onChange={(e) => set({ name: e.target.value })} required />}</Field>
+            <Field label="SKU">{(f) => <input id={f} className="form-control" value={p.sku} onChange={(e) => set({ sku: e.target.value })} required />}</Field>
+            <Field label="Unit" hint="e.g. user, hour, month">{(f) => <input id={f} className="form-control" value={p.unit} onChange={(e) => set({ unit: e.target.value })} />}</Field>
+            <div className="d-flex align-items-center" style={{ minHeight: 44 }}>
+              <div className="form-check mb-0">
+                <input id={activeId} type="checkbox" className="form-check-input" checked={p.active} onChange={(e) => set({ active: e.target.checked })} />
+                <label htmlFor={activeId} className="form-check-label">Active</label>
+              </div>
+            </div>
+            <div className="w-100">
+              <Field label="Invoice line description">{(f) => <textarea id={f} className="form-control" value={p.description} onChange={(e) => set({ description: e.target.value })} />}</Field>
+            </div>
           </div>
         </div>
-        <div className="card space-y-3">
+        <div className="card card-body vstack gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Currency &amp; unit cost</h2>
-            <p className="text-sm text-slate-500">Choose the currency and enter the unit cost. Add another row to sell the product in more currencies — there is no exchange-rate conversion.</p>
+            <h2 className="h5">Currency &amp; unit cost</h2>
+            <p className="small text-body-secondary mb-0">Choose the currency and enter the unit cost. Add another row to sell the product in more currencies — there is no exchange-rate conversion.</p>
           </div>
           {p.prices.map((pr, i) => (
-            <div key={i} className="grid grid-cols-[8rem_minmax(0,1fr)_2.75rem] gap-2">
-              <select aria-label={`Currency ${i + 1}`} className="input" value={pr.currency} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, currency: e.target.value } : x)) })} required>
+            <div key={i} className="d-flex align-items-center gap-2">
+              <select aria-label={`Currency ${i + 1}`} className="form-select flex-shrink-0" style={{ width: '8rem' }} value={pr.currency} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, currency: e.target.value } : x)) })} required>
                 <option value="">Currency…</option>
                 {currencies.filter((c) => c.code === pr.currency || (c.active && !p.prices.some((x) => x.currency === c.code))).map((c) => <option key={c.code} value={c.code}>{c.code}{c.active ? '' : ' (inactive)'}</option>)}
               </select>
-              <input aria-label={`Unit cost ${i + 1}`} className="input" inputMode="decimal" placeholder="Unit cost, e.g. 192.94" value={pr.unitPrice} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} required />
-              <button type="button" aria-label={`Remove price ${i + 1}`} className="btn-secondary px-0" disabled={p.prices.length === 1} onClick={() => set({ prices: p.prices.filter((_, j) => j !== i) })}>✕</button>
+              <input aria-label={`Unit cost ${i + 1}`} className="form-control flex-grow-1 min-w-0" inputMode="decimal" placeholder="Unit cost, e.g. 192.94" value={pr.unitPrice} onChange={(e) => set({ prices: p.prices.map((x, j) => (j === i ? { ...x, unitPrice: e.target.value } : x)) })} required />
+              <button type="button" aria-label={`Remove price ${i + 1}`} title="Remove price" className="btn btn-sm btn-outline-danger btn-icon flex-shrink-0" disabled={p.prices.length === 1} onClick={() => set({ prices: p.prices.filter((_, j) => j !== i) })}><IconClose width={16} /></button>
             </div>
           ))}
-          {currencies.length === 0 && <p className="text-sm text-amber-700">Add a currency under Settings first.</p>}
+          {currencies.length === 0 && <p className="small text-warning-emphasis mb-0">Add a currency under Settings first.</p>}
           {currencies.some((c) => c.active && !p.prices.some((x) => x.currency === c.code)) && (
-            <button type="button" className="btn-secondary" onClick={() => set({ prices: [...p.prices, { currency: '', unitPrice: '' }] })}>+ Add another currency</button>
+            <button type="button" className="btn btn-outline-primary align-self-start" onClick={() => set({ prices: [...p.prices, { currency: '', unitPrice: '' }] })}><IconPlus width={16} /> Add another currency</button>
           )}
         </div>
         {(id ? can('products.edit') || can('products.delete') : can('products.create')) && (
           <StickyActions>
-            {id && can('products.delete') && <span className="mr-auto"><ConfirmButton label="Delete" title="Delete this product?" message="It disappears from the look-up. Invoices already issued keep their lines. If it is still used by a schedule or invoice, it cannot be deleted." confirmLabel="Delete" onConfirm={remove} /></span>}
-            <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-            {(!id || can('products.edit')) && <button className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>}
+            {id && can('products.delete') && <span className="me-auto"><ConfirmButton label="Delete" title="Delete this product?" message="It disappears from the look-up. Invoices already issued keep their lines. If it is still used by a schedule or invoice, it cannot be deleted." confirmLabel="Delete" onConfirm={remove} /></span>}
+            <button type="button" className="btn btn-outline-primary" onClick={() => nav(-1)}>Cancel</button>
+            {(!id || can('products.edit')) && <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>}
           </StickyActions>
         )}
       </form>

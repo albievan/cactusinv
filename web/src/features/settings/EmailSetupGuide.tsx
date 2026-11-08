@@ -5,7 +5,7 @@ import { Sheet } from '../../components/ui'
 export const guideProviders = ['Gmail', 'Outlook / Microsoft 365', 'Custom'] as const
 export type GuideProvider = (typeof guideProviders)[number]
 
-const Path = ({ children }: { children: ReactNode }) => <span className="font-medium text-slate-800">{children}</span>
+const Path = ({ children }: { children: ReactNode }) => <span className="fw-medium text-body">{children}</span>
 
 // Step by step, what to do at the provider and then on this page. It is help
 // text only: the server still tests and stores whatever is entered.
@@ -112,29 +112,29 @@ export function EmailSetupGuide({ open, onClose, provider }: { open: boolean; on
   }
   return (
     <Sheet title="Set up the e-mail server" open={open} onClose={onClose}>
-      <div className="space-y-4 text-sm text-slate-600">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Provider">
+      <div className="vstack gap-3 small text-body-secondary">
+        <div className="d-flex flex-wrap gap-2" role="tablist" aria-label="Provider">
           {guideProviders.map((name) => (
             <button
               key={name}
               type="button"
               role="tab"
               aria-selected={shown === name}
-              className={shown === name ? 'btn-primary' : 'btn-secondary'}
+              className={shown === name ? 'btn btn-primary' : 'btn btn-outline-primary'}
               onClick={() => setShown(name)}
             >
               {name}
             </button>
           ))}
         </div>
-        <ol className="list-decimal space-y-2 pl-5" aria-label={`Steps for ${shown}`}>
+        <ol className="vstack gap-2 ps-4 mb-0" aria-label={`Steps for ${shown}`}>
           {steps[shown].map((step, i) => (
             <li key={i}>{step}</li>
           ))}
         </ol>
-        <div className="rounded-xl bg-cream-50 p-3 ring-1 ring-cream-200">
-          <h3 className="mb-2 font-semibold text-slate-800">If the test e-mail fails</h3>
-          <ul className="list-disc space-y-1 pl-5">
+        <div className="rounded-3 bg-body-tertiary border p-3">
+          <h3 className="mb-2 fs-6 fw-semibold text-body">If the test e-mail fails</h3>
+          <ul className="vstack gap-1 ps-4 mb-0">
             {trouble.map((item, i) => (
               <li key={i}>{item}</li>
             ))}

@@ -130,7 +130,7 @@ Invoices are financial documents. A wrong cent is a bug of the highest severity.
   phones, side nav on desktop. Lists are cards on phones, tables on wide screens.
 - Touch targets ≥ 44 px, forms usable one-handed, numeric keyboards for amounts
   (`inputMode="decimal"`).
-- **The React app is a pure API client** (React + TypeScript + Vite + Tailwind). It does no
+- **The React app is a pure API client** (React + TypeScript + Vite + Bootstrap). It does no
   money maths that matters: totals shown while editing are a preview; the server's figures
   are the truth.
 - Accessible: semantic HTML, labels on every input, visible focus, WCAG AA contrast, light

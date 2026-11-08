@@ -69,62 +69,62 @@ function SystemForm() {
   ]
 
   return (
-    <div className="space-y-4">
-    <form onSubmit={submit} className="space-y-4" aria-labelledby="system-heading">
-      <fieldset disabled={!edit} className="contents">
-      <h2 id="system-heading" className="text-xl font-bold text-brand-900">
+    <div className="vstack gap-3">
+    <form onSubmit={submit} className="vstack gap-3" aria-labelledby="system-heading">
+      <fieldset disabled={!edit} className="vstack gap-3">
+      <h2 id="system-heading" className="fs-5 fw-bold mb-0">
         System Settings
       </h2>
       <ErrorBanner error={err} />
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Sign-in sessions</h3>
-        <p className="text-sm text-slate-600">Changes apply at once to everyone who is signed in.</p>
+      <div className="card card-body vstack gap-3">
+        <h3 className="fs-6 fw-semibold mb-0">Sign-in sessions</h3>
+        <p className="small text-body-secondary mb-0">Changes apply at once to everyone who is signed in.</p>
         <Field label="Sign out after this many minutes without activity" hint="0 = never. 5 minutes to 30 days (43200).">
           {(id) => (
-            <input id={id} type="number" inputMode="numeric" min={0} max={43200} className="input" value={s.sessionIdleMinutes}
+            <input id={id} type="number" inputMode="numeric" min={0} max={43200} className="form-control" value={s.sessionIdleMinutes}
               onChange={(e) => set({ sessionIdleMinutes: Number(e.target.value) })} />
           )}
         </Field>
         <Field label="End every sign-in after this many hours" hint="However active. 1 hour to 365 days (8760); 168 = 7 days.">
           {(id) => (
-            <input id={id} type="number" inputMode="numeric" min={1} max={8760} className="input" value={s.sessionMaxHours}
+            <input id={id} type="number" inputMode="numeric" min={1} max={8760} className="form-control" value={s.sessionMaxHours}
               onChange={(e) => set({ sessionMaxHours: Number(e.target.value) })} />
           )}
         </Field>
       </div>
 
-      <div className="card space-y-3">
-        <h3 className="font-semibold">Folders</h3>
+      <div className="card card-body vstack gap-3">
+        <h3 className="fs-6 fw-semibold mb-0">Folders</h3>
         {docker ? (
-          <p className="text-sm text-slate-600">
+          <p className="small text-body-secondary mb-0">
             Map each container folder to a folder on the host, e.g. a NAS share. Use an absolute folder (/Volumes/NAS/backups) or one in the
             project folder (./data/backups); leave it empty for the folder in .env. A new mapping is used after{' '}
-            <code className="rounded bg-cream-100 px-1">{deployCommand(d.target)}</code>, which copies the existing files into the new folder
+            <code className="rounded bg-body-secondary px-1">{deployCommand(d.target)}</code>, which copies the existing files into the new folder
             when it is empty. On a Mac, the folder must be shared with Docker Desktop (Settings → Resources → File sharing).
           </p>
         ) : (
-          <p className="text-sm text-slate-600">
+          <p className="small text-body-secondary mb-0">
             {d.target
               ? `On ${d.target} these folders are volume claims, set by the deployment (.env K8S_*_STORAGE), not mapped host folders.`
               : 'This installation was not started by deploy.sh, so its folders are set where it runs.'}
           </p>
         )}
         {folders.map((f) => (
-          <div key={f.key} className="space-y-1 border-t border-cream-200 pt-3">
-            <p className="text-sm font-medium">{f.label}</p>
-            <p className="text-xs text-slate-600">
-              In the container: <code className="break-all">{f.container || '—'}</code>
+          <div key={f.key} className="vstack gap-1 border-top pt-3">
+            <p className="small fw-medium mb-0">{f.label}</p>
+            <p className="fs-8 text-body-secondary mb-0">
+              In the container: <code className="text-break">{f.container || '—'}</code>
               {docker && (
                 <>
-                  {' '}· mapped now to <code className="break-all">{f.now || '—'}</code>
+                  {' '}· mapped now to <code className="text-break">{f.now || '—'}</code>
                 </>
               )}
             </p>
             {docker && (
               <Field label={`Host folder for ${f.label.toLowerCase()}`}>
                 {(id) => (
-                  <input id={id} className="input font-mono" placeholder="(the folder in .env)" value={s[f.key]} autoComplete="off" spellCheck={false}
+                  <input id={id} className="form-control font-monospace" placeholder="(the folder in .env)" value={s[f.key]} autoComplete="off" spellCheck={false}
                     onChange={(e) => set({ [f.key]: e.target.value })} />
                 )}
               </Field>
@@ -132,7 +132,7 @@ function SystemForm() {
           </div>
         ))}
         {docker && s.pendingFolders && (
-          <p role="note" className="text-sm font-medium text-amber-800">
+          <p role="note" className="small fw-medium text-warning-emphasis mb-0">
             A saved folder is not mapped yet: run {deployCommand(d.target)} to use it.
           </p>
         )}
@@ -140,11 +140,11 @@ function SystemForm() {
 
       </fieldset>
       {edit && (
-        <div className="flex items-center gap-3">
-          <button className="btn-primary" disabled={busy}>
+        <div className="d-flex align-items-center gap-3">
+          <button className="btn btn-primary" disabled={busy}>
             {busy ? 'Saving…' : 'Save'}
           </button>
-          {saved && <p className="text-sm text-green-700">{saved}</p>}
+          {saved && <p className="small text-success mb-0">{saved}</p>}
         </div>
       )}
     </form>
@@ -174,32 +174,32 @@ function VersionCard({ target }: { target: string }) {
   }
 
   return (
-    <section className="card space-y-3" aria-labelledby="version-heading">
-      <h3 id="version-heading" className="font-semibold">Version</h3>
-      <p className="text-sm">
+    <section className="card card-body vstack gap-3" aria-labelledby="version-heading">
+      <h3 id="version-heading" className="fs-6 fw-semibold mb-0">Version</h3>
+      <p className="small mb-0">
         {ver.data ? `cactusInv ${ver.data.version} (build ${ver.data.build})` : 'cactusInv'}
       </p>
       <ErrorBanner error={err} />
-      <button type="button" className="btn-secondary" disabled={busy} onClick={() => void run()}>
+      <button type="button" className="btn btn-outline-primary align-self-start" disabled={busy} onClick={() => void run()}>
         {busy ? 'Checking…' : 'Check for updates'}
       </button>
       {check?.problem && (
-        <p role="status" className="text-sm text-amber-800">{check.problem}</p>
+        <p role="status" className="small text-warning-emphasis mb-0">{check.problem}</p>
       )}
       {check && !check.problem && !check.available && (
-        <p role="status" className="text-sm text-green-700">You have the newest version ({check.current}).</p>
+        <p role="status" className="small text-success mb-0">You have the newest version ({check.current}).</p>
       )}
       {check?.available && (
-        <div role="status" className="space-y-2 text-sm">
-          <p className="font-medium text-brand-900">
+        <div role="status" className="vstack gap-2 small">
+          <p className="fw-medium text-primary-emphasis mb-0">
             Version {check.latest} is available (this is {check.current}).
           </p>
-          <p className="text-slate-600">
+          <p className="text-body-secondary mb-0">
             The app cannot replace itself. To upgrade, run this in the cactusInv folder on the machine you deploy from
             {target && target !== 'dockerdesktop' ? ' (add --ssh-access user@host if you deploy over SSH)' : ''}:
           </p>
-          <code className="block break-all rounded bg-cream-100 px-2 py-1">{upgradeCommand(target)}</code>
-          <p className="text-slate-600">
+          <code className="d-block text-break rounded bg-body-secondary px-2 py-1">{upgradeCommand(target)}</code>
+          <p className="text-body-secondary mb-0">
             It shows what changes and asks first, takes a backup, and goes back to this version if the new one does not start.
             The app is unavailable for a minute or two while it restarts; nobody is signed out.
           </p>

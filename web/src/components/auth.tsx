@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { api, ApiError, setUnauthorizedHandler, unwrap } from '../lib/api/client'
 import { useVersion } from '../lib/version'
 import { Wordmark } from './Logo'
@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{ user, logout, refresh: load, endSession }}>
       {children}
       {expired && (
-        <div className="fixed inset-0 z-[60] overflow-y-auto" role="dialog" aria-modal="true" aria-label="Sign in again">
+        <div className="position-fixed top-0 start-0 w-100 h-100 overflow-y-auto" style={{ zIndex: 1060 }} role="dialog" aria-modal="true" aria-label="Sign in again">
           <Login onLogin={load} notice={notice} />
         </div>
       )}
@@ -104,18 +104,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 /** The public source repository. */
 const REPO_URL = 'https://github.com/albievan/cactusinv'
 
+/** The sign-in screen's paper colour, a shade warmer than the app canvas. */
+const paper = '#f3ece0'
+
 function IconGitHub() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-      <path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 005.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0016 8c0-4.42-3.58-8-8-8z" />
-    </svg>
-  )
+  return <i className="bi bi-github" style={{ fontSize: '14px' }} aria-hidden="true" />
 }
 
 function WaveLines() {
   const lines = Array.from({ length: 14 }, (_, i) => i)
   return (
-    <svg className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 w-full" viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true">
+    <svg className="pe-none position-absolute bottom-0 start-0 w-100" style={{ height: '33.333%' }} viewBox="0 0 1200 300" preserveAspectRatio="none" aria-hidden="true">
       {lines.map((i) => (
         <path
           key={i}
@@ -127,6 +126,19 @@ function WaveLines() {
         />
       ))}
     </svg>
+  )
+}
+
+/** Notice is the sign-in screens' message box: a white card with a coloured edge. */
+function Notice({ error, children }: { error: boolean; children: ReactNode }) {
+  return (
+    <div
+      role="alert"
+      className={`rounded-3 border-start border-4 bg-white p-3 small fw-semibold shadow-sm ${error ? 'border-danger text-danger-emphasis' : 'text-primary-emphasis'}`}
+      style={error ? undefined : ({ '--bs-border-color': '#c7b48a' } as CSSProperties)}
+    >
+      {children}
+    </div>
   )
 }
 
@@ -150,27 +162,35 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
     onLogin()
   }
   return (
-    <main className="flex min-h-screen flex-col lg:flex-row">
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-700 via-brand-800 to-brand-950 px-6 py-10 text-cream-100 sm:px-12 lg:flex-1 lg:py-0">
-        <div className="relative z-10 max-w-xl lg:mt-[18vh]">
-          <div className="mb-8 lg:hidden">
+    <main className="d-flex min-vh-100 flex-column flex-lg-row">
+      <section
+        className="position-relative overflow-hidden px-4 py-5 px-sm-5 py-lg-0 flex-lg-grow-1 text-cream"
+        style={{ background: 'linear-gradient(to bottom right, #244a38, #1b382b, #0d1d16)' }}
+      >
+        <div className="position-relative z-1 mt-lg-5 pt-lg-5" style={{ maxWidth: '36rem' }}>
+          <div className="mb-5 d-lg-none">
             <Wordmark dark />
           </div>
-          <h1 className="text-3xl font-bold leading-tight text-cream-50 sm:text-4xl">Invoicing that runs itself</h1>
-          <p className="mt-5 text-base leading-relaxed text-cream-200/90">
+          <h1 className="h1 fw-bold lh-sm text-white mb-0">Invoicing that runs itself</h1>
+          <p className="mt-4 mb-0 fs-6 lh-lg text-cream">
             cactusInv issues your invoices, e-mails them on schedule and keeps every PDF on file. Customers are billed in
             their own currency and paid into the matching bank account, and statements show at a glance who still owes what.
           </p>
-          <ul className="mt-6 flex flex-wrap gap-2 text-sm">
+          <ul className="list-unstyled d-flex flex-wrap gap-2 mt-4 mb-0 small">
             {['Scheduled invoices & e-mails', 'Multi-currency with bank per currency', 'Statements & aging', 'Every PDF archived'].map((t) => (
-              <li key={t} className="rounded-full border border-cream-300/40 px-3 py-1 text-cream-100/90">
+              <li key={t} className="rounded-pill border border-light border-opacity-25 px-3 py-1 text-cream">
                 {t}
               </li>
             ))}
           </ul>
-          <p className="mt-6 text-sm text-cream-200/90">
+          <p className="mt-4 mb-0 small text-cream">
             Free and open source:{' '}
-            <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-semibold text-cream-50 underline decoration-cream-300/50 underline-offset-4 hover:decoration-cream-50">
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="d-inline-flex align-items-center gap-1 fw-semibold link-light text-decoration-underline link-offset-2 link-underline-opacity-50 link-underline-opacity-100-hover"
+            >
               <IconGitHub /> github.com/albievan/cactusinv
             </a>
           </p>
@@ -178,39 +198,38 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
         <WaveLines />
       </section>
 
-      <section className="flex w-full flex-col bg-[#f3ece0] px-6 py-10 sm:px-10 lg:w-[30rem] lg:py-14">
-        <div className="hidden lg:block">
+      <section className="d-flex flex-column col-lg-5 col-xl-4 px-4 py-5 px-sm-5" style={{ background: paper }}>
+        <div className="d-none d-lg-block">
           <Wordmark />
         </div>
-        <form onSubmit={submit} className="mt-2 w-full space-y-4 lg:mt-14">
-          <h2 className="text-2xl font-bold text-brand-900">Sign in</h2>
-          {(notice || error) && (
-            <div role="alert" className={`rounded-xl border-l-4 bg-white p-4 text-sm font-semibold shadow-sm ${error ? 'border-red-600 text-red-800' : 'border-[#c7b48a] text-brand-900'}`}>
-              {error || notice}
-            </div>
-          )}
+        <form onSubmit={submit} className="vstack gap-3 w-100 mt-2 mt-lg-5">
+          <h2 className="h4 fw-bold mb-0">Sign in</h2>
+          {(notice || error) && <Notice error={!!error}>{error || notice}</Notice>}
           <div>
-            <label className="label" htmlFor="login">
+            <label className="form-label" htmlFor="login">
               User name
             </label>
-            <input id="login" className="input" autoComplete="username" autoCapitalize="none" value={user} onChange={(e) => setUser(e.target.value)} required />
+            <input id="login" className="form-control" autoComplete="username" autoCapitalize="none" value={user} onChange={(e) => setUser(e.target.value)} required />
           </div>
           <div>
-            <label className="label" htmlFor="password">
+            <label className="form-label" htmlFor="password">
               Password
             </label>
-            <input id="password" className="input" type={show ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input id="password" className="form-control" type={show ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show what I type
-          </label>
-          <button className="btn-primary w-full py-3 text-base" disabled={busy}>
+          <div className="form-check small text-body-secondary">
+            <input id="login-show" className="form-check-input" type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
+            <label className="form-check-label" htmlFor="login-show">
+              Show what I type
+            </label>
+          </div>
+          <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <div className="mt-auto flex items-center justify-between gap-3 border-t border-cream-300 pt-4 text-xs text-slate-500">
+        <div className="mt-auto d-flex align-items-center justify-content-between gap-3 border-top pt-3 fs-8 text-body-secondary">
           <span>{version || ' '}</span>
-          <a href={REPO_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-brand-700 hover:text-brand-900 hover:underline">
+          <a href={REPO_URL} target="_blank" rel="noreferrer" className="d-inline-flex align-items-center gap-1 fw-medium">
             <IconGitHub /> Source on GitHub
           </a>
         </div>
@@ -248,53 +267,55 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
     }
   }
   return (
-    <main className="flex min-h-screen flex-col bg-[#f3ece0] px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-8 sm:items-center sm:justify-center sm:px-10">
-      <div className="w-full sm:max-w-md">
+    <main
+      className="d-flex min-vh-100 flex-column px-4 pt-5 px-sm-5 align-items-sm-center justify-content-sm-center"
+      style={{ background: paper, paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+    >
+      <div className="w-100" style={{ maxWidth: '28rem' }}>
         <Wordmark />
-        <form onSubmit={submit} className="mt-8 space-y-4" aria-labelledby="forced-heading">
-          <h1 id="forced-heading" className="text-2xl font-bold text-brand-900">
+        <form onSubmit={submit} className="vstack gap-3 mt-5" aria-labelledby="forced-heading">
+          <h1 id="forced-heading" className="h4 fw-bold mb-0">
             Choose a new password
           </h1>
-          <p className="text-sm text-slate-700">
-            You are signed in as <strong className="break-all">{login}</strong> with a password someone else chose. Choose your own to continue —
+          <p className="small text-body mb-0">
+            You are signed in as <strong className="text-break">{login}</strong> with a password someone else chose. Choose your own to continue —
             nothing else can be done until then.
           </p>
-          {error && (
-            <div role="alert" className="rounded-xl border-l-4 border-red-600 bg-white p-4 text-sm font-semibold text-red-800 shadow-sm">
-              {error}
-            </div>
-          )}
+          {error && <Notice error>{error}</Notice>}
           <div>
-            <label className="label" htmlFor="forced-current">
+            <label className="form-label" htmlFor="forced-current">
               Current password
             </label>
-            <input id="forced-current" className="input" type={show ? 'text' : 'password'} autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
-            <p className="mt-1 text-xs text-slate-500">The password you just signed in with.</p>
+            <input id="forced-current" className="form-control" type={show ? 'text' : 'password'} autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+            <div className="form-text">The password you just signed in with.</div>
           </div>
           <div>
-            <label className="label" htmlFor="forced-new">
+            <label className="form-label" htmlFor="forced-new">
               New password
             </label>
-            <input id="forced-new" className="input" type={show ? 'text' : 'password'} autoComplete="new-password" minLength={12} maxLength={200} value={next} onChange={(e) => setNext(e.target.value)} required />
-            <p className="mt-1 text-xs text-slate-500">At least 12 characters. A few unrelated words work well.</p>
+            <input id="forced-new" className="form-control" type={show ? 'text' : 'password'} autoComplete="new-password" minLength={12} maxLength={200} value={next} onChange={(e) => setNext(e.target.value)} required />
+            <div className="form-text">At least 12 characters. A few unrelated words work well.</div>
           </div>
           <div>
-            <label className="label" htmlFor="forced-again">
+            <label className="form-label" htmlFor="forced-again">
               New password again
             </label>
-            <input id="forced-again" className="input" type={show ? 'text' : 'password'} autoComplete="new-password" maxLength={200} value={again} onChange={(e) => setAgain(e.target.value)} required />
+            <input id="forced-again" className="form-control" type={show ? 'text' : 'password'} autoComplete="new-password" maxLength={200} value={again} onChange={(e) => setAgain(e.target.value)} required />
           </div>
-          <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show what I type
-          </label>
-          <button className="btn-primary w-full py-3 text-base" disabled={busy}>
+          <div className="form-check py-2 small text-body-secondary">
+            <input id="forced-show" className="form-check-input" type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
+            <label className="form-check-label" htmlFor="forced-show">
+              Show what I type
+            </label>
+          </div>
+          <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Saving…' : 'Save and continue'}
           </button>
-          <button type="button" className="btn-secondary w-full py-3 text-base" onClick={() => void onSignOut()}>
+          <button type="button" className="btn btn-outline-primary w-100 py-3 fs-6" onClick={() => void onSignOut()}>
             Sign out
           </button>
         </form>
-        <div className="mt-8 border-t border-cream-300 pt-4 text-xs text-slate-500">{version || '\u00a0'}</div>
+        <div className="mt-5 border-top pt-3 fs-8 text-body-secondary">{version || ' '}</div>
       </div>
     </main>
   )

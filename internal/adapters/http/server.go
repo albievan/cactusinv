@@ -107,6 +107,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 // spa serves the built web app, falling back to index.html for client-side routes.
 // Hashed assets are cached for a year; index.html never.
+var fontTypes = map[string]string{".woff2": "font/woff2", ".woff": "font/woff"}
+
 func spa(web fs.FS) http.Handler {
 	files := http.FileServerFS(web)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +133,10 @@ func spa(web fs.FS) http.Handler {
 			r = r.Clone(r.Context())
 			r.URL.Path = "/"
 			p = "index.html"
+		}
+		// Go's MIME table has no web-font types (the Bootstrap Icons font is .woff2).
+		if t, ok := fontTypes[path.Ext(p)]; ok {
+			w.Header().Set("Content-Type", t)
 		}
 		if strings.HasPrefix(p, "assets/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

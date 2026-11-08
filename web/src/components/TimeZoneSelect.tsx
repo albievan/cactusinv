@@ -23,7 +23,7 @@ export function TimeZoneSelect({ id, value, onChange }: { id: string; value: str
   const rest = allZones().filter((z) => z !== device && z !== value)
   const top = [...new Set([value, device].filter(Boolean))]
   return (
-    <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+    <select id={id} className="form-select" value={value} onChange={(e) => onChange(e.target.value)}>
       {top.map((z) => <option key={z} value={z}>{z === device ? `${z} (this device)` : z}</option>)}
       {rest.map((z) => <option key={z} value={z}>{z}</option>)}
     </select>

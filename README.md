@@ -307,6 +307,7 @@ Used only with `--k3s` and `--k8s`.
 | `K8S_NODE_PORT` | `30080` | NodePort the web app answers on (`http://<node>:30080`). It must be free and in the cluster's NodePort range (normally 30000–32767). |
 | `K8S_MAILPIT_NODE_PORT` | `30025` | NodePort for the Mailpit test mailbox's web page. Same rules. |
 | `K8S_STORAGE_CLASS` | empty | StorageClass for the three volume claims (database, invoices, backups). See below. |
+| `K8S_VOLUME_DIR` | empty | k3s only: a folder on the node to keep the three volumes in (`mariadb/`, `invoices/`, `backups/`), e.g. `/data/k3s/local.volumes/cactusinv`. `deploy.sh` creates the folders, the class and the volumes. See below. |
 | `K8S_MARIADB_STORAGE` | `10Gi` | Size of the database claim (`Gi` = GiB, `Mi` = MiB). |
 | `K8S_INVOICES_STORAGE` | `5Gi` | Size of the invoices claim. |
 | `K8S_BACKUP_STORAGE` | `10Gi` | Size of the backups claim. Allow room for `BACKUP_RETENTION_DAYS` × backups per day. |
@@ -347,74 +348,39 @@ are deleted with their claims (`--delete-uninstall`), so keep the backups elsewh
 
 #### Keeping the volumes in a folder you choose (k3s)
 
-`local-path` puts each volume in a generated folder under its own path
-(`/var/lib/rancher/k3s/storage/pvc-<id>_cactusinv_<claim>`). To keep the data in a folder you
-choose, e.g. `/data/k3s/local.volumes/cactusinv`, set a **no-provisioner** class and create
-the three volumes yourself, each tied to its claim:
+`local-path` puts each volume in a generated folder (`<its path>/pvc-<id>_cactusinv_<claim>`).
+To keep the data in a folder you name, set it in `.env`:
 
 ```
-K8S_STORAGE_CLASS=local-storage
+K8S_VOLUME_DIR=/data/k3s/local.volumes/cactusinv
+K8S_STORAGE_CLASS=          # empty = local-storage
 ```
 
-`local-storage` must exist (`kubectl get storageclass`). If it doesn't, create it once:
+On `--install --k3s`, `deploy.sh` then:
+- creates the storage class `K8S_STORAGE_CLASS` (default `local-storage`) if the cluster lacks
+  it, as a `kubernetes.io/no-provisioner` class with `Retain`. A class of that name that does
+  create its own volumes is refused;
+- creates `mariadb/`, `invoices/` and `backups/` in the folder on the node, owned by the users
+  the pods run as (MariaDB 999, the app 65532), mode 700;
+- creates one PersistentVolume per claim (`cactusinv-mariadb-data`, …) in those folders, tied
+  to its claim with `claimRef`, so the database cannot land in the backups folder. Each volume
+  is sized as its claim (`K8S_*_STORAGE`); for a folder that is only a label, and the disk's
+  free space is the real limit.
 
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata: { name: local-storage }
-provisioner: kubernetes.io/no-provisioner
-volumeBindingMode: WaitForFirstConsumer
-reclaimPolicy: Retain
-```
+It needs a single-node k3s, because the folders are on one node. `--uninstall` keeps the
+folders. `--delete-uninstall` deletes the volumes and the three folders with everything else.
 
-On the node, create the folders, owned by the users the pods run as (MariaDB 999, the app
-65532):
+Without `K8S_VOLUME_DIR`, a `K8S_STORAGE_CLASS` that does not exist stops the install at once
+and lists the classes the cluster has. Before this check, the claims stayed `Pending` and the
+install failed after five minutes with "unbound immediate PersistentVolumeClaims".
 
-```
-mkdir -p /data/k3s/local.volumes/cactusinv/{mariadb,invoices,backups}
-chown 999:999     /data/k3s/local.volumes/cactusinv/mariadb
-chown 65532:65532 /data/k3s/local.volumes/cactusinv/{invoices,backups}
-chmod 700 /data/k3s/local.volumes/cactusinv/{mariadb,invoices,backups}
-```
-
-Then apply this before `./deploy.sh --install --k3s`, with `<node>` from
-`kubectl get node`. Each volume's `capacity` must be at least the claim's `K8S_*_STORAGE`;
-for a local folder it is only a label, and the disk's free space is the real limit:
-
-```yaml
-apiVersion: v1
-kind: PersistentVolume
-metadata: { name: cactusinv-mariadb-data }
-spec:
-  capacity: { storage: 10Gi }
-  accessModes: [ReadWriteOnce]
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: local-storage
-  claimRef: { namespace: cactusinv, name: mariadb-data }
-  local: { path: /data/k3s/local.volumes/cactusinv/mariadb }
-  nodeAffinity:
-    required:
-      nodeSelectorTerms:
-        - matchExpressions: [{ key: kubernetes.io/hostname, operator: In, values: [<node>] }]
----
-# the same twice more, with:
-#   name cactusinv-invoices, capacity 5Gi,  claimRef name invoices, path …/cactusinv/invoices
-#   name cactusinv-backups,  capacity 10Gi, claimRef name backups,  path …/cactusinv/backups
-```
-
-`claimRef` ties each volume to its claim. Without it, a claim can bind to any free volume of
-the class that is big enough, such as the database landing in the backups folder. With
-`Retain`, `--delete-uninstall` deletes the claims but not the volumes or the folders: delete
-those yourself (`kubectl delete pv cactusinv-mariadb-data …`, then the folders) before
-installing again.
-
-**Moving an existing install:** the live claims already use `local-path`, which cannot be
-changed in place. `--delete-uninstall` deletes the namespace, and with it the claims, their data,
+**Moving an existing install:** an install's claims keep the class they were created with
+(`deploy.sh` refuses a different one). `--delete-uninstall` deletes the namespace, and with it the claims, their data,
 the stored backups and the backup key. So take the backup **off the cluster** first:
 1. Settings → Backup & restore → **Download a backup**, with a passphrase you keep. The file
    is saved on your computer.
 2. `./deploy.sh --delete-uninstall --k3s --ssh-access root@<node>`.
-3. Create the folders and volumes as above, and set `K8S_STORAGE_CLASS=local-storage`.
+3. Set `K8S_VOLUME_DIR` (and leave `K8S_STORAGE_CLASS` empty).
 4. `./deploy.sh --install --k3s --ssh-access root@<node>`, sign in as `admin` / `admin`, then go to
    Settings → Backup & restore → **Restore from file** with the downloaded file and its
    passphrase.
@@ -536,7 +502,7 @@ internal/ports       interfaces (+ in-memory fakes)
 internal/adapters    mariadb (sqlc), http (OpenAPI), pdf, smtp, archive, secrets, worker
 migrations           goose SQL migrations (embedded)
 api/openapi          the API contract
-web                  React + TypeScript + Vite + Tailwind (embedded in the binary)
+web                  React + TypeScript + Vite + Bootstrap 5.3 + Bootstrap Icons (embedded in the binary)
 deploy, deploy.sh    Docker Compose, k3s/k8s manifests, MariaDB init (restore staging database)
 ```
 

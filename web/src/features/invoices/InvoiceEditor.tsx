@@ -102,9 +102,10 @@ export function InvoiceEditor() {
   if ((customers.loading && !customers.data) || (id && existing.loading)) return <Spinner />
   return (
     <Page title={id ? 'Edit draft' : 'New invoice'} back={id ? `/invoices/${id}` : '/invoices'}>
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit} className="vstack gap-4">
         <ErrorBanner error={error ?? customers.error ?? existing.error} />
-        <div className="card grid gap-4 md:grid-cols-3">
+        <div className="card card-body">
+          <div className="row row-cols-1 row-cols-md-3 g-3">
           <Field
             label="Customer"
             hint={customer ? `Billed in ${customer.currency} · ${customer.paymentTerms.text}` : (customerPage.data?.total ?? 0) > (customerPage.data?.items.length ?? 0) ? 'Showing the first 100: search to find others.' : undefined}
@@ -112,41 +113,42 @@ export function InvoiceEditor() {
             {(fid) => (
               <>
               {!id && <SearchBox value={customerQuery} onChange={setCustomerQuery} placeholder="Search customers" />}
-              <select id={fid} className="input" value={customerId} onChange={(e) => changeCustomer(e.target.value)} disabled={!!id} required>
+              <select id={fid} className="form-select" value={customerId} onChange={(e) => changeCustomer(e.target.value)} disabled={!!id} required>
                 <option value="">Choose a customer…</option>
                 {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
               </select>
               </>
             )}
           </Field>
-          <Field label="Invoice date">{(fid) => <input id={fid} type="date" className="input" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required />}</Field>
+          <Field label="Invoice date">{(fid) => <input id={fid} type="date" className="form-control" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} required />}</Field>
           <Field label="VAT %" hint="0 = no VAT; nothing about VAT is printed.">
-            {(fid) => <input id={fid} className="input" inputMode="decimal" value={vat} onChange={(e) => setVatPercent(e.target.value)} />}
+            {(fid) => <input id={fid} className="form-control" inputMode="decimal" value={vat} onChange={(e) => setVatPercent(e.target.value)} />}
           </Field>
+          </div>
         </div>
         {currency ? (
           <LineEditor lines={lines} onChange={setLines} currency={currency} minorUnits={minor(currency)} />
         ) : (
-          <p className="card text-sm text-slate-500">Choose a customer to add products in their currency.</p>
+          <p className="card card-body small text-body-secondary mb-0">Choose a customer to add products in their currency.</p>
         )}
-        <details className="card">
-          <summary className="cursor-pointer font-semibold text-brand-900">More details</summary>
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <Field label="Sales person">{(fid) => <input id={fid} className="input" value={header.salesPerson ?? ''} onChange={(e) => setHeader({ ...header, salesPerson: e.target.value })} />}</Field>
-            <Field label="Job">{(fid) => <input id={fid} className="input" value={header.job ?? ''} onChange={(e) => setHeader({ ...header, job: e.target.value })} />}</Field>
-            <Field label="Shipping method">{(fid) => <input id={fid} className="input" value={header.shippingMethod ?? ''} onChange={(e) => setHeader({ ...header, shippingMethod: e.target.value })} />}</Field>
-            <Field label="Shipping terms">{(fid) => <input id={fid} className="input" value={header.shippingTerms ?? ''} onChange={(e) => setHeader({ ...header, shippingTerms: e.target.value })} />}</Field>
-            <Field label="Delivery date">{(fid) => <input id={fid} type="date" className="input" value={header.deliveryDate ?? ''} onChange={(e) => setHeader({ ...header, deliveryDate: e.target.value || undefined })} />}</Field>
-            <div className="md:col-span-2">
+        <details className="card card-body">
+          <summary className="fw-semibold text-primary-emphasis" style={{ cursor: 'pointer' }}>More details</summary>
+          <div className="row row-cols-1 row-cols-md-2 g-3 mt-1">
+            <Field label="Sales person">{(fid) => <input id={fid} className="form-control" value={header.salesPerson ?? ''} onChange={(e) => setHeader({ ...header, salesPerson: e.target.value })} />}</Field>
+            <Field label="Job">{(fid) => <input id={fid} className="form-control" value={header.job ?? ''} onChange={(e) => setHeader({ ...header, job: e.target.value })} />}</Field>
+            <Field label="Shipping method">{(fid) => <input id={fid} className="form-control" value={header.shippingMethod ?? ''} onChange={(e) => setHeader({ ...header, shippingMethod: e.target.value })} />}</Field>
+            <Field label="Shipping terms">{(fid) => <input id={fid} className="form-control" value={header.shippingTerms ?? ''} onChange={(e) => setHeader({ ...header, shippingTerms: e.target.value })} />}</Field>
+            <Field label="Delivery date">{(fid) => <input id={fid} type="date" className="form-control" value={header.deliveryDate ?? ''} onChange={(e) => setHeader({ ...header, deliveryDate: e.target.value || undefined })} />}</Field>
+            <div className="w-100">
               <Field label="Invoice notes" hint="Optional. The disclaimer is added to every PDF automatically from the customer or business settings.">
-                {(fid) => <textarea id={fid} className="input min-h-[80px]" value={notes} onChange={(e) => setNotes(e.target.value)} />}
+                {(fid) => <textarea id={fid} className="form-control" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />}
               </Field>
             </div>
           </div>
         </details>
         <StickyActions>
-          <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-          <button className="btn-primary" disabled={busy || !customerId}>{busy ? 'Saving…' : 'Save draft'}</button>
+          <button type="button" className="btn btn-outline-primary" onClick={() => nav(-1)}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || !customerId}>{busy ? 'Saving…' : 'Save draft'}</button>
         </StickyActions>
       </form>
     </Page>

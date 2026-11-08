@@ -2,6 +2,11 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { api, unwrap, type Product } from '../lib/api/client'
 import { fromMinor, lineAmount } from '../lib/money'
 import { uuid } from '../lib/uuid'
+import { IconClose, IconPlus } from './icons'
+
+const tnum = { fontVariantNumeric: 'tabular-nums' } as const
+const lineColumns = 'minmax(0,1fr) 6rem 8rem 6rem 8rem 2.5rem'
+const productColumns = 'minmax(0,1fr) 7rem 4.5rem 7.5rem'
 
 export interface EditLine {
   key: string
@@ -45,21 +50,21 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
     else problem ||= 'Check the quantities and discounts'
   }
   return (
-    <div className="card space-y-3 p-0">
-      <div className="hidden grid-cols-[minmax(0,1fr)_6rem_8rem_6rem_8rem_2.5rem] gap-3 rounded-t-2xl px-4 py-2 md:grid table-head">
+    <div className="card">
+      <div className="d-none d-md-grid gap-3 rounded-top px-3 py-2 bg-body-secondary fs-8 fw-semibold text-uppercase text-primary-emphasis" style={{ gridTemplateColumns: lineColumns }}>
         <span>Product</span>
-        <span className="text-right">Qty</span>
-        <span className="text-right">Unit price</span>
-        <span className="text-right">Disc %</span>
-        <span className="text-right">Amount</span>
+        <span className="text-end">Qty</span>
+        <span className="text-end">Unit price</span>
+        <span className="text-end">Disc %</span>
+        <span className="text-end">Amount</span>
         <span />
       </div>
-      <ul className="divide-y divide-cream-200">
+      <ul className="list-group list-group-flush">
         {lines.map((l, i) => {
           const amount = l.productId && l.productStatus !== 'missing' ? lineAmount(l, minorUnits) : null
           return (
-            <li key={l.key} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(0,1fr)_6rem_8rem_6rem_8rem_2.5rem] md:items-start">
-              <div>
+            <li key={l.key} className="list-group-item d-flex flex-column d-md-grid gap-3 align-items-md-start px-3 py-3" style={{ gridTemplateColumns: lineColumns }}>
+              <div className="min-w-0">
                 <ProductCombobox
                   currency={currency}
                   value={l.productName}
@@ -74,38 +79,38 @@ export function LineEditor({ lines, onChange, currency, minorUnits }: {
                     })
                   }}
                 />
-                {l.description && l.description !== l.productName && <p className="mt-1 text-xs text-slate-500">{l.description}</p>}
-                {unavailable(l) && <p role="alert" className="mt-1 text-xs font-medium text-red-700">{l.productStatus === 'inactive' ? `${l.productName}: product` : 'Product'} no longer available — choose another.</p>}
-                {l.productId && !unavailable(l) && !l.unitPrice && <p role="alert" className="mt-1 text-xs font-medium text-red-700">No {currency} price for this product — choose another product.</p>}
+                {l.description && l.description !== l.productName && <p className="mt-1 mb-0 fs-8 text-body-secondary">{l.description}</p>}
+                {unavailable(l) && <p role="alert" className="mt-1 mb-0 fs-8 fw-medium text-danger">{l.productStatus === 'inactive' ? `${l.productName}: product` : 'Product'} no longer available — choose another.</p>}
+                {l.productId && !unavailable(l) && !l.unitPrice && <p role="alert" className="mt-1 mb-0 fs-8 fw-medium text-danger">No {currency} price for this product — choose another product.</p>}
               </div>
-              <label className="text-xs text-slate-500 md:text-right">
-                <span className="md:sr-only">Qty</span>
-                <input className="input text-right" inputMode="decimal" aria-label={`Quantity for line ${i + 1}`} value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} />
+              <label className="fs-8 text-body-secondary text-md-end">
+                <span className="d-md-none">Qty</span>
+                <input className="form-control text-end" inputMode="decimal" aria-label={`Quantity for line ${i + 1}`} value={l.quantity} onChange={(e) => update(l.key, { quantity: e.target.value })} />
               </label>
-              <div className="text-sm md:pt-2.5 md:text-right">
-                <span className="text-xs text-slate-500 md:hidden">Unit price </span>
-                <span className="tabular-nums">{l.unitPrice ? `${l.unitPrice}` : '—'}</span>
-                {l.priceOverride !== undefined && <span className="block text-xs text-slate-500">fixed price</span>}
+              <div className="small pt-md-2 text-md-end">
+                <span className="fs-8 text-body-secondary d-md-none">Unit price </span>
+                <span style={tnum}>{l.unitPrice ? `${l.unitPrice}` : '—'}</span>
+                {l.priceOverride !== undefined && <span className="d-block fs-8 text-body-secondary">fixed price</span>}
               </div>
-              <label className="text-xs text-slate-500">
-                <span className="md:sr-only">Disc %</span>
-                <input className="input text-right" inputMode="decimal" placeholder="0" aria-label={`Discount for line ${i + 1}`} value={l.discountPercent} onChange={(e) => update(l.key, { discountPercent: e.target.value })} />
+              <label className="fs-8 text-body-secondary">
+                <span className="d-md-none">Disc %</span>
+                <input className="form-control text-end" inputMode="decimal" placeholder="0" aria-label={`Discount for line ${i + 1}`} value={l.discountPercent} onChange={(e) => update(l.key, { discountPercent: e.target.value })} />
               </label>
-              <div className="text-sm font-semibold tabular-nums md:pt-2.5 md:text-right">{amount !== null ? fromMinor(amount, minorUnits) : '—'}</div>
-              <button type="button" aria-label={`Remove line ${i + 1}`} className="btn-secondary h-10 w-10 px-0 md:h-[44px]" onClick={() => onChange(lines.filter((x) => x.key !== l.key))} disabled={lines.length === 1}>
-                ✕
+              <div className="small fw-semibold pt-md-2 text-md-end" style={tnum}>{amount !== null ? fromMinor(amount, minorUnits) : '—'}</div>
+              <button type="button" aria-label={`Remove line ${i + 1}`} title={`Remove line ${i + 1}`} className="btn btn-outline-primary btn-icon" onClick={() => onChange(lines.filter((x) => x.key !== l.key))} disabled={lines.length === 1}>
+                <IconClose width={14} />
               </button>
             </li>
           )
         })}
       </ul>
-      <div className="flex items-center justify-between rounded-b-2xl border-t border-cream-200 px-4 py-3">
-        <button type="button" className="btn-secondary" onClick={() => onChange([...lines, newLine()])}>
-          + Add line
+      <div className="d-flex align-items-center justify-content-between gap-2 border-top px-3 py-3">
+        <button type="button" className="btn btn-outline-primary" onClick={() => onChange([...lines, newLine()])}>
+          <IconPlus width={16} /> Add line
         </button>
-        <div className="text-right">
-          <div className="text-xs text-slate-500">Preview — the server computes the final total</div>
-          <div className="text-lg font-bold tabular-nums text-brand-900">{problem || `${currency} ${fromMinor(total, minorUnits)}`}</div>
+        <div className="text-end">
+          <div className="fs-8 text-body-secondary">Preview — the server computes the final total</div>
+          <div className="fs-5 fw-bold text-primary-emphasis" style={tnum}>{problem || `${currency} ${fromMinor(total, minorUnits)}`}</div>
         </div>
       </div>
     </div>
@@ -158,14 +163,14 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
     setOpen(false)
   }
   return (
-    <div ref={box} className="relative">
+    <div ref={box} className="position-relative">
       <input
         role="combobox"
         aria-label={label}
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
-        className="input"
+        className="form-control"
         placeholder="Search products by name or SKU…"
         value={q}
         onFocus={() => setOpen(true)}
@@ -191,16 +196,16 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
         }}
       />
       {open && (
-        <div className="absolute z-40 mt-1 w-full min-w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-cream-300">
-          <div className="hidden grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] gap-3 px-3 py-2 table-head sm:grid" aria-hidden="true">
+        <div className="position-absolute mt-1 w-100 overflow-hidden rounded-3 bg-white shadow border" style={{ zIndex: 1000, minWidth: 'min(36rem, calc(100vw - 2rem))' }}>
+          <div className="d-none d-sm-grid gap-3 px-3 py-2 bg-body-secondary fs-8 fw-semibold text-uppercase text-primary-emphasis" style={{ gridTemplateColumns: productColumns }} aria-hidden="true">
             <span>Product</span>
             <span>SKU</span>
             <span>Unit</span>
-            <span className="text-right">Unit price</span>
+            <span className="text-end">Unit price</span>
           </div>
-          <ul id={listId} role="listbox" aria-label="Products" className="max-h-72 divide-y divide-cream-100 overflow-y-auto">
+          <ul id={listId} role="listbox" aria-label="Products" className="list-group list-group-flush overflow-y-auto" style={{ maxHeight: '18rem' }}>
             {items.length === 0 && (
-              <li className="px-3 py-3 text-sm text-slate-500">{failed ? 'The products could not be loaded. Check your connection and try again.' : 'No products found. Add one under Products.'}</li>
+              <li className="list-group-item px-3 py-3 small text-body-secondary">{failed ? 'The products could not be loaded. Check your connection and try again.' : 'No products found. Add one under Products.'}</li>
             )}
             {items.map((p, i) => {
               const price = priced(p)
@@ -215,17 +220,18 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
                     e.preventDefault()
                     choose(p)
                   }}
-                  className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_7rem_4.5rem_7.5rem] ${i === active ? 'bg-brand-50' : ''} ${price ? '' : 'cursor-not-allowed opacity-50'}`}
+                  className={`list-group-item d-flex d-sm-grid align-items-center gap-3 px-3 py-2 small ${i === active ? 'bg-primary-subtle' : ''} ${price ? '' : 'opacity-50'}`}
+                  style={{ gridTemplateColumns: productColumns, cursor: price ? 'pointer' : 'not-allowed' }}
                 >
-                  <span className="min-w-0">
-                    <span className="block break-words font-medium text-brand-900">{p.name}</span>
-                    {p.description && p.description !== p.name && <span className="block break-words text-xs text-slate-500">{p.description}</span>}
+                  <span className="min-w-0 flex-grow-1">
+                    <span className="d-block text-break fw-medium text-primary-emphasis">{p.name}</span>
+                    {p.description && p.description !== p.name && <span className="d-block text-break fs-8 text-body-secondary">{p.description}</span>}
                     {/* On a phone the SKU and unit sit under the name; the columns need ~22rem. */}
-                    <span className="block break-all text-xs text-slate-500 sm:hidden">{[p.sku, p.unit].filter(Boolean).join(' · ')}</span>
+                    <span className="d-block d-sm-none text-break fs-8 text-body-secondary">{[p.sku, p.unit].filter(Boolean).join(' · ')}</span>
                   </span>
-                  <span className="hidden break-all text-xs text-slate-600 sm:block">{p.sku}</span>
-                  <span className="hidden break-words text-xs text-slate-600 sm:block">{p.unit || '—'}</span>
-                  <span className="text-right tabular-nums">{price ? `${currency} ${price.unitPrice}` : <span className="text-xs">No {currency} price</span>}</span>
+                  <span className="d-none d-sm-block text-break fs-8 text-body-secondary">{p.sku}</span>
+                  <span className="d-none d-sm-block text-break fs-8 text-body-secondary">{p.unit || '—'}</span>
+                  <span className="text-end flex-shrink-0" style={tnum}>{price ? `${currency} ${price.unitPrice}` : <span className="fs-8">No {currency} price</span>}</span>
                 </li>
               )
             })}

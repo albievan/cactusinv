@@ -1,17 +1,18 @@
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate } from '../lib/format'
+import { IconBack, IconClose } from './icons'
 
 export function Page({ title, back, actions, children }: { title: string; back?: string; actions?: ReactNode; children: ReactNode }) {
   return (
-    <div className="w-full px-3 pb-28 pt-4 sm:px-4 md:px-6 md:pb-10 md:pt-6">
-      <header className="mb-4 flex items-center gap-2">
+    <div className="app-page w-100">
+      <header className="d-flex align-items-center gap-2 mb-3">
         {back && (
-          <Link to={back} aria-label="Back" className="btn-secondary -ml-1 h-11 w-11 px-0">
-            ←
+          <Link to={back} aria-label="Back" title="Back" className="btn btn-outline-primary btn-icon btn-lg">
+            <IconBack />
           </Link>
         )}
-        <h1 className="flex-1 truncate text-2xl font-bold text-brand-900 md:text-3xl">{title}</h1>
+        <h1 className="h3 mb-0 flex-grow-1 text-truncate">{title}</h1>
         {actions}
       </header>
       {children}
@@ -23,20 +24,20 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   const id = useId()
   return (
     <div>
-      <label htmlFor={id} className="label">
+      <label htmlFor={id} className="form-label">
         {label}
       </label>
       {children(id)}
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+      {hint && <div className="form-text">{hint}</div>}
     </div>
   )
 }
 
 export function Spinner() {
   return (
-    <div role="status" className="flex justify-center p-8">
-      <span className="h-8 w-8 animate-spin rounded-full border-4 border-brand-100 border-t-brand-600" />
-      <span className="sr-only">Loading…</span>
+    <div role="status" className="d-flex justify-content-center p-5">
+      <span className="spinner-border text-primary" aria-hidden="true" />
+      <span className="visually-hidden">Loading…</span>
     </div>
   )
 }
@@ -44,31 +45,33 @@ export function Spinner() {
 export function ErrorBanner({ error }: { error?: Error | null }) {
   if (!error) return null
   return (
-    <div role="alert" className="mb-4 rounded-xl border-l-4 border-red-600 bg-white p-3 text-sm font-medium text-red-800 shadow-sm">
+    <div role="alert" className="alert alert-danger mb-3 small fw-medium">
       {error.message}
     </div>
   )
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="card text-center text-sm text-slate-500">{children}</p>
+  return <p className="card card-body text-center small text-body-secondary">{children}</p>
 }
 
+// Bootstrap 5.3 subtle colours: tinted background, darker text, a matching border.
+const tone = (c: string) => `bg-${c}-subtle text-${c}-emphasis border border-${c}-subtle`
 const statusColours: Record<string, string> = {
-  draft: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  issued: 'bg-sky-50 text-sky-800 ring-1 ring-sky-200',
-  emailed: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200',
-  sent: 'bg-brand-50 text-brand-700 ring-1 ring-brand-200',
-  paid: 'bg-green-100 text-green-800 ring-1 ring-green-200',
-  void: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  overdue: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  pending: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  sending: 'bg-sky-50 text-sky-800 ring-1 ring-sky-200',
-  failed: 'bg-red-50 text-red-700 ring-1 ring-red-200',
-  cancelled: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
-  active: 'bg-green-100 text-green-800 ring-1 ring-green-200',
-  paused: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
-  ended: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200',
+  draft: tone('secondary'),
+  issued: tone('info'),
+  emailed: tone('primary'),
+  sent: tone('primary'),
+  paid: tone('success'),
+  void: tone('danger'),
+  overdue: tone('warning'),
+  pending: tone('warning'),
+  sending: tone('info'),
+  failed: tone('danger'),
+  cancelled: tone('secondary'),
+  active: tone('success'),
+  paused: tone('warning'),
+  ended: tone('secondary'),
 }
 
 /** Human labels for invoice stages. */
@@ -82,7 +85,7 @@ export const stageLabels: Record<string, string> = {
 }
 
 export function Badge({ status, label }: { status: string; label?: string }) {
-  return <span className={`chip whitespace-nowrap ${statusColours[status] ?? 'bg-slate-100'}`}>{label ?? stageLabels[status] ?? status}</span>
+  return <span className={`badge rounded-pill text-nowrap ${statusColours[status] ?? tone('secondary')}`}>{label ?? stageLabels[status] ?? status}</span>
 }
 
 /** Sheet is a bottom sheet on phones and a centred dialog on larger screens. */
@@ -95,21 +98,17 @@ export function Sheet({ title, open, onClose, children }: { title: string; open:
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] md:max-w-lg md:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold">{title}</h2>
-          <button className="btn-secondary h-10 w-10 px-0" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
+    <div className="modal sheet" onClick={onClose}>
+      <div className="modal-dialog">
+        <div role="dialog" aria-modal="true" aria-label={title} className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-header border-0 pb-0">
+            <h2 className="modal-title h5">{title}</h2>
+            <button type="button" className="btn btn-outline-primary btn-icon" onClick={onClose} aria-label="Close" title="Close">
+              <IconClose width={16} />
+            </button>
+          </div>
+          <div className="modal-body">{children}</div>
         </div>
-        {children}
       </div>
     </div>
   )
@@ -118,8 +117,8 @@ export function Sheet({ title, open, onClose, children }: { title: string; open:
 /** StickyActions keeps form buttons reachable by thumb on phones. */
 export function StickyActions({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 border-t border-cream-300 bg-white/95 p-3 backdrop-blur md:static md:mt-6 md:border-0 md:bg-transparent md:p-0">
-      <div className="flex justify-end gap-2">{children}</div>
+    <div className="sticky-actions">
+      <div className="d-flex justify-content-end gap-2">{children}</div>
     </div>
   )
 }
@@ -128,7 +127,7 @@ export function SearchBox({ value, onChange, placeholder }: { value: string; onC
   return (
     <input
       type="search"
-      className="input mb-3"
+      className="form-control mb-3"
       placeholder={placeholder}
       aria-label={placeholder}
       value={value}
@@ -146,19 +145,17 @@ export function StageTracker({ stage, issuedAt, sentAt, paidAt }: { stage: strin
     { key: 'emailed', label: 'Emailed', done: !!sentAt, at: sentAt },
     { key: 'final', label: end, done: stage === 'paid' || stage === 'void' || stage === 'overdue', at: paidAt },
   ]
-  const tone = stage === 'void' ? 'bg-red-600' : stage === 'overdue' ? 'bg-amber-500' : 'bg-brand-600'
+  const finalTone = stage === 'void' ? ' void' : stage === 'overdue' ? ' overdue' : ''
   return (
-    <ol className="flex items-center" aria-label="Invoice stage">
+    <ol className="d-flex align-items-center list-unstyled mb-0" aria-label="Invoice stage">
       {steps.map((s, i) => (
-        <li key={s.key} className="flex flex-1 items-center last:flex-none">
-          <div className="flex flex-col items-center text-center">
-            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${s.done ? (i === 3 ? tone : 'bg-brand-600') + ' text-white' : 'bg-cream-200 text-slate-500'}`}>
-              {s.done ? '✓' : i + 1}
-            </span>
-            <span className={`mt-1 text-xs font-semibold ${s.done ? 'text-brand-900' : 'text-slate-500'}`}>{s.label}</span>
-            {s.at && <span className="text-[11px] text-slate-500">{formatDate(s.at)}</span>}
+        <li key={s.key} className={`d-flex align-items-center ${i < steps.length - 1 ? 'flex-fill' : ''}`}>
+          <div className="d-flex flex-column align-items-center text-center">
+            <span className={`stage-dot${s.done ? ' done' + (i === 3 ? finalTone : '') : ''}`}>{s.done ? <i className="bi bi-check-lg" aria-hidden="true" /> : i + 1}</span>
+            <span className={`mt-1 fs-8 fw-semibold ${s.done ? 'text-primary-emphasis' : 'text-body-secondary'}`}>{s.label}</span>
+            {s.at && <span className="fs-8 text-body-secondary">{formatDate(s.at)}</span>}
           </div>
-          {i < steps.length - 1 && <span className={`mx-1 mb-5 h-0.5 flex-1 ${steps[i + 1]!.done ? 'bg-brand-600' : 'bg-cream-300'}`} />}
+          {i < steps.length - 1 && <span className={`stage-line${steps[i + 1]!.done ? ' done' : ''}`} />}
         </li>
       ))}
     </ol>
@@ -192,17 +189,17 @@ export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, 
   }
   return (
     <>
-      <button type="button" className={className ?? (danger ? 'btn-danger' : 'btn-primary')} disabled={disabled || busy} onClick={() => setOpen(true)}>
+      <button type="button" className={className ?? (danger ? 'btn btn-outline-danger' : 'btn btn-primary')} disabled={disabled || busy} onClick={() => setOpen(true)}>
         {label}
       </button>
       <Sheet title={title} open={open} onClose={() => !busy && setOpen(false)}>
-        <div className="space-y-4">
-          <div className="text-sm text-slate-700">{message}</div>
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setOpen(false)} disabled={busy}>
+        <div className="vstack gap-3">
+          <div className="small text-body">{message}</div>
+          <div className="d-flex justify-content-end gap-2">
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setOpen(false)} disabled={busy}>
               Cancel
             </button>
-            <button type="button" className={danger ? 'btn-danger' : 'btn-primary'} onClick={() => void run()} disabled={busy}>
+            <button type="button" className={danger ? 'btn btn-danger' : 'btn btn-primary'} onClick={() => void run()} disabled={busy}>
               {busy ? 'Working…' : confirmLabel}
             </button>
           </div>
@@ -216,7 +213,7 @@ export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, 
 export function ShowMore({ list }: { list: { hasMore: boolean; more: () => void; loading: boolean; data?: { items: unknown[]; total: number } } }) {
   if (!list.hasMore || !list.data) return null
   return (
-    <button className="btn-secondary mt-3 w-full" onClick={list.more} disabled={list.loading}>
+    <button className="btn btn-outline-primary mt-3 w-100" onClick={list.more} disabled={list.loading}>
       Show more ({list.data.total - list.data.items.length} more)
     </button>
   )

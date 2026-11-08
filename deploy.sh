@@ -705,6 +705,90 @@ publish_image() {
   fi
 }
 
+# node_sh runs a shell command as root on the k3s node (over SSH, or here).
+node_sh() {
+  if [[ -n "$SSH_HOST" ]]; then ssh_run "${KC_PREFIX:-}sh -c '$1'" </dev/null
+  elif [[ $EUID -eq 0 ]]; then sh -c "$1"; else sudo sh -c "$1"; fi
+}
+
+# volume_dir_ok accepts K8S_VOLUME_DIR only as a plain absolute folder (no .., no trailing /).
+volume_dir_ok() { [[ "$1" =~ ^/[A-Za-z0-9._/-]*[A-Za-z0-9._-]$ && ! "$1" =~ (^|/)\.\.?(/|$) ]]; }
+
+VOLUME_CLAIMS="mariadb-data:mariadb:999:K8S_MARIADB_STORAGE invoices:invoices:65532:K8S_INVOICES_STORAGE backups:backups:65532:K8S_BACKUP_STORAGE"
+
+# k8s_volumes makes the volume claims bindable before anything is applied, so a wrong
+# storage class fails here with a reason instead of leaving the pods Pending for 5 minutes.
+# With K8S_VOLUME_DIR (k3s) it creates a no-provisioner class (if missing), the folders on
+# the node owned by the pods' users, and one volume per claim in them, pinned by claimRef.
+k8s_volumes() {
+  local dir="${K8S_VOLUME_DIR:-}" c claim sub uid var have node pv phase
+  if [[ -n "$dir" ]]; then
+    [[ "$TARGET" == k3s ]] || die "K8S_VOLUME_DIR is for --k3s only (it creates the folders on the node)"
+    volume_dir_ok "$dir" ||
+      die "K8S_VOLUME_DIR must be an absolute folder of letters, digits, . _ - and / (got '$dir')"
+    : "${K8S_STORAGE_CLASS:=local-storage}"
+    export K8S_STORAGE_CLASS
+  fi
+  # A claim's storage class cannot change once it exists.
+  if [[ -n "${K8S_STORAGE_CLASS:-}" ]]; then
+    for c in $VOLUME_CLAIMS; do
+      claim="${c%%:*}"
+      have="$(kc -n "$K8S_NAMESPACE" get pvc "$claim" -o jsonpath='{.spec.storageClassName}' 2>/dev/null </dev/null || true)"
+      [[ -z "$have" || "$have" == "$K8S_STORAGE_CLASS" ]] ||
+        die "volume claim ${claim} already uses storage class ${have}; a claim's class cannot change (K8S_STORAGE_CLASS=${K8S_STORAGE_CLASS}). Set it back, or move the data: README, \"Moving an existing install\""
+    done
+    if ! kc get storageclass "$K8S_STORAGE_CLASS" >/dev/null 2>&1 </dev/null; then
+      if [[ -z "$dir" ]]; then
+        die "storage class ${K8S_STORAGE_CLASS} does not exist in this cluster (it has: $(kc get storageclass -o jsonpath='{.items[*].metadata.name}' </dev/null)). Set K8S_STORAGE_CLASS in .env to one of those or empty (the default), or set K8S_VOLUME_DIR to keep the volumes in a folder on the node"
+      fi
+      info "creating storage class ${K8S_STORAGE_CLASS} (volumes are folders on the node)"
+      kc apply -f - <<YAML
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: { name: ${K8S_STORAGE_CLASS} }
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+YAML
+    fi
+  fi
+  [[ -n "$dir" ]] || return 0
+  [[ "$(kc get storageclass "$K8S_STORAGE_CLASS" -o jsonpath='{.provisioner}' </dev/null)" == kubernetes.io/no-provisioner ]] ||
+    die "with K8S_VOLUME_DIR, K8S_STORAGE_CLASS must be a kubernetes.io/no-provisioner class (${K8S_STORAGE_CLASS} creates its own volumes); leave it empty to use local-storage"
+  node="$(kc get nodes -o jsonpath='{.items[*].metadata.name}' </dev/null)"
+  [[ -n "$node" && "$node" != *" "* ]] || die "K8S_VOLUME_DIR needs a single-node k3s (the folders are on one node); nodes: ${node}"
+  info "volumes in ${dir} on node ${node}"
+  for c in $VOLUME_CLAIMS; do
+    IFS=: read -r claim sub uid var <<<"$c"
+    node_sh "mkdir -p $dir/$sub && chown $uid:$uid $dir/$sub && chmod 700 $dir/$sub"
+    pv="${K8S_NAMESPACE}-${claim}"
+    # After --uninstall + a deleted claim the volume is Released, still naming the old
+    # claim's uid: clear it so the new claim binds to the same folder.
+    phase="$(kc get pv "$pv" -o jsonpath='{.status.phase}' 2>/dev/null </dev/null || true)"
+    if [[ "$phase" == Released ]]; then
+      kc patch pv "$pv" --type merge -p '{"spec":{"claimRef":{"uid":null,"resourceVersion":null}}}' </dev/null >/dev/null
+    fi
+    kc apply -f - <<YAML
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ${pv}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  capacity: { storage: ${!var} }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ${K8S_STORAGE_CLASS}
+  claimRef: { namespace: ${K8S_NAMESPACE}, name: ${claim} }
+  local: { path: ${dir}/${sub} }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions: [{ key: kubernetes.io/hostname, operator: In, values: [${node}] }]
+YAML
+  done
+}
+
 k8s_install() {
   IMAGE="$(image_tag)"
   # k3s runs the imported image only: a missing one fails at once (ErrImageNeverPull)
@@ -753,6 +837,7 @@ YAML
       export "$var=$size"
     fi
   done
+  k8s_volumes
   render | kc apply -f -
   info "waiting for the rollout"
   rollout mariadb
@@ -785,6 +870,15 @@ k8s_uninstall() {
 k8s_delete_uninstall() {
   confirm "This deletes namespace ${K8S_NAMESPACE} with the database, invoices, backups and secrets."
   kc delete namespace "$K8S_NAMESPACE" --ignore-not-found --wait=true
+  # Volumes in K8S_VOLUME_DIR are kept by the cluster (Retain): delete them and their folders.
+  if [[ -n "${K8S_VOLUME_DIR:-}" && "$TARGET" == k3s ]]; then
+    local c claim sub rest
+    for c in $VOLUME_CLAIMS; do
+      IFS=: read -r claim sub rest <<<"$c"
+      kc delete pv "${K8S_NAMESPACE}-${claim}" --ignore-not-found </dev/null
+      if volume_dir_ok "$K8S_VOLUME_DIR"; then node_sh "rm -rf $K8S_VOLUME_DIR/$sub"; fi
+    done
+  fi
   ok "cactusInv and all of its data were removed"
 }
 

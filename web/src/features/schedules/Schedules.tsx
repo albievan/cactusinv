@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type SVGProps } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { TimeZoneSelect, deviceZone } from '../../components/TimeZoneSelect'
 import { Can } from '../../components/Access'
 import { useCan } from '../../components/auth'
@@ -9,7 +9,8 @@ import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
 import { Badge, ConfirmButton, Empty, ErrorBanner, Field, NumberInput, Page, Sheet, Spinner, StickyActions } from '../../components/ui'
-import { IconBolt, IconEdit, IconPause, IconPlay, IconTrash } from '../../components/icons'
+import { IconBolt, IconEdit, IconPause, IconPlay, IconPlus, IconTrash } from '../../components/icons'
+import type { Icon } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -58,8 +59,8 @@ function LastRun({ s }: { s: Schedule }) {
   if (s.lastRunResult !== 'failed') return <span>{at}</span>
   return (
     <span>
-      <span className="block">{at}</span>
-      <span className="block text-xs font-medium text-red-700" title={s.lastError}>Failed{s.failureCount ? ` (${s.failureCount}×)` : ''}{s.lastError ? `: ${s.lastError}` : ''}</span>
+      <span className="d-block">{at}</span>
+      <span className="d-block fs-8 fw-medium text-danger" title={s.lastError}>Failed{s.failureCount ? ` (${s.failureCount}×)` : ''}{s.lastError ? `: ${s.lastError}` : ''}</span>
     </span>
   )
 }
@@ -67,19 +68,17 @@ function LastRun({ s }: { s: Schedule }) {
 type Pending = { kind: 'run' | 'delete'; s: Schedule }
 
 function IconAction({ icon: I, label, title, onClick, disabled, danger, to }: {
-  icon: (p: SVGProps<SVGSVGElement>) => JSX.Element; label: string; title: string; onClick?: () => void; disabled?: boolean; danger?: boolean; to?: string
+  icon: Icon; label: string; title: string; onClick?: () => void; disabled?: boolean; danger?: boolean; to?: string
 }) {
-  const cls = `inline-flex h-11 w-11 items-center justify-center rounded-lg ring-1 transition disabled:cursor-not-allowed disabled:opacity-30 md:h-8 md:w-8 ${
-    danger ? 'text-red-700 ring-red-200 hover:bg-red-50' : 'text-brand-800 ring-cream-300 hover:bg-cream-50'
-  }`
-  if (to) return <Link to={to} className={cls} aria-label={label} title={title}><I width={16} height={16} /></Link>
-  return <button type="button" className={cls} aria-label={label} title={title} onClick={onClick} disabled={disabled}><I width={16} height={16} /></button>
+  const cls = `btn btn-sm btn-icon ${danger ? 'btn-outline-danger' : 'btn-outline-primary'}`
+  if (to) return <Link to={to} className={cls} aria-label={label} title={title}><I width={16} /></Link>
+  return <button type="button" className={cls} aria-label={label} title={title} onClick={onClick} disabled={disabled}><I width={16} /></button>
 }
 
 /** ScheduleActions is the compact Edit / Pause or Resume / Run now / Delete bar for one schedule. */
 function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; act: (s: Schedule, what: 'pause' | 'resume') => void; ask: (p: Pending) => void }) {
   return (
-    <div className="flex flex-nowrap items-center gap-1" role="group" aria-label={`Actions for ${s.name}`}>
+    <div className="d-flex flex-nowrap align-items-center gap-1" role="group" aria-label={`Actions for ${s.name}`}>
       <Can need="schedules.edit"><IconAction icon={IconEdit} label={`Edit ${s.name}`} title="Edit" to={`/schedules/${s.id}/edit`} /></Can>
       {s.status === 'paused'
         ? <Can need="schedules.resume"><IconAction icon={IconPlay} label={`Resume ${s.name}`} title="Resume" onClick={() => act(s, 'resume')} disabled={busy} /></Can>
@@ -125,56 +124,57 @@ export function ScheduleList() {
     else run(s, () => unwrap(api.DELETE('/schedules/{id}', path(s))), `${s.name} deleted`)
   }
   const items = data?.items ?? []
+  const confirmClass = pending?.kind === 'run' ? 'btn btn-primary' : 'btn btn-danger'
   const nextRun = (s: Schedule) => (s.nextRunAt ? formatInZone(s.nextRunAt, s.recurrence.timeZone) : 'No upcoming run')
   return (
-    <Page title="Schedules" actions={<Can need="schedules.create"><Link to="/schedules/new" className="btn-primary">+ New</Link></Can>}>
-      <p className="mb-3 text-sm text-slate-500">Recurring invoices are issued and e-mailed automatically.</p>
+    <Page title="Schedules" actions={<Can need="schedules.create"><Link to="/schedules/new" className="btn btn-primary"><IconPlus width={16} />New</Link></Can>}>
+      <p className="mb-3 small text-body-secondary">Recurring invoices are issued and e-mailed automatically.</p>
       <ErrorBanner error={error ?? actionError} />
-      {notice && <div role="status" className="mb-3 rounded-xl border-l-4 border-brand-500 bg-white p-3 text-sm font-medium text-brand-900 shadow-sm">{notice}</div>}
+      {notice && <div role="status" className="mb-3 rounded-3 border-start border-4 border-primary bg-white p-3 small fw-medium text-primary-emphasis shadow-sm">{notice}</div>}
       {loading && !data ? <Spinner /> : items.length === 0 ? <Empty>No schedules yet.</Empty> : (
         <>
-          <ul className="grid gap-2 md:hidden" aria-label="Schedules">
+          <ul className="list-unstyled vstack gap-2 mb-0 d-md-none" aria-label="Schedules">
             {items.map((s) => (
-              <li key={s.id} className="card space-y-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <Link to={`/schedules/${s.id}`} className="font-semibold text-brand-900 underline-offset-2 hover:underline">{s.name}</Link>
+              <li key={s.id} className="card card-body vstack gap-2 small">
+                <div className="d-flex align-items-center justify-content-between gap-2">
+                  <Link to={`/schedules/${s.id}`} className="fw-semibold text-primary-emphasis">{s.name}</Link>
                   <Badge status={s.status ?? 'active'} />
                 </div>
-                <div className="text-slate-600">{name(s.customerId)} · {typeLabel(s)}</div>
-                <div className="text-slate-500">{describe(s.recurrence)}</div>
-                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                  <dt className="text-slate-500">Last run</dt><dd><LastRun s={s} /></dd>
-                  <dt className="text-slate-500">Next run</dt><dd>{nextRun(s)}</dd>
+                <div className="text-body-secondary">{name(s.customerId)} · {typeLabel(s)}</div>
+                <div className="text-body-secondary">{describe(s.recurrence)}</div>
+                <dl className="d-grid column-gap-3 row-gap-1 mb-0" style={{ gridTemplateColumns: 'auto 1fr' }}>
+                  <dt className="fw-normal text-body-secondary">Last run</dt><dd className="mb-0"><LastRun s={s} /></dd>
+                  <dt className="fw-normal text-body-secondary">Next run</dt><dd className="mb-0">{nextRun(s)}</dd>
                 </dl>
                 <ScheduleActions s={s} busy={busy === s.id} act={act} ask={setPending} />
               </li>
             ))}
           </ul>
-          <div className="card hidden overflow-x-auto p-0 md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="table-head">
+          <div className="card table-responsive d-none d-md-block">
+            <table className="table table-hover align-top mb-0 small">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Repeats</th>
-                  <th className="px-4 py-3">Last run</th>
-                  <th className="px-4 py-3">Next run</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th>Name</th>
+                  <th>Customer</th>
+                  <th>Type</th>
+                  <th>Repeats</th>
+                  <th>Last run</th>
+                  <th>Next run</th>
+                  <th>Status</th>
+                  <th className="text-end">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-cream-200">
+              <tbody>
                 {items.map((s) => (
-                  <tr key={s.id} className="align-top">
-                    <td className="px-4 py-2.5"><Link to={`/schedules/${s.id}`} className="font-semibold text-brand-900 underline-offset-2 hover:underline">{s.name}</Link></td>
-                    <td className="px-4 py-2.5">{name(s.customerId)}</td>
-                    <td className="px-4 py-2.5">{typeLabel(s)}</td>
-                    <td className="px-4 py-2.5">{describe(s.recurrence)}</td>
-                    <td className="px-4 py-2.5"><LastRun s={s} /></td>
-                    <td className="px-4 py-2.5">{nextRun(s)}</td>
-                    <td className="px-4 py-2.5"><Badge status={s.status ?? 'active'} /></td>
-                    <td className="px-4 py-2.5"><div className="flex justify-end"><ScheduleActions s={s} busy={busy === s.id} act={act} ask={setPending} /></div></td>
+                  <tr key={s.id}>
+                    <td><Link to={`/schedules/${s.id}`} className="fw-semibold text-primary-emphasis">{s.name}</Link></td>
+                    <td>{name(s.customerId)}</td>
+                    <td>{typeLabel(s)}</td>
+                    <td>{describe(s.recurrence)}</td>
+                    <td><LastRun s={s} /></td>
+                    <td>{nextRun(s)}</td>
+                    <td><Badge status={s.status ?? 'active'} /></td>
+                    <td><div className="d-flex justify-content-end"><ScheduleActions s={s} busy={busy === s.id} act={act} ask={setPending} /></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -184,17 +184,17 @@ export function ScheduleList() {
       )}
       <Sheet title={pending?.kind === 'run' ? 'Run schedule now?' : 'Delete schedule?'} open={pending !== null} onClose={() => setPending(null)}>
         {pending && (
-          <div className="space-y-4 text-sm">
-            <p>
+          <div className="vstack gap-3 small">
+            <p className="mb-0">
               {pending.kind === 'run'
                 ? pending.s.kind === 'email'
                   ? `“${pending.s.name}” e-mails ${name(pending.s.customerId) || 'the customer'} for real within a minute.`
                   : `“${pending.s.name}” raises a real invoice${pending.s.autoSend ? ' and e-mails it' : ''} within a minute.`
                 : `“${pending.s.name}” is deleted. Invoices it created are kept.`}
             </p>
-            <div className="flex justify-end gap-2">
-              <button type="button" className="btn-secondary" onClick={() => setPending(null)}>Cancel</button>
-              <button type="button" className={pending.kind === 'run' ? 'btn-primary' : 'btn-danger'} onClick={confirm}>{pending.kind === 'run' ? 'Run now' : 'Delete'}</button>
+            <div className="d-flex justify-content-end gap-2">
+              <button type="button" className="btn btn-outline-primary" onClick={() => setPending(null)}>Cancel</button>
+              <button type="button" className={confirmClass} onClick={confirm}>{pending.kind === 'run' ? 'Run now' : 'Delete'}</button>
             </div>
           </div>
         )}
@@ -220,15 +220,15 @@ export function ScheduleDetailPage() {
   return (
     <Page title={s.name} back="/schedules">
       <ErrorBanner error={actionError} />
-      <div className="card mb-4 space-y-1 text-sm">
-        <div className="flex items-center gap-2"><Badge status={s.status ?? 'active'} /> <span>{describe(s.recurrence)} ({s.recurrence.timeZone})</span></div>
-        <div className="font-medium text-brand-900">{purposeLabel(s)}</div>
-        {s.lastError && <div className="text-red-600">Last error ({s.failureCount}×): {s.lastError}</div>}
+      <div className="card card-body mb-3 vstack gap-1 small">
+        <div className="d-flex align-items-center gap-2"><Badge status={s.status ?? 'active'} /> <span>{describe(s.recurrence)} ({s.recurrence.timeZone})</span></div>
+        <div className="fw-medium text-primary-emphasis">{purposeLabel(s)}</div>
+        {s.lastError && <div className="text-danger">Last error ({s.failureCount}×): {s.lastError}</div>}
       </div>
-      <div className="mb-4 grid grid-cols-2 gap-2 empty:hidden md:flex">
-        {can('schedules.edit') && <Link to={`/schedules/${id}/edit`} className="btn-secondary">Edit</Link>}
-        {can('schedules.pause') && s.status === 'active' && <button className="btn-secondary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
-        {can('schedules.resume') && s.status === 'paused' && <button className="btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
+      <div className="d-grid d-md-flex gap-2 mb-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        {can('schedules.edit') && <Link to={`/schedules/${id}/edit`} className="btn btn-outline-primary">Edit</Link>}
+        {can('schedules.pause') && s.status === 'active' && <button className="btn btn-outline-primary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
+        {can('schedules.resume') && s.status === 'paused' && <button className="btn btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
         {can('schedules.run') && s.status === 'active' && (
           <ConfirmButton
             label="Run now"
@@ -247,14 +247,14 @@ export function ScheduleDetailPage() {
           onConfirm={async () => { try { await unwrap(api.DELETE('/schedules/{id}', path)); nav('/schedules') } catch (e) { setActionError(e as Error) } }}
         />}
       </div>
-      <section className="card mb-4 text-sm">
-        <h2 className="mb-2 font-semibold">Upcoming runs</h2>
-        {data.upcoming.length === 0 ? <p className="text-slate-500">None.</p> : <ul className="space-y-1">{data.upcoming.map((t) => <li key={t}>{formatInZone(t, s.recurrence.timeZone)}</li>)}</ul>}
+      <section className="card card-body mb-3 small">
+        <h2 className="fs-6 fw-semibold mb-2">Upcoming runs</h2>
+        {data.upcoming.length === 0 ? <p className="text-body-secondary mb-0">None.</p> : <ul className="list-unstyled vstack gap-1 mb-0">{data.upcoming.map((t) => <li key={t}>{formatInZone(t, s.recurrence.timeZone)}</li>)}</ul>}
       </section>
-      <section className="card text-sm">
-        <h2 className="mb-2 font-semibold">Runs</h2>
-        {data.runs.length === 0 ? <p className="text-slate-500">None yet.</p> : (
-          <ul className="space-y-1">{data.runs.map((r) => <li key={r.period}>{r.invoiceId ? <Link className="text-brand-600 underline" to={`/invoices/${r.invoiceId}`}>Invoice for {formatDate(r.period)}</Link> : <span>E-mails sent for {formatDate(r.period)}</span>}</li>)}</ul>
+      <section className="card card-body small">
+        <h2 className="fs-6 fw-semibold mb-2">Runs</h2>
+        {data.runs.length === 0 ? <p className="text-body-secondary mb-0">None yet.</p> : (
+          <ul className="list-unstyled vstack gap-1 mb-0">{data.runs.map((r) => <li key={r.period}>{r.invoiceId ? <Link className="text-decoration-underline" to={`/invoices/${r.invoiceId}`}>Invoice for {formatDate(r.period)}</Link> : <span>E-mails sent for {formatDate(r.period)}</span>}</li>)}</ul>
         )}
       </section>
     </Page>
@@ -280,10 +280,10 @@ function DisclaimerNote({ customer, businessText }: { customer: Schemas['Custome
   const own = customer.disclaimerSource === 'customer'
   const text = (own ? customer.defaultNotes : businessText)?.trim()
   return (
-    <div data-testid="schedule-disclaimer" className="rounded-xl bg-cream-50 p-3 text-sm ring-1 ring-cream-200">
-      <p className="font-medium text-brand-900">Disclaimer printed on every invoice — {own ? "this customer's own" : 'the business disclaimer'}:</p>
-      <p className="mt-1 whitespace-pre-line text-slate-700">{text || 'None set.'}</p>
-      <Link className="mt-1 inline-block text-brand-700 underline" to={own ? `/customers/${customer.id}` : '/settings/business'}>
+    <div data-testid="schedule-disclaimer" className="rounded-3 bg-body-tertiary border p-3 small">
+      <p className="fw-medium text-primary-emphasis mb-0">Disclaimer printed on every invoice — {own ? "this customer's own" : 'the business disclaimer'}:</p>
+      <p className="mt-1 mb-0 text-body" style={{ whiteSpace: 'pre-line' }}>{text || 'None set.'}</p>
+      <Link className="mt-1 d-inline-block text-decoration-underline" to={own ? `/customers/${customer.id}` : '/settings/business'}>
         {own ? "Edit this customer's disclaimer" : 'Edit the business disclaimer'}
       </Link>
     </div>
@@ -372,93 +372,99 @@ export function ScheduleEditor() {
   if (customers.loading || (id && existing.loading)) return <Spinner />
   return (
     <Page title={id ? 'Edit schedule' : 'New schedule'} back={id ? `/schedules/${id}` : '/schedules'}>
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit} className="vstack gap-4">
         <ErrorBanner error={error} />
-        <div className="card grid gap-4 md:grid-cols-2">
-          <Field label="Customer" hint={customer ? `Billed in ${customer.currency}` : undefined}>
-            {(f) => (
-              <select id={f} className="input" value={s.customerId} onChange={(e) => set({ customerId: e.target.value })} required>
-                <option value="">Choose…</option>
-                {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
-              </select>
-            )}
-          </Field>
-          <Field label="Name">{(f) => <input id={f} className="input" value={s.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Monthly subscription, or Weekly reminder" required />}</Field>
+        <div className="card card-body">
+          <div className="row row-cols-1 row-cols-md-2 g-3">
+            <Field label="Customer" hint={customer ? `Billed in ${customer.currency}` : undefined}>
+              {(f) => (
+                <select id={f} className="form-select" value={s.customerId} onChange={(e) => set({ customerId: e.target.value })} required>
+                  <option value="">Choose…</option>
+                  {customers.data?.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.currency})</option>)}
+                </select>
+              )}
+            </Field>
+            <Field label="Name">{(f) => <input id={f} className="form-control" value={s.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Monthly subscription, or Weekly reminder" required />}</Field>
+          </div>
         </div>
-        <fieldset className="card">
-          <legend className="sr-only">What should this schedule do?</legend>
-          <h2 className="mb-3 text-lg font-semibold">What should this schedule do?</h2>
-          <div className="grid gap-2 md:grid-cols-2">
+        <fieldset className="card card-body">
+          <legend className="visually-hidden">What should this schedule do?</legend>
+          <h2 className="fs-5 fw-semibold mb-3">What should this schedule do?</h2>
+          <div className="row row-cols-1 row-cols-md-2 g-2">
             {purposes.map((p) => (
-              <label key={p.key} className={`flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ${purpose === p.key ? 'bg-brand-50 ring-brand-400' : 'ring-cream-300 hover:bg-cream-50'}`}>
-                <input type="radio" name="purpose" className="mt-1" checked={purpose === p.key} onChange={() => setPurpose(p.key)} />
-                <span>
-                  <span className="block font-semibold text-brand-900">{p.title}</span>
-                  <span className="text-sm text-slate-600">{p.hint}</span>
-                </span>
-              </label>
+              <div key={p.key}>
+                <label className={`d-flex gap-3 h-100 rounded-3 border p-3 ${purpose === p.key ? 'bg-primary-subtle border-primary' : 'bg-white'}`}>
+                  <input type="radio" name="purpose" className="form-check-input flex-shrink-0 mt-1" checked={purpose === p.key} onChange={() => setPurpose(p.key)} />
+                  <span>
+                    <span className="d-block fw-semibold text-primary-emphasis">{p.title}</span>
+                    <span className="small text-body-secondary">{p.hint}</span>
+                  </span>
+                </label>
+              </div>
             ))}
           </div>
         </fieldset>
-        <div className="card grid gap-4 md:grid-cols-3">
-          <Field label="Repeats">
-            {(f) => (
-              <select id={f} className="input" value={r.frequency} onChange={(e) => setR({ frequency: e.target.value as Schemas['Recurrence']['frequency'] })}>
-                <option value="once">Once</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option>
-              </select>
-            )}
-          </Field>
-          {r.frequency !== 'once' && <Field label="Every">{(f) => <input id={f} type="number" min={1} max={52} inputMode="numeric" className="input" value={r.interval} onChange={(e) => setR({ interval: Number(e.target.value) })} />}</Field>}
-          {r.frequency === 'weekly' && (
-            <Field label="On">{(f) => <select id={f} className="input" value={r.weekday} onChange={(e) => setR({ weekday: Number(e.target.value) })}>{weekdays.map((w, i) => <option key={w} value={i}>{w}</option>)}</select>}</Field>
-          )}
-          {['monthly', 'quarterly', 'yearly'].includes(r.frequency) && (
-            <>
-              <Field label="On">
-                {(f) => (
-                  <select id={f} className="input" value={dayMode(r.dayOfMonth)} onChange={(e) => {
-                    const m = e.target.value as DayMode
-                    setR({ dayOfMonth: m === 'first' ? 1 : m === 'last' ? 0 : dayMode(r.dayOfMonth) === 'day' ? r.dayOfMonth : 15 })
-                  }}>
-                    <option value="first">First day</option>
-                    <option value="last">Last day</option>
-                    <option value="day">Day of the month…</option>
-                  </select>
-                )}
-              </Field>
-              {dayMode(r.dayOfMonth) === 'day' && (
-                <Field label="Day" hint="A day past the month's end runs on its last day.">
-                  {(f) => <NumberInput id={f} min={2} max={31} className="input" value={r.dayOfMonth} onChange={(n) => setR({ dayOfMonth: n })} />}
-                </Field>
+        <div className="card card-body">
+          <div className="row row-cols-1 row-cols-md-3 g-3">
+            <Field label="Repeats">
+              {(f) => (
+                <select id={f} className="form-select" value={r.frequency} onChange={(e) => setR({ frequency: e.target.value as Schemas['Recurrence']['frequency'] })}>
+                  <option value="once">Once</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option>
+                </select>
               )}
-              <Field label="If it falls on a weekend" hint="A run moved to the Friday before is still for its own month.">
-                {(f) => (
-                  <select id={f} className="input" value={r.weekendRule ?? preview?.weekendRule ?? ''} onChange={(e) => setR({ weekendRule: e.target.value as Schemas['Recurrence']['weekendRule'] })}>
-                    {!(r.weekendRule ?? preview?.weekendRule) && <option value="" disabled>…</option>}
-                    <option value="previous-friday">Send on the Friday before</option>
-                    <option value="none">Send on that day</option>
-                  </select>
+            </Field>
+            {r.frequency !== 'once' && <Field label="Every">{(f) => <input id={f} type="number" min={1} max={52} inputMode="numeric" className="form-control" value={r.interval} onChange={(e) => setR({ interval: Number(e.target.value) })} />}</Field>}
+            {r.frequency === 'weekly' && (
+              <Field label="On">{(f) => <select id={f} className="form-select" value={r.weekday} onChange={(e) => setR({ weekday: Number(e.target.value) })}>{weekdays.map((w, i) => <option key={w} value={i}>{w}</option>)}</select>}</Field>
+            )}
+            {['monthly', 'quarterly', 'yearly'].includes(r.frequency) && (
+              <>
+                <Field label="On">
+                  {(f) => (
+                    <select id={f} className="form-select" value={dayMode(r.dayOfMonth)} onChange={(e) => {
+                      const m = e.target.value as DayMode
+                      setR({ dayOfMonth: m === 'first' ? 1 : m === 'last' ? 0 : dayMode(r.dayOfMonth) === 'day' ? r.dayOfMonth : 15 })
+                    }}>
+                      <option value="first">First day</option>
+                      <option value="last">Last day</option>
+                      <option value="day">Day of the month…</option>
+                    </select>
+                  )}
+                </Field>
+                {dayMode(r.dayOfMonth) === 'day' && (
+                  <Field label="Day" hint="A day past the month's end runs on its last day.">
+                    {(f) => <NumberInput id={f} min={2} max={31} className="form-control" value={r.dayOfMonth} onChange={(n) => setR({ dayOfMonth: n })} />}
+                  </Field>
                 )}
-              </Field>
-            </>
-          )}
-          <Field label="Time" hint={preview?.timeZone ? `${preview.timeZone} time` : undefined}>{(f) => <input id={f} type="time" className="input" value={r.sendTime} onChange={(e) => setR({ sendTime: e.target.value })} />}</Field>
-          <Field label="Time zone" hint={zoneHint}>{(f) => <TimeZoneSelect id={f} value={r.timeZone ?? preview?.timeZone ?? ''} onChange={(z) => setR({ timeZone: z })} />}</Field>
-          <Field label="Starts">{(f) => <input id={f} type="date" className="input" value={r.startDate} onChange={(e) => setR({ startDate: e.target.value })} />}</Field>
-          <Field label="Ends (optional)">{(f) => <input id={f} type="date" className="input" value={r.endDate ?? ''} onChange={(e) => setR({ endDate: e.target.value || undefined })} />}</Field>
-          <div className="text-sm text-slate-500 md:col-span-3">
-            <span className="font-semibold text-brand-900">Next runs: </span>
-            {preview?.runs.length ? preview.runs.slice(0, 4).map((t) => formatInZone(t, preview.timeZone)).join(' · ') : '—'}
+                <Field label="If it falls on a weekend" hint="A run moved to the Friday before is still for its own month.">
+                  {(f) => (
+                    <select id={f} className="form-select" value={r.weekendRule ?? preview?.weekendRule ?? ''} onChange={(e) => setR({ weekendRule: e.target.value as Schemas['Recurrence']['weekendRule'] })}>
+                      {!(r.weekendRule ?? preview?.weekendRule) && <option value="" disabled>…</option>}
+                      <option value="previous-friday">Send on the Friday before</option>
+                      <option value="none">Send on that day</option>
+                    </select>
+                  )}
+                </Field>
+              </>
+            )}
+            <Field label="Time" hint={preview?.timeZone ? `${preview.timeZone} time` : undefined}>{(f) => <input id={f} type="time" className="form-control" value={r.sendTime} onChange={(e) => setR({ sendTime: e.target.value })} />}</Field>
+            <Field label="Time zone" hint={zoneHint}>{(f) => <TimeZoneSelect id={f} value={r.timeZone ?? preview?.timeZone ?? ''} onChange={(z) => setR({ timeZone: z })} />}</Field>
+            <Field label="Starts">{(f) => <input id={f} type="date" className="form-control" value={r.startDate} onChange={(e) => setR({ startDate: e.target.value })} />}</Field>
+            <Field label="Ends (optional)">{(f) => <input id={f} type="date" className="form-control" value={r.endDate ?? ''} onChange={(e) => setR({ endDate: e.target.value || undefined })} />}</Field>
+            <div className="w-100 small text-body-secondary">
+              <span className="fw-semibold text-primary-emphasis">Next runs: </span>
+              {preview?.runs.length ? preview.runs.slice(0, 4).map((t) => formatInZone(t, preview.timeZone)).join(' · ') : '—'}
+            </div>
           </div>
         </div>
         {isInvoice && (
-          <h2 className="pt-1 text-lg font-semibold">Step 1 · Raise the invoice</h2>
+          <h2 className="fs-5 fw-semibold pt-1 mb-0">Step 1 · Raise the invoice</h2>
         )}
         {isInvoice && customer && <LineEditor lines={lines} onChange={setLines} currency={customer.currency} minorUnits={minor(customer.currency)} />}
         {isInvoice && (
-          <section className="card space-y-4">
-            <h2 className="text-lg font-semibold">Step 2 · E-mail it</h2>
-            <div className="grid gap-2 md:grid-cols-3" role="radiogroup" aria-label="E-mail the raised invoice">
+          <section className="card card-body vstack gap-3">
+            <h2 className="fs-5 fw-semibold mb-0">Step 2 · E-mail it</h2>
+            <div className="row row-cols-1 row-cols-md-3 g-2" role="radiogroup" aria-label="E-mail the raised invoice">
               {[
                 { key: 'none', label: "Don't e-mail", hint: 'Raise only; send it yourself later.' },
                 { key: 'now', label: 'Immediately', hint: 'E-mail as soon as it is raised.' },
@@ -466,37 +472,39 @@ export function ScheduleEditor() {
               ].map((o) => {
                 const mode = !s.autoSend ? 'none' : s.emailDelayDays > 0 ? 'later' : 'now'
                 return (
-                  <label key={o.key} className={`flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ${mode === o.key ? 'bg-brand-50 ring-brand-400' : 'ring-cream-300 hover:bg-cream-50'}`}>
-                    <input
-                      type="radio"
-                      name="emailmode"
-                      className="mt-1"
-                      checked={mode === o.key}
-                      onChange={() => set(o.key === 'none' ? { autoSend: false, emailDelayDays: 0 } : o.key === 'now' ? { autoSend: true, emailDelayDays: 0 } : { autoSend: true, emailDelayDays: Math.max(s.emailDelayDays, 2) })}
-                    />
-                    <span>
-                      <span className="block font-semibold text-brand-900">{o.label}</span>
-                      <span className="text-sm text-slate-600">{o.hint}</span>
-                    </span>
-                  </label>
+                  <div key={o.key}>
+                    <label className={`d-flex gap-3 h-100 rounded-3 border p-3 ${mode === o.key ? 'bg-primary-subtle border-primary' : 'bg-white'}`}>
+                      <input
+                        type="radio"
+                        name="emailmode"
+                        className="form-check-input flex-shrink-0 mt-1"
+                        checked={mode === o.key}
+                        onChange={() => set(o.key === 'none' ? { autoSend: false, emailDelayDays: 0 } : o.key === 'now' ? { autoSend: true, emailDelayDays: 0 } : { autoSend: true, emailDelayDays: Math.max(s.emailDelayDays, 2) })}
+                      />
+                      <span>
+                        <span className="d-block fw-semibold text-primary-emphasis">{o.label}</span>
+                        <span className="small text-body-secondary">{o.hint}</span>
+                      </span>
+                    </label>
+                  </div>
                 )
               })}
             </div>
             {s.autoSend && s.emailDelayDays > 0 && (
               <Field label="Days after raising">
-                {(f) => <NumberInput id={f} min={1} max={90} className="input md:w-40" value={s.emailDelayDays} onChange={(n) => set({ emailDelayDays: n })} />}
+                {(f) => <div style={{ maxWidth: '10rem' }}><NumberInput id={f} min={1} max={90} className="form-control" value={s.emailDelayDays} onChange={(n) => set({ emailDelayDays: n })} /></div>}
               </Field>
             )}
             {preview && preview.runs.length > 0 && (
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-brand-900">Timeline</h3>
-                <ol className="space-y-1 text-sm">
+                <h3 className="small fw-semibold text-primary-emphasis mb-2">Timeline</h3>
+                <ol className="list-unstyled vstack gap-1 small mb-0">
                   {preview.runs.slice(0, 3).map((t) => {
                     const mail = new Date(new Date(t).getTime() + s.emailDelayDays * 86400000).toISOString()
                     return (
-                      <li key={t} className="flex flex-wrap items-center gap-2">
-                        <span className="chip bg-brand-50 text-brand-800 ring-1 ring-brand-200">Raise</span> {formatInZone(t, preview.timeZone)}
-                        {s.autoSend && <><span aria-hidden="true">→</span><span className="chip bg-cream-200 text-brand-900">E-mail</span> {formatInZone(mail, preview.timeZone)}</>}
+                      <li key={t} className="d-flex flex-wrap align-items-center gap-2">
+                        <span className="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle">Raise</span> {formatInZone(t, preview.timeZone)}
+                        {s.autoSend && <><i className="bi bi-arrow-right" aria-hidden="true" /><span className="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">E-mail</span> {formatInZone(mail, preview.timeZone)}</>}
                       </li>
                     )
                   })}
@@ -505,24 +513,24 @@ export function ScheduleEditor() {
             )}
           </section>
         )}
-        <div className="card space-y-4">
+        <div className="card card-body vstack gap-3">
           {isInvoice && (
             <>
-              <Field label="VAT %" hint="Empty uses the business default VAT. 0 = no VAT.">{(f) => <input id={f} className="input" inputMode="decimal" placeholder="Business default" value={s.vatPercent ?? ''} onChange={(e) => set({ vatPercent: e.target.value === '' ? undefined : e.target.value })} />}</Field>
-              <Field label="Invoice notes" hint="Optional. The disclaimer is added automatically.">{(f) => <textarea id={f} className="input" value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}</Field>
+              <Field label="VAT %" hint="Empty uses the business default VAT. 0 = no VAT.">{(f) => <input id={f} className="form-control" inputMode="decimal" placeholder="Business default" value={s.vatPercent ?? ''} onChange={(e) => set({ vatPercent: e.target.value === '' ? undefined : e.target.value })} />}</Field>
+              <Field label="Invoice notes" hint="Optional. The disclaimer is added automatically.">{(f) => <textarea id={f} className="form-control" value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}</Field>
               {customer && <DisclaimerNote customer={customer} businessText={business.data?.defaultNotes} />}
             </>
           )}
           <Field label="E-mail subject" hint={`Empty uses the default.${template ? ` Placeholders: ${template.placeholders.join(' ')}` : ''}`}>
-            {(f) => <input id={f} className="input" value={s.emailSubject} onChange={(e) => { setEdited((x) => ({ ...x, subject: true })); set({ emailSubject: e.target.value }) }} />}
+            {(f) => <input id={f} className="form-control" value={s.emailSubject} onChange={(e) => { setEdited((x) => ({ ...x, subject: true })); set({ emailSubject: e.target.value }) }} />}
           </Field>
           <Field label="E-mail body">
-            {(f) => <textarea id={f} className="input min-h-[160px]" value={s.emailBody} onChange={(e) => { setEdited((x) => ({ ...x, body: true })); set({ emailBody: e.target.value }) }} />}
+            {(f) => <textarea id={f} className="form-control" style={{ minHeight: 160 }} value={s.emailBody} onChange={(e) => { setEdited((x) => ({ ...x, body: true })); set({ emailBody: e.target.value }) }} />}
           </Field>
         </div>
         <StickyActions>
-          <button type="button" className="btn-secondary" onClick={() => nav(-1)}>Cancel</button>
-          <button className="btn-primary" disabled={busy || !s.customerId}>{busy ? 'Saving…' : 'Save schedule'}</button>
+          <button type="button" className="btn btn-outline-primary" onClick={() => nav(-1)}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy || !s.customerId}>{busy ? 'Saving…' : 'Save schedule'}</button>
         </StickyActions>
       </form>
     </Page>

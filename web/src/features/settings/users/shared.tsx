@@ -28,7 +28,7 @@ export function friendly(e: unknown, what: 'user' | 'group' = 'user'): Error {
 export function YourPassword({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Field label="Your password" hint="To confirm it is you.">
-      {(f) => <input id={f} type="password" autoComplete="current-password" className="input" maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} required />}
+      {(f) => <input id={f} type="password" autoComplete="current-password" className="form-control" maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} required />}
     </Field>
   )
 }
@@ -40,14 +40,14 @@ export function UserForm({ submit, err, busy, label, danger, onClose, children }
     void submit()
   }
   return (
-    <form onSubmit={onSubmit} className="space-y-3">
+    <form onSubmit={onSubmit} className="vstack gap-3">
       <ErrorBanner error={err} />
       {children}
-      <div className="flex justify-end gap-2">
-        <button type="button" className="btn-secondary" onClick={onClose}>
+      <div className="d-flex justify-content-end gap-2">
+        <button type="button" className="btn btn-outline-primary" onClick={onClose}>
           Cancel
         </button>
-        <button className={danger ? 'btn-danger' : 'btn-primary'} disabled={busy}>
+        <button className={danger ? 'btn btn-danger' : 'btn btn-primary'} disabled={busy}>
           {busy ? 'Saving…' : label}
         </button>
       </div>

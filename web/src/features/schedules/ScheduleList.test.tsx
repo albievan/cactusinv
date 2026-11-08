@@ -78,7 +78,7 @@ test('the table shows type, repeats, last and next run in the schedule zone, and
   expect(r4.getByRole('button', { name: 'Pause Monthly statement' })).toBeDisabled()
   expect(r1.getByRole('link', { name: 'Edit Acme monthly' })).toHaveAttribute('href', '/schedules/s1/edit')
   expect(r1.getByRole('button', { name: 'Pause Acme monthly' })).toHaveAttribute('title', 'Pause')
-  expect(screen.getByRole('link', { name: '+ New' })).toHaveAttribute('href', '/schedules/new')
+  expect(screen.getByRole('link', { name: 'New' })).toHaveAttribute('href', '/schedules/new')
 })
 
 test('pause and resume toggle the schedule and refresh the list', async () => {
@@ -156,9 +156,9 @@ test('phones get compact cards with the same fields and 44 px actions', async ()
   expect(card.getByText('Fri 9 Oct 2026, 09:00 UTC')).toBeInTheDocument()
   expect(card.getByText('Fri 16 Oct 2026, 09:00 UTC')).toBeInTheDocument()
   for (const name of ['Pause Acme monthly', 'Run Acme monthly now', 'Delete Acme monthly']) {
-    expect(card.getByRole('button', { name })).toHaveClass('h-11', 'w-11')
+    expect(card.getByRole('button', { name })).toHaveClass('btn', 'btn-icon')
   }
-  expect(card.getByRole('link', { name: 'Edit Acme monthly' })).toHaveClass('h-11', 'w-11')
-  expect(screen.getByRole('list', { name: 'Schedules' })).toHaveClass('md:hidden')
-  expect(screen.getByRole('table').parentElement).toHaveClass('hidden', 'md:block')
+  expect(card.getByRole('link', { name: 'Edit Acme monthly' })).toHaveClass('btn', 'btn-icon')
+  expect(screen.getByRole('list', { name: 'Schedules' })).toHaveClass('d-md-none')
+  expect(screen.getByRole('table').parentElement).toHaveClass('d-none', 'd-md-block')
 })

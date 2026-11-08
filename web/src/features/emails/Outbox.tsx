@@ -32,37 +32,37 @@ export function Outbox() {
   }
   return (
     <Page title="Outbox">
-      <div className="mb-3 flex gap-2 overflow-x-auto" role="tablist">
+      <div className="nav nav-pills flex-nowrap gap-2 mb-3 overflow-x-auto" role="tablist">
         {statuses.map((s) => (
-          <button key={s} role="tab" aria-selected={status === s} onClick={() => { setStatus(s); setShown(PAGE) }} className={`chip min-h-[36px] px-3 capitalize ${status === s ? 'bg-brand-500 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300 hover:bg-cream-50'}`}>{s}</button>
+          <button key={s} role="tab" aria-selected={status === s} onClick={() => { setStatus(s); setShown(PAGE) }} className={`nav-link border text-capitalize text-nowrap ${status === s ? 'active' : 'bg-white'}`}>{s}</button>
         ))}
       </div>
       <ErrorBanner error={actionError ?? error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>Nothing {status}.</Empty> : (
-        <ul className="space-y-2">
+        <ul className="list-unstyled vstack gap-2 mb-0">
           {data?.items.map((m) => (
-            <li key={m.id} className="card text-sm">
-              <div className="flex items-center justify-between gap-2">
+            <li key={m.id} className="card card-body small">
+              <div className="d-flex align-items-center justify-content-between gap-2">
                 {m.kind === 'statement' ? (
-                  <MaybeLink need="customers.view" to={`/customers/${m.customerId}`} className="truncate font-semibold text-brand-700">{m.subject} <span className="chip ml-1 bg-cream-200 text-brand-800">statement</span></MaybeLink>
+                  <MaybeLink need="customers.view" to={`/customers/${m.customerId}`} className="text-truncate min-w-0 fw-semibold">{m.subject} <span className="badge rounded-pill ms-1 bg-body-secondary text-primary-emphasis border">statement</span></MaybeLink>
                 ) : (
-                  <MaybeLink need="invoices.view" to={`/invoices/${m.invoiceId}`} className="truncate font-semibold text-brand-700">{m.subject}</MaybeLink>
+                  <MaybeLink need="invoices.view" to={`/invoices/${m.invoiceId}`} className="text-truncate min-w-0 fw-semibold">{m.subject}</MaybeLink>
                 )}
                 <Badge status={m.status} />
               </div>
-              <div className="truncate text-slate-500">To {m.to.join(', ')}{m.cc.length ? ` · CC ${m.cc.join(', ')}` : ''}</div>
-              <div className="text-slate-500">{m.status === 'sent' ? `Sent ${formatDateTime(m.sentAt)}` : `Due ${formatDateTime(m.nextAttemptAt)}`}{m.attempts ? ` · ${m.attempts} attempt(s)` : ''}</div>
-              {m.lastError && <div className="text-red-600">{m.lastError}</div>}
-              <div className="mt-2 flex gap-2">
-                {can('emails.cancel') && (m.status === 'pending' || m.status === 'failed') && <button className="btn-secondary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
-                {can('emails.retry') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
+              <div className="text-truncate text-body-secondary">To {m.to.join(', ')}{m.cc.length ? ` · CC ${m.cc.join(', ')}` : ''}</div>
+              <div className="text-body-secondary">{m.status === 'sent' ? `Sent ${formatDateTime(m.sentAt)}` : `Due ${formatDateTime(m.nextAttemptAt)}`}{m.attempts ? ` · ${m.attempts} attempt(s)` : ''}</div>
+              {m.lastError && <div className="text-danger">{m.lastError}</div>}
+              <div className="mt-2 d-flex gap-2">
+                {can('emails.cancel') && (m.status === 'pending' || m.status === 'failed') && <button className="btn btn-outline-primary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
+                {can('emails.retry') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
               </div>
             </li>
           ))}
         </ul>
       )}
       {data && data.items.length < data.total && (
-        <button className="btn-secondary mt-3 w-full" onClick={() => setShown(shown + PAGE)} disabled={loading}>
+        <button className="btn btn-outline-primary mt-3 w-100" onClick={() => setShown(shown + PAGE)} disabled={loading}>
           Show more ({data.total - data.items.length} older)
         </button>
       )}

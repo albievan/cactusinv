@@ -1,6 +1,6 @@
-import type { ComponentType, SVGProps } from 'react'
 import { useCan } from '../../components/auth'
 import { IconArchive, IconBank, IconBuilding, IconServer, IconSettings, IconShield, IconTransfer, IconUser } from '../../components/icons'
+import type { Icon } from '../../components/icons'
 
 /** A Settings sub-page: its route, its label in the sidebar and on More, and what it holds. */
 export type SettingsItem = {
@@ -8,7 +8,7 @@ export type SettingsItem = {
   path: string
   label: string
   hint: string
-  icon: ComponentType<SVGProps<SVGSVGElement>>
+  icon: Icon
   /** The permission that shows it, or any one of several (ADR-012); none = every signed-in user. */
   need?: string | string[]
 }

@@ -63,8 +63,9 @@ func TestSPANeverListsOrFakesAssets(t *testing.T) {
 	clock := &fakes.Clock{T: time.Date(2026, 8, 21, 6, 0, 0, 0, time.UTC)}
 	svc := app.New(app.Deps{Tx: store, Clock: clock, IDs: &fakes.IDs{}, Mailer: &fakes.Mailer{}, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}})
 	web := fstest.MapFS{
-		"index.html":    {Data: []byte("<!doctype html><title>cactusInv</title>")},
-		"assets/app.js": {Data: []byte("console.log(1)")},
+		"index.html":                     {Data: []byte("<!doctype html><title>cactusInv</title>")},
+		"assets/app.js":                  {Data: []byte("console.log(1)")},
+		"assets/bootstrap-icons-x.woff2": {Data: []byte("wOF2")},
 	}
 	h := httpapi.NewHandler(httpapi.Options{Service: svc, Clock: clock, Web: web})
 	get := func(path string) (int, string) {
@@ -83,6 +84,13 @@ func TestSPANeverListsOrFakesAssets(t *testing.T) {
 	}
 	if code, body := get("/assets/app.js"); code != 200 || body != "console.log(1)" {
 		t.Errorf("asset: %d %q", code, body)
+	}
+	// The icon font: Go's MIME table has no font types.
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/assets/bootstrap-icons-x.woff2", nil)
+	rec := newRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.code != 200 || rec.hdr.Get("Content-Type") != "font/woff2" {
+		t.Errorf("font: %d %q", rec.code, rec.hdr.Get("Content-Type"))
 	}
 }
 

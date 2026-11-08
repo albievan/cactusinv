@@ -7,7 +7,7 @@ import { useVersion } from '../../lib/version'
 import { useAsync } from '../../lib/useAsync'
 import { ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner } from '../../components/ui'
 import { useAuth, useCan } from '../../components/auth'
-import { IconInfo } from '../../components/icons'
+import { IconInfo, IconPlus } from '../../components/icons'
 import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
 import { settingsHref, useSettingsNav } from './settingsNav'
 
@@ -26,34 +26,34 @@ export function More() {
   ].filter((l) => can(l.need))
   return (
     <Page title="More">
-      <ul className="space-y-2">
+      <ul className="list-unstyled vstack gap-2 mb-0">
         {links.map((l) => (
           <li key={l.to}>
-            <Link to={l.to} className="card block">
-              <div className="font-semibold">{l.label}</div>
-              <div className="text-sm text-slate-500">{l.hint}</div>
+            <Link to={l.to} className="card card-body d-block text-body text-decoration-none">
+              <div className="fw-semibold">{l.label}</div>
+              <div className="small text-body-secondary">{l.hint}</div>
             </Link>
           </li>
         ))}
       </ul>
-      <h2 id="more-settings" className="mb-2 mt-6 px-1 text-sm font-semibold uppercase tracking-wide text-brand-800">Settings</h2>
-      <ul className="space-y-2" aria-labelledby="more-settings">
+      <h2 id="more-settings" className="mb-2 mt-4 px-1 small fw-semibold text-uppercase text-primary-emphasis">Settings</h2>
+      <ul className="list-unstyled vstack gap-2 mb-0" aria-labelledby="more-settings">
         {settingsNav.map((s) => (
           <li key={s.path}>
-            <Link to={settingsHref(s)} className="card flex items-center gap-3">
-              <s.icon className="shrink-0 text-brand-600" />
-              <span>
-                <span className="block font-semibold">{s.label}</span>
-                <span className="block text-sm text-slate-500">{s.hint}</span>
+            <Link to={settingsHref(s)} className="card card-body d-flex flex-row align-items-center gap-3 text-body text-decoration-none">
+              <s.icon className="flex-shrink-0 text-primary" />
+              <span className="min-w-0">
+                <span className="d-block fw-semibold">{s.label}</span>
+                <span className="d-block small text-body-secondary">{s.hint}</span>
               </span>
             </Link>
           </li>
         ))}
       </ul>
       <ChangePassword />
-      <div className="mt-6 text-center text-sm text-slate-500">
-        Signed in as {user?.email} · <button className="underline" onClick={logout}>Sign out</button>
-        <div className="mt-1 text-xs">{version}</div>
+      <div className="mt-4 text-center small text-body-secondary">
+        Signed in as {user?.email} · <button className="btn btn-link p-0 align-baseline small fw-normal text-body-secondary text-decoration-underline" style={{ minHeight: 0, display: 'inline' }} onClick={logout}>Sign out</button>
+        <div className="mt-1 fs-8">{version}</div>
       </div>
     </Page>
   )
@@ -79,14 +79,14 @@ export function ChangePassword() {
     }
   }
   return (
-    <form onSubmit={submit} className="card mt-4 space-y-3">
-      <h2 className="font-semibold">Change password</h2>
+    <form onSubmit={submit} className="card card-body mt-3 vstack gap-3">
+      <h2 className="fs-6 fw-semibold mb-0">Change password</h2>
       <ErrorBanner error={err} />
-      <Field label="Current password">{(f) => <input id={f} type="password" autoComplete="current-password" className="input" value={current} onChange={(e) => setCurrent(e.target.value)} required />}</Field>
-      <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} maxLength={200} className="input" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
-      <div className="flex items-center justify-end gap-3">
-        {msg && <span className="text-sm text-green-700">{msg}</span>}
-        <button className="btn-primary">Change password</button>
+      <Field label="Current password">{(f) => <input id={f} type="password" autoComplete="current-password" className="form-control" value={current} onChange={(e) => setCurrent(e.target.value)} required />}</Field>
+      <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} maxLength={200} className="form-control" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
+      <div className="d-flex align-items-center justify-content-end gap-3">
+        {msg && <span className="small text-success">{msg}</span>}
+        <button className="btn btn-primary">Change password</button>
       </div>
     </form>
   )
@@ -99,13 +99,14 @@ export function ChangePassword() {
 function SettingsSections() {
   const settingsNav = useSettingsNav()
   return (
-    <nav aria-label="Settings sections" className="-mx-3 mb-4 overflow-x-auto px-3 md:hidden">
-      <ul className="flex gap-2">
+    <nav aria-label="Settings sections" className="mb-3 overflow-x-auto d-md-none">
+      <ul className="nav nav-pills flex-nowrap gap-2 pb-1">
         {settingsNav.map((s) => (
-          <li key={s.path} className="shrink-0">
+          <li key={s.path} className="nav-item flex-shrink-0">
             <NavLink
               to={settingsHref(s)}
-              className={({ isActive }) => `inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold ${isActive ? 'bg-brand-600 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300'}`}
+              style={{ minHeight: 44 }}
+              className={({ isActive }) => `nav-link d-inline-flex align-items-center rounded-pill px-3 small fw-semibold text-nowrap${isActive ? ' active' : ' bg-white border text-primary-emphasis'}`}
             >
               {s.label}
             </NavLink>
@@ -141,8 +142,8 @@ export function AccountSettingsPage() {
   const { user } = useAuth()
   return (
     <SettingsPage>
-      <p className="text-sm text-slate-600">
-        Signed in as <strong className="break-all">{user?.email}</strong>.
+      <p className="small text-body-secondary">
+        Signed in as <strong className="text-break">{user?.email}</strong>.
       </p>
       <ChangePassword />
     </SettingsPage>
@@ -208,65 +209,67 @@ function EmailServer() {
     }
   }
   return (
-    <form onSubmit={save} className="card space-y-4">
+    <form onSubmit={save} className="card card-body vstack gap-3">
       <div>
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">E-mail server</h2>
-          <button type="button" className="btn-secondary min-h-[44px]" onClick={() => setGuide(true)} aria-haspopup="dialog">
+        <div className="d-flex align-items-center justify-content-between gap-3 mb-1">
+          <h2 className="fs-5 fw-semibold mb-0">E-mail server</h2>
+          <button type="button" className="btn btn-outline-primary" style={{ minHeight: 44 }} onClick={() => setGuide(true)} aria-haspopup="dialog">
             <IconInfo /> Setup guide
           </button>
         </div>
-        <p className="text-sm text-slate-500">The server cactusInv sends invoices and statements through. Until it is enabled, e-mails go to the deployment's default server (the test mailbox in a local install).</p>
+        <p className="small text-body-secondary mb-0">The server cactusInv sends invoices and statements through. Until it is enabled, e-mails go to the deployment's default server (the test mailbox in a local install).</p>
       </div>
       <ErrorBanner error={err} />
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Provider">
+      <div className="d-flex flex-wrap gap-2" role="radiogroup" aria-label="Provider">
         {Object.entries(presets).map(([name, p]) => (
-          <button key={name} type="button" role="radio" aria-checked={preset === name} className={preset === name ? 'btn-primary' : 'btn-secondary'} onClick={() => set({ host: p.host, port: p.port, tls: p.tls })}>
+          <button key={name} type="button" role="radio" aria-checked={preset === name} className={preset === name ? 'btn btn-primary' : 'btn btn-outline-primary'} onClick={() => set({ host: p.host, port: p.port, tls: p.tls })}>
             {name}
           </button>
         ))}
       </div>
-      <p className="rounded-xl bg-cream-50 p-3 text-sm text-slate-600 ring-1 ring-cream-200">{presets[preset]!.hint}</p>
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="SMTP host">{(f) => <input id={f} className="input" value={e.host} onChange={(x) => set({ host: x.target.value })} placeholder="smtp.gmail.com" />}</Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Port">{(f) => <input id={f} type="number" className="input" value={e.port} onChange={(x) => set({ port: Number(x.target.value) })} />}</Field>
-          <Field label="Security">
-            {(f) => (
-              <select id={f} className="input" value={e.tls} onChange={(x) => set({ tls: x.target.value as EmailSettings['tls'] })}>
-                <option value="starttls">STARTTLS</option><option value="tls">SSL/TLS</option><option value="none">None</option>
-              </select>
-            )}
-          </Field>
+      <p className="rounded-3 bg-body-tertiary border p-3 small text-body-secondary mb-0">{presets[preset]!.hint}</p>
+      <div className="row row-cols-1 row-cols-md-2 g-3">
+        <Field label="SMTP host">{(f) => <input id={f} className="form-control" value={e.host} onChange={(x) => set({ host: x.target.value })} placeholder="smtp.gmail.com" />}</Field>
+        <div>
+          <div className="row row-cols-2 g-3">
+            <Field label="Port">{(f) => <input id={f} type="number" className="form-control" value={e.port} onChange={(x) => set({ port: Number(x.target.value) })} />}</Field>
+            <Field label="Security">
+              {(f) => (
+                <select id={f} className="form-select" value={e.tls} onChange={(x) => set({ tls: x.target.value as EmailSettings['tls'] })}>
+                  <option value="starttls">STARTTLS</option><option value="tls">SSL/TLS</option><option value="none">None</option>
+                </select>
+              )}
+            </Field>
+          </div>
         </div>
-        <Field label="User name" hint="For Gmail: your full Gmail address.">{(f) => <input id={f} className="input" autoComplete="off" value={e.username} onChange={(x) => set({ username: x.target.value })} />}</Field>
+        <Field label="User name" hint="For Gmail: your full Gmail address.">{(f) => <input id={f} className="form-control" autoComplete="off" value={e.username} onChange={(x) => set({ username: x.target.value })} />}</Field>
         <Field label="Password" hint={e.passwordSet ? 'A password is saved (encrypted). Leave empty to keep it.' : 'Stored encrypted.'}>
-          {(f) => <input id={f} type="password" className="input" autoComplete="new-password" placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={(x) => setPassword(x.target.value)} />}
+          {(f) => <input id={f} type="password" className="form-control" autoComplete="new-password" placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={(x) => setPassword(x.target.value)} />}
         </Field>
         <div>
-          <Field label="Send as" hint='e.g. "Example Ltd <billing@example.com>". Defaults to the user name. The provider decides the sender it shows; see the setup guide.'>{(f) => <input id={f} className="input" value={e.from} onChange={(x) => set({ from: x.target.value })} />}</Field>
+          <Field label="Send as" hint='e.g. "Example Ltd <billing@example.com>". Defaults to the user name. The provider decides the sender it shows; see the setup guide.'>{(f) => <input id={f} className="form-control" value={e.from} onChange={(x) => set({ from: x.target.value })} />}</Field>
           {e.warnings.length > 0 && (
-            <div className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900 ring-1 ring-amber-200">
-              <p className="font-medium">For the saved settings:</p>
-              <ul aria-label="Send-as warnings" className="mt-1 list-disc space-y-1 pl-5">
+            <div className="alert alert-warning mt-2 mb-0 p-3 small">
+              <p className="fw-medium mb-0">For the saved settings:</p>
+              <ul aria-label="Send-as warnings" className="mt-1 mb-0 ps-4">
                 {e.warnings.map((w) => <li key={w}>{w}</li>)}
               </ul>
             </div>
           )}
         </div>
-        <label className="flex min-h-[44px] items-center gap-3 md:pt-6"><input type="checkbox" className="h-5 w-5" checked={e.enabled} onChange={(x) => set({ enabled: x.target.checked })} /> Use this server for all e-mail</label>
+        <div className="d-flex align-items-center pt-md-4"><div className="form-check mb-0"><input type="checkbox" id="email-enabled" className="form-check-input" checked={e.enabled} onChange={(x) => set({ enabled: x.target.checked })} /><label className="form-check-label" htmlFor="email-enabled">Use this server for all e-mail</label></div></div>
       </div>
-      <div className="flex flex-wrap items-end gap-3 border-t border-cream-200 pt-4">
-        <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="input md:w-72" value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
+      <div className="d-flex flex-wrap align-items-end gap-3 border-top pt-3">
+        <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="form-control" style={{ maxWidth: '18rem' }} value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
         {can('settings.email.test') && (
-          <button type="button" className="btn-secondary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
+          <button type="button" className="btn btn-outline-primary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
             Send test e-mail
           </button>
         )}
-        {can('settings.email.test') && dirty && <span className="text-xs text-slate-500">Save first — the test uses the saved settings.</span>}
-        <span className="flex-1" />
-        {msg && <span role="status" className={msgWarns ? 'text-sm font-medium text-amber-800' : 'text-sm text-green-700'}>{msg}</span>}
-        {can('settings.email') && <button className="btn-primary">Save e-mail server</button>}
+        {can('settings.email.test') && dirty && <span className="fs-8 text-body-secondary">Save first — the test uses the saved settings.</span>}
+        <span className="flex-grow-1" />
+        {msg && <span role="status" className={msgWarns ? 'small fw-medium text-warning-emphasis' : 'small text-success'}>{msg}</span>}
+        {can('settings.email') && <button className="btn btn-primary">Save e-mail server</button>}
       </div>
       <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />
     </form>
@@ -298,30 +301,30 @@ function BusinessForm() {
     }
   }
   return (
-    <form onSubmit={submit} className="card space-y-4">
-      <h2 className="text-lg font-semibold">Business</h2>
+    <form onSubmit={submit} className="card card-body vstack gap-3">
+      <h2 className="fs-5 fw-semibold mb-0">Business</h2>
       <ErrorBanner error={err ?? error} />
-      <div className="grid gap-4 md:grid-cols-2">
-        <Field label="Business name">{(f) => <input id={f} className="input" value={b.name} onChange={(e) => set({ name: e.target.value })} required />}</Field>
-        <Field label="Phone">{(f) => <input id={f} className="input" value={b.phone} onChange={(e) => set({ phone: e.target.value })} />}</Field>
-        <Field label="Reply-to e-mail">{(f) => <input id={f} type="email" className="input" value={b.email} onChange={(e) => set({ email: e.target.value })} />}</Field>
-        <Field label="VAT number" hint="Printed only when set.">{(f) => <input id={f} className="input" value={b.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
-        <Field label="Default VAT %" hint="Used for new invoices and schedules. 0 = no VAT: nothing about VAT appears on invoices.">{(f) => <input id={f} className="input" inputMode="decimal" value={b.vatPercent} onChange={(e) => set({ vatPercent: e.target.value })} />}</Field>
-        <Field label="Address">{(f) => <textarea id={f} className="input min-h-[96px]" value={b.addressLines} onChange={(e) => set({ addressLines: e.target.value })} />}</Field>
-        <div className="space-y-4">
+      <div className="row row-cols-1 row-cols-md-2 g-3">
+        <Field label="Business name">{(f) => <input id={f} className="form-control" value={b.name} onChange={(e) => set({ name: e.target.value })} required />}</Field>
+        <Field label="Phone">{(f) => <input id={f} className="form-control" value={b.phone} onChange={(e) => set({ phone: e.target.value })} />}</Field>
+        <Field label="Reply-to e-mail">{(f) => <input id={f} type="email" className="form-control" value={b.email} onChange={(e) => set({ email: e.target.value })} />}</Field>
+        <Field label="VAT number" hint="Printed only when set.">{(f) => <input id={f} className="form-control" value={b.taxNumber} onChange={(e) => set({ taxNumber: e.target.value })} />}</Field>
+        <Field label="Default VAT %" hint="Used for new invoices and schedules. 0 = no VAT: nothing about VAT appears on invoices.">{(f) => <input id={f} className="form-control" inputMode="decimal" value={b.vatPercent} onChange={(e) => set({ vatPercent: e.target.value })} />}</Field>
+        <Field label="Address">{(f) => <textarea id={f} className="form-control" style={{ minHeight: 96 }} value={b.addressLines} onChange={(e) => set({ addressLines: e.target.value })} />}</Field>
+        <div className="vstack gap-3">
           <Field label="Time zone" hint={b.timeZone === deviceZone() ? 'Dates, “today” and new schedules use this zone.' : `Dates, “today” and new schedules use this zone. This device is in ${deviceZone()}.`}>{(f) => <TimeZoneSelect id={f} value={b.timeZone} onChange={(z) => set({ timeZone: z })} />}</Field>
-          <Field label="Invoice number format" hint="{code} customer code, {seq} sequence, {dd} day, {mm} month, {yy} or {yyyy} year — e.g. {code}/{dd}{mm}-{seq}/{yy} → CD/2108-1195/26">{(f) => <input id={f} className="input" value={b.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} />}</Field>
-          <Field label="Next invoice sequence" hint="May only increase.">{(f) => <input id={f} type="number" inputMode="numeric" className="input" value={b.nextSequence} onChange={(e) => set({ nextSequence: Number(e.target.value) })} />}</Field>
+          <Field label="Invoice number format" hint="{code} customer code, {seq} sequence, {dd} day, {mm} month, {yy} or {yyyy} year — e.g. {code}/{dd}{mm}-{seq}/{yy} → CD/2108-1195/26">{(f) => <input id={f} className="form-control" value={b.numberFormat} onChange={(e) => set({ numberFormat: e.target.value })} />}</Field>
+          <Field label="Next invoice sequence" hint="May only increase.">{(f) => <input id={f} type="number" inputMode="numeric" className="form-control" value={b.nextSequence} onChange={(e) => set({ nextSequence: Number(e.target.value) })} />}</Field>
         </div>
-        <Field label="Default e-mail subject">{(f) => <input id={f} className="input" value={b.emailSubject} onChange={(e) => set({ emailSubject: e.target.value })} />}</Field>
-        <Field label="Disclaimer" hint="Printed at the foot of every invoice and statement PDF — read fresh each time a PDF is made. A customer's own disclaimer replaces it.">{(f) => <textarea id={f} className="input min-h-[96px]" value={b.defaultNotes} onChange={(e) => set({ defaultNotes: e.target.value })} />}</Field>
-        <div className="md:col-span-2">
-          <Field label="Default e-mail body">{(f) => <textarea id={f} className="input min-h-[120px]" value={b.emailBody} onChange={(e) => set({ emailBody: e.target.value })} />}</Field>
+        <Field label="Default e-mail subject">{(f) => <input id={f} className="form-control" value={b.emailSubject} onChange={(e) => set({ emailSubject: e.target.value })} />}</Field>
+        <Field label="Disclaimer" hint="Printed at the foot of every invoice and statement PDF — read fresh each time a PDF is made. A customer's own disclaimer replaces it.">{(f) => <textarea id={f} className="form-control" style={{ minHeight: 96 }} value={b.defaultNotes} onChange={(e) => set({ defaultNotes: e.target.value })} />}</Field>
+        <div className="w-100">
+          <Field label="Default e-mail body">{(f) => <textarea id={f} className="form-control" style={{ minHeight: 120 }} value={b.emailBody} onChange={(e) => set({ emailBody: e.target.value })} />}</Field>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-3">
-        {msg && <span className="text-sm text-green-700">{msg}</span>}
-        {can('settings.business') && <button className="btn-primary">Save business</button>}
+      <div className="d-flex align-items-center justify-content-end gap-3">
+        {msg && <span className="small text-success">{msg}</span>}
+        {can('settings.business') && <button className="btn btn-primary">Save business</button>}
       </div>
     </form>
   )
@@ -364,27 +367,27 @@ function CurrenciesAndBanks() {
     } catch (x) { setErr(x as Error) }
   }
   return (
-    <section className="card space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Currencies & bank accounts</h2>
-        <Can need="settings.currencies.create"><button className="btn-secondary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}>+ Currency</button></Can>
+    <section className="card card-body vstack gap-3">
+      <div className="d-flex align-items-center justify-content-between gap-2">
+        <h2 className="fs-5 fw-semibold mb-0">Currencies & bank accounts</h2>
+        <Can need="settings.currencies.create"><button className="btn btn-outline-primary" onClick={() => setEditCur({ code: '', name: '', symbol: '', minorUnits: 2, active: true, isNew: true })}><IconPlus width={16} />Currency</button></Can>
       </div>
-      <p className="text-sm text-slate-500">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
+      <p className="small text-body-secondary mb-0">Each currency has its own bank accounts; the default account is printed on invoices in that currency.</p>
       <ErrorBanner error={err ?? currencies.error ?? banks.error} />
       {currencies.data?.map((c) => (
-        <div key={c.code} className="rounded-xl ring-1 ring-slate-200">
-          <div className="flex items-center justify-between gap-2 p-3">
-            <button className="text-left" onClick={() => setEditCur(c)}>
-              <span className="font-semibold">{c.code}</span> <span className="text-slate-500">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span>
+        <div key={c.code} className="border rounded-3 overflow-hidden">
+          <div className="d-flex align-items-center justify-content-between gap-2 p-3">
+            <button className="btn btn-link p-0 text-start text-body text-decoration-none fw-normal justify-content-start" onClick={() => setEditCur(c)}>
+              <span><span className="fw-semibold">{c.code}</span> <span className="text-body-secondary">{c.name} {c.symbol && `(${c.symbol})`}{!c.active && ' · inactive'}</span></span>
             </button>
-            <Can need="settings.banks.create"><button className="btn-secondary min-h-[36px] text-xs" onClick={() => setEditBank(blankBank(c.code))}>+ Bank</button></Can>
+            <Can need="settings.banks.create"><button className="btn btn-sm btn-outline-primary" onClick={() => setEditBank(blankBank(c.code))}><IconPlus width={14} />Bank</button></Can>
           </div>
-          {can('settings.banks.view') && <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          {can('settings.banks.view') && <ul className="list-group list-group-flush border-top">
             {banks.data?.filter((b) => b.currency === c.code).map((b) => (
-              <li key={b.id}>
-                <button className="flex w-full items-center justify-between p-3 text-left text-sm" onClick={() => setEditBank(b)}>
+              <li key={b.id} className="list-group-item list-group-item-action p-0">
+                <button className="btn w-100 justify-content-between p-3 text-start small fw-normal rounded-0 border-0" onClick={() => setEditBank(b)}>
                   <span>{b.label} · {b.bankName} · {b.accountNumber}{b.country && ` · ${b.country}`}{!b.active && ' · inactive'}</span>
-                  {b.isDefault && <span className="chip bg-green-100 text-green-800">default</span>}
+                  {b.isDefault && <span className="badge rounded-pill bg-success-subtle text-success-emphasis border border-success-subtle">default</span>}
                 </button>
               </li>
             ))}
@@ -404,13 +407,13 @@ function CurrenciesAndBanks() {
 function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean }; onSave: (c: Currency & { isNew?: boolean }) => void }) {
   const [c, setC] = useState(initial)
   return (
-    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); onSave(c) }}>
-      <Field label="ISO code">{(f) => <input id={f} className="input uppercase" maxLength={3} value={c.code} disabled={!c.isNew} onChange={(e) => setC({ ...c, code: e.target.value.toUpperCase() })} required />}</Field>
-      <Field label="Name">{(f) => <input id={f} className="input" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} required />}</Field>
-      <Field label="Symbol">{(f) => <input id={f} className="input" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
-      <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="input" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
-      <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /> Active</label>
-      <Can need={c.isNew ? 'settings.currencies.create' : 'settings.currencies.edit'}><button className="btn-primary w-full">Save</button></Can>
+    <form className="vstack gap-3" onSubmit={(e) => { e.preventDefault(); onSave(c) }}>
+      <Field label="ISO code">{(f) => <input id={f} className="form-control text-uppercase" maxLength={3} value={c.code} disabled={!c.isNew} onChange={(e) => setC({ ...c, code: e.target.value.toUpperCase() })} required />}</Field>
+      <Field label="Name">{(f) => <input id={f} className="form-control" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} required />}</Field>
+      <Field label="Symbol">{(f) => <input id={f} className="form-control" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
+      <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="form-control" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
+      <div className="form-check"><input type="checkbox" id="currency-active" className="form-check-input" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /><label className="form-check-label" htmlFor="currency-active">Active</label></div>
+      <Can need={c.isNew ? 'settings.currencies.create' : 'settings.currencies.edit'}><button className="btn btn-primary w-100">Save</button></Can>
     </form>
   )
 }
@@ -418,10 +421,10 @@ function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean 
 function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b: BankAccount) => void; onDelete: (b: BankAccount) => void }) {
   const [b, setB] = useState(initial)
   const text = (k: keyof BankAccount, label: string, required = false) => (
-    <Field label={label}>{(f) => <input id={f} className="input" value={String(b[k] ?? '')} onChange={(e) => setB({ ...b, [k]: e.target.value })} required={required} />}</Field>
+    <Field label={label}>{(f) => <input id={f} className="form-control" value={String(b[k] ?? '')} onChange={(e) => setB({ ...b, [k]: e.target.value })} required={required} />}</Field>
   )
   return (
-    <form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); onSave(b) }}>
+    <form className="vstack gap-3" onSubmit={(e) => { e.preventDefault(); onSave(b) }}>
       {text('label', 'Label (for you, e.g. "Main ZAR account")', true)}
       {text('bankName', 'Name of bank', true)}
       {text('branch', 'Branch name')}
@@ -432,11 +435,11 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       {text('swiftBic', 'SWIFT')}
       {text('iban', 'IBAN')}
       {text('country', 'Country')}
-      <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /> Default for {b.currency}</label>
-      <label className="flex min-h-[44px] items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /> Active</label>
-      <div className="flex gap-2">
+      <div className="form-check"><input type="checkbox" id="bank-default" className="form-check-input" checked={b.isDefault} onChange={(e) => setB({ ...b, isDefault: e.target.checked })} /><label className="form-check-label" htmlFor="bank-default">Default for {b.currency}</label></div>
+      <div className="form-check"><input type="checkbox" id="bank-active" className="form-check-input" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /><label className="form-check-label" htmlFor="bank-active">Active</label></div>
+      <div className="d-flex gap-2">
         <Can need="settings.banks.delete">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
-        <Can need={b.id ? 'settings.banks.edit' : 'settings.banks.create'}><button className="btn-primary flex-1">Save</button></Can>
+        <Can need={b.id ? 'settings.banks.edit' : 'settings.banks.create'}><button className="btn btn-primary flex-grow-1">Save</button></Can>
       </div>
     </form>
   )

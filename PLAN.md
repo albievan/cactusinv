@@ -597,6 +597,21 @@ migrations runs the new version's down migrations first.
 | 28.3 | `.env` as edited by the owner (folders `/data/cactusinv/…`, `CACTUSINV_COOKIE_SECURE=true`, sender) committed; the live installs are **not** redeployed (they use `./data`, `./secrets` and plain HTTP, so a redeploy with this `.env` would not find their data or let anyone sign in) | done | owner's choice, 2026-11-08 |
 | 28.4 | Rebuild `bin/cactusinv` and image `cactusinv:latest` from the commit | done | 2026-11-08: `make build` and `make image` after the commit: `bin/cactusinv version` and `docker run --rm cactusinv:latest version` → `1.13.0 (build 34)`; the running containers were not restarted (28.3) |
 | 28.5 | README: keeping the k3s volumes in a chosen folder (e.g. `/data/k3s/local.volumes/cactusinv`): `K8S_STORAGE_CLASS=local-storage` (no-provisioner) plus three `local` PersistentVolumes pinned to their claims with `claimRef`, folder owners 999 (MariaDB) / 65532 (app); moving the live install needs a downloaded passphrase backup, because `--delete-uninstall` removes the namespace with the stored backups and key | done | README.md; on the node: `local-storage` exists (no-provisioner, Retain, WaitForFirstConsumer), the live claims are `local-path`, owners 999:999 and 0:65532 |
+| 28.6 | k3s at 10.101.18.101 failed: `.env` named `K8S_STORAGE_CLASS=local-storage`, a class that cluster lacks, so the claims stayed Pending ("unbound immediate PersistentVolumeClaims") for 5 minutes. `deploy.sh`: a missing class now stops the install at once and lists the cluster's classes; a claim's class cannot change, so a different one is refused; new `K8S_VOLUME_DIR` (k3s) creates the no-provisioner class, the folders (owners 999 / 65532, 700) and one claimRef-pinned volume per claim; `--delete-uninstall` removes them | done | on 10.101.18.101: class created, the three claims Bound to `cactusinv-*` volumes in `/data/k3s/local.volumes/cactusinv`, MariaDB running; shellcheck clean; path check tested (`/`, `/data/`, `..`, `/.`, relative, spaces refused) |
+| 28.7 | Found next: the pod from the first attempt, Pending until the volumes existed, started migrating and was stopped (SIGTERM, `Recreate` rollout) between two statements of migration 5. MariaDB cannot roll back DDL, so every later start failed with "Duplicate column name 'kind'". Migrations now run to the end once they hold the lock (`context.WithoutCancel`); the context only bounds the wait for the lock | done | `TestMigrateFinishesAfterCancel` (integration) fails without the fix ("context canceled") and passes with it |
+
+### M29 — Bootstrap 5.3 and Bootstrap Icons on every page (Albie, 2026-11-08) — v1.14.0
+
+> "go through all pages and make sure to use the latest bootstral. where there are compressed buttons make sure to use the latest bootstrap icons." — the owner chose the full switch from Tailwind.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 29.1 | Bootstrap 5.3.8 from its Sass (`src/styles/app.scss`: theme colours, radii, touch-sized controls, app shell, sheet, stage tracker, `btn-icon`, `fs-7`/`fs-8`), Bootstrap Icons 1.13.2 font; Tailwind, PostCSS and Autoprefixer removed; `index.html` pins `data-bs-theme="light"` | done | `web/package.json`, `vite.config.ts` |
+| 29.2 | Icons: every icon is a Bootstrap icon (`components/icons.tsx`, same component names) | done | |
+| 29.3 | Shared components (Page, Field, Sheet as a Bootstrap modal / bottom sheet, Badge with subtle colours, StickyActions, ConfirmButton, StageTracker), app shell (sidebar, top bar, bottom tabs), sign-in | done | |
+| 29.4 | Every page converted (23 files, by feature folder); compact buttons are icon-only Bootstrap icons with `aria-label` and `title`, 44 px on phones and 40/32 px from md up (`btn-icon`); "+ New"/"+ Add" buttons carry `bi-plus-lg`; the remove ✕, back ← and stage ✓ symbols are icons | done | `classes.test.ts` passes: no class in `web/src` is undefined (762 Tailwind classes before) |
+| 29.5 | Guards: `classes.test.ts` (every class used in `web/src` exists in the compiled stylesheet), `lightOnly.test.ts` for Bootstrap colour modes; the server sends `.woff2` as `font/woff2` | done | `TestSPANeverListsOrFakesAssets` |
+| 29.6 | Gate, screenshots at 390 px and desktop on a throwaway stack, docs (CLAUDE.md, README, ARCHITECTURE §8, ENGINEERING_PRINCIPLES), VERSION 1.14.0 | done | 2026-11-09: 19 pages × 2 widths in headless Chrome against a throwaway MariaDB + binary on :18080 with sample data: no page scrolls sideways, no console error beyond the expected 401 before sign-in and 404 for no restore; fixed on the way: the dashboard's Outstanding figure wrapped at xl (now one line, sized to the screen) |
 
 ## Decisions
 
@@ -610,7 +625,7 @@ migrations runs the new version's down migrations first.
 | 2026-10-15 | Secrets from files by default, Vault optional (ADR-006) | standalone Docker/k8s deployment needs no external secret store |
 | 2026-10-15 | Global invoice sequence + per-customer code (`CD/1195/26`) | mirrors the example; sequence start configurable to continue from 1195 |
 | 2026-10-15 | No OTel tracing, no NATS | single process — nothing to trace across; recorded under Later |
-| 2026-10-15 | React 18, Vite 5, Tailwind 3 | mature, small bundle (71 KB gz), runs on Node 20 |
+| 2026-10-15 | React 18, Vite 5, Tailwind 3 (replaced by Bootstrap 5.3 in M29) | mature, small bundle (71 KB gz), runs on Node 20 |
 | 2026-10-15 | Default `admin`/`admin` user, created only when no user exists | requested; logged as a warning; README says to change it |
 | 2026-10-15 | Repository/module `github.com/albievan/cactusinv` | the name requested (Albie, 2026-10-15) |
 | 2026-10-15 | VAT: one business default (0 %), per-invoice/per-schedule override, invisible at 0 % | requested (M8) |
@@ -728,6 +743,7 @@ migrations runs the new version's down migrations first.
 | 2026-10-17 | Folders are mapped, not moved by the app: System Settings store a host folder per container folder and `deploy.sh --install` mounts it (M23) | the container can only write where it is mounted; a mapping is a deploy-time change, so the app shows it as pending until then |
 | 2026-10-17 | Session timeouts: an idle timeout (default off) plus a maximum lifetime (default 7 days, as before); both apply at once to every session (M23) | no change for anyone until set; a lowered limit must also end sessions already open |
 | 2026-10-17 | Settings access per page and action; Import/Export and System Settings grantable (M24, supersedes "administrators only" for them) | asked for; an import still never exceeds its user's own permissions |
+| 2026-11-08 | Web UI on Bootstrap 5.3.8 (Sass, themed) + Bootstrap Icons 1.13.2, replacing Tailwind 3 (M29) | the owner asked for the latest Bootstrap on every page and Bootstrap Icons on compact buttons; compiled from Sass so the theme (cactus green, cream, radii, touch sizes) is set once; no Bootstrap JS (React owns the state); `classes.test.ts` keeps every class defined |
 
 ## Later
 

@@ -17,7 +17,7 @@ Details: `docs/ENGINEERING_PRINCIPLES.md` (why), `docs/ARCHITECTURE.md` (how),
 | Secrets | files in `/run/secrets` (Docker/K8s secrets); HashiCorp Vault KV v2 optional |
 | Deploy | `deploy.sh` → Docker Desktop, k3s or k8s; defaults in `.env` |
 | Licence | public domain (SQLite-style blessing) |
-| Frontend | React 18 + TS + Vite 5 + Tailwind 3 in `web/`, mobile-first (360 px up) |
+| Frontend | React 18 + TS + Vite 5 + Bootstrap 5.3 (Sass theme) + Bootstrap Icons in `web/`, mobile-first (360 px up) |
 
 ## 1. Operating mode
 1. Read `PLAN.md`, `docs/ARCHITECTURE.md` and the files you will touch first.

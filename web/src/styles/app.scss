@@ -1,0 +1,339 @@
+// cactusInv on Bootstrap 5.3: cactus green on a warm cream canvas, one light theme.
+// Bootstrap's colour modes only switch on data-bs-theme (the default $color-mode-type:
+// data), and index.html pins data-bs-theme="light", so a phone in dark mode stays light.
+
+// ---- Theme ----
+$brand-50: #eef4f0;
+$brand-100: #dbe8df;
+$brand-200: #b5cfbd;
+$brand-500: #3f6f50;
+$brand-600: #2f5d46;
+$brand-700: #244a38;
+$brand-800: #1b382b;
+$brand-900: #132a20;
+$brand-950: #0d1d16;
+$cream-50: #fbf9f4;
+$cream-100: #f6f3ec;
+$cream-200: #efe9dc;
+$cream-300: #e4dbc8;
+$gold: #d9c89f;
+
+$primary: $brand-600;
+$success: #198754;
+$body-bg: $cream-100;
+$body-color: #0f172a;
+$body-secondary-bg: $cream-200;
+$body-tertiary-bg: $cream-50;
+$border-color: $cream-300;
+$headings-color: $brand-900;
+$headings-font-weight: 700;
+$link-color: $brand-700;
+$link-decoration: none;
+$link-hover-decoration: underline;
+$font-family-sans-serif: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+$border-radius: 0.75rem;
+$border-radius-sm: 0.5rem;
+$border-radius-lg: 1rem;
+$border-radius-xl: 1.5rem;
+$btn-font-weight: 600;
+$input-btn-padding-y: 0.5rem;
+$input-btn-padding-x: 0.875rem;
+$form-label-font-weight: 600;
+$form-label-color: $brand-900;
+$input-focus-border-color: $brand-500;
+$input-focus-box-shadow: 0 0 0 0.2rem rgba($brand-200, 0.75);
+$btn-focus-box-shadow: 0 0 0 0.2rem rgba($brand-200, 0.75);
+$card-border-color: rgba($cream-300, 0.7);
+$card-box-shadow: 0 1px 2px rgba($brand-900, 0.06);
+$card-spacer-y: 1.25rem;
+$card-spacer-x: 1.25rem;
+$modal-content-border-radius: $border-radius-xl;
+$badge-font-weight: 600;
+$badge-border-radius: 50rem;
+$table-cell-padding-y: 0.625rem;
+$table-cell-padding-x: 0.75rem;
+$enable-smooth-scroll: false;
+
+@import 'bootstrap/scss/functions';
+@import 'bootstrap/scss/variables';
+@import 'bootstrap/scss/variables-dark';
+
+// Smaller type steps for captions and table headers (fs-7, fs-8), beside Bootstrap's fs-1…6.
+$font-sizes: map-merge($font-sizes, (7: 0.8125rem, 8: 0.75rem));
+
+@import 'bootstrap/scss/maps';
+@import 'bootstrap/scss/mixins';
+@import 'bootstrap/scss/utilities';
+@import 'bootstrap/scss/bootstrap';
+
+// ---- Base ----
+html {
+  -webkit-tap-highlight-color: transparent;
+  color-scheme: light;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+// Touch-sized controls (44 px) on every screen.
+.form-control,
+.form-select {
+  min-height: 44px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 40px;
+}
+.btn-sm {
+  min-height: 32px;
+}
+// A square button that holds only an icon (with an aria-label and a title): 44 px, a
+// comfortable touch target, on phones; compact from md up.
+.btn-icon {
+  width: 44px;
+  min-height: 44px;
+  padding-left: 0;
+  padding-right: 0;
+  @include media-breakpoint-up(md) {
+    width: 40px;
+    min-height: 40px;
+    &.btn-sm {
+      width: 32px;
+      min-height: 32px;
+    }
+  }
+}
+.bi {
+  line-height: 1;
+}
+
+.card {
+  box-shadow: $card-box-shadow;
+}
+
+// Table headers: small capitals on cream.
+.table > thead > tr > th {
+  background-color: $cream-200;
+  color: $brand-800;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+// ---- App shell ----
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 15rem;
+  flex-shrink: 0;
+  background: linear-gradient(to bottom, $brand-800, $brand-950);
+  color: $cream-100;
+  &.folded {
+    width: 4.5rem;
+  }
+  .app-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: $border-radius;
+    padding: 0.625rem 0.75rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: rgba($cream-100, 0.9);
+    text-decoration: none;
+    &:hover {
+      background-color: rgba($brand-700, 0.7);
+    }
+    &:focus-visible {
+      outline: 2px solid $cream-100;
+      outline-offset: -2px;
+    }
+    &.active {
+      background-color: $brand-500;
+      color: #fff;
+      font-weight: 600;
+      box-shadow: inset 0 0 0 2px rgba($cream-100, 0.9);
+    }
+    &.section {
+      background-color: rgba($brand-700, 0.8);
+      color: #fff;
+      font-weight: 600;
+    }
+    &.sub {
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+    }
+  }
+  .app-subnav {
+    margin-left: 1.25rem;
+    padding-left: 0.5rem;
+    border-left: 1px solid rgba($cream-300, 0.3);
+  }
+  .app-sidebar-btn {
+    border-color: rgba($cream-300, 0.3);
+    color: $cream-100;
+    &:hover {
+      background-color: $brand-700;
+      color: #fff;
+    }
+  }
+  .app-search {
+    border-color: rgba($cream-300, 0.3);
+    background-color: rgba($brand-900, 0.4);
+    color: $cream-50;
+    min-height: 38px;
+    &::placeholder {
+      color: rgba($cream-300, 0.7);
+    }
+    &:focus {
+      border-color: $cream-300;
+      box-shadow: none;
+    }
+  }
+}
+.app-topbar {
+  background: linear-gradient(to right, $brand-800, $brand-900);
+  color: $cream-100;
+}
+.text-cream {
+  color: $cream-100;
+}
+.text-cream-muted {
+  color: rgba($cream-300, 0.8);
+}
+.wordmark-tagline {
+  font-size: 0.625rem;
+  letter-spacing: 0.25em;
+}
+.text-gold {
+  color: $gold;
+}
+
+// Bottom tab bar on phones; content keeps clear of it (and of the sticky actions).
+.app-tabs {
+  display: grid;
+  padding-bottom: env(safe-area-inset-bottom);
+  .app-tab {
+    display: flex;
+    height: 4rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.125rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--bs-secondary-color);
+    text-decoration: none;
+    .bi {
+      font-size: 1.375rem;
+    }
+    &.active {
+      color: $primary;
+    }
+  }
+}
+.app-page {
+  padding: 1rem 0.75rem 7rem;
+  @include media-breakpoint-up(sm) {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  @include media-breakpoint-up(md) {
+    padding: 1.5rem 1.5rem 2.5rem;
+  }
+}
+
+// Form buttons within thumb reach on phones; in the flow from md up.
+.sticky-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(4rem + env(safe-area-inset-bottom));
+  z-index: 1030;
+  padding: 0.75rem;
+  border-top: 1px solid $cream-300;
+  background-color: rgba(#fff, 0.95);
+  backdrop-filter: blur(8px);
+  @include media-breakpoint-up(md) {
+    position: static;
+    margin-top: 1.5rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    backdrop-filter: none;
+  }
+}
+
+// Sheet: a Bootstrap modal that is a bottom sheet on phones and a centred dialog from md up.
+.modal.sheet {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: rgba(#000, 0.4);
+  .modal-dialog {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  .modal-content {
+    max-height: 90vh;
+    overflow-y: auto;
+    border: 0;
+    border-radius: $border-radius-xl $border-radius-xl 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  @include media-breakpoint-up(md) {
+    align-items: center;
+    .modal-dialog {
+      max-width: 32rem;
+    }
+    .modal-content {
+      border-radius: $border-radius-xl;
+    }
+  }
+}
+
+// Invoice stage tracker: Draft → Issued → Emailed → Paid.
+.stage-dot {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background-color: $cream-200;
+  color: var(--bs-secondary-color);
+  &.done {
+    background-color: $primary;
+    color: #fff;
+  }
+  &.done.overdue {
+    background-color: $warning;
+  }
+  &.done.void {
+    background-color: $danger;
+  }
+}
+.stage-line {
+  height: 2px;
+  flex: 1;
+  margin: 0 0.25rem 1.25rem;
+  background-color: $cream-300;
+  &.done {
+    background-color: $primary;
+  }
+}
+
+// Text that must not run past its box (long names, e-mail addresses).
+.min-w-0 {
+  min-width: 0;
+}

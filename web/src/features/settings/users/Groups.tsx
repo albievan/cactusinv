@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api, unwrap } from '../../../lib/api/client'
 import { Empty, Field, Sheet } from '../../../components/ui'
-import { IconEdit, IconTrash } from '../../../components/icons'
+import { IconEdit, IconPlus, IconTrash } from '../../../components/icons'
 import { ADMINISTRATORS, accessSummary, areas, useSubmit, UserForm, withImplied, YourPassword, type Group, type PermissionInfo, type User } from './shared'
 
 type GroupAction = { kind: 'new' } | { kind: 'edit' | 'delete'; group: Group }
@@ -19,16 +19,17 @@ export function GroupsAdmin({ groups, catalogue, users, meId, onChanged }: { gro
     onChanged(msg)
   }
   return (
-    <section className="space-y-4" aria-labelledby="groups-heading">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="groups-heading" className="text-xl font-bold text-brand-900">
+    <section className="vstack gap-3" aria-labelledby="groups-heading">
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <h2 id="groups-heading" className="fs-5 fw-bold mb-0">
           Groups
         </h2>
-        <button className="btn-primary" onClick={() => setAction({ kind: 'new' })}>
+        <button className="btn btn-primary" onClick={() => setAction({ kind: 'new' })}>
+          <IconPlus width={16} />
           New group
         </button>
       </div>
-      <p className="text-sm text-slate-600">
+      <p className="small text-body-secondary mb-0">
         A group gives its members access. A user may do what any of their groups allows; a user in no group can sign in but sees nothing. Administrators can do
         everything, including users, groups, backups and restore.
       </p>
@@ -36,52 +37,54 @@ export function GroupsAdmin({ groups, catalogue, users, meId, onChanged }: { gro
         <Empty>No groups.</Empty>
       ) : (
         <>
-          <ul className="space-y-2 md:hidden" aria-label="Groups">
+          <ul className="list-unstyled vstack gap-2 mb-0 d-md-none" aria-label="Groups">
             {groups.map((g) => (
-              <li key={g.id} className="card space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{g.name}</span>
-                  {g.builtin && <span className="chip bg-brand-600 text-white">Built in</span>}
+              <li key={g.id} className="card card-body vstack gap-2">
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                  <span className="fw-semibold">{g.name}</span>
+                  {g.builtin && <span className="badge rounded-pill bg-primary">Built in</span>}
                 </div>
-                {g.description && !g.builtin && <p className="text-sm text-slate-600">{g.description}</p>}
-                <p className="text-sm">{accessSummary(g, catalogue)}</p>
-                <p className="text-sm text-slate-500">Members: {members(g)}</p>
-                <GroupButtons group={g} onAction={setAction} />
+                {g.description && !g.builtin && <p className="small text-body-secondary mb-0">{g.description}</p>}
+                <p className="small mb-0">{accessSummary(g, catalogue)}</p>
+                <p className="small text-body-secondary text-break mb-0">Members: {members(g)}</p>
+                <GroupButtons large group={g} onAction={setAction} />
               </li>
             ))}
           </ul>
-          <div className="card hidden overflow-x-auto p-0 md:block">
-            <table className="w-full text-sm">
-              <caption className="sr-only">Groups</caption>
-              <thead className="bg-cream-100 text-left text-xs uppercase tracking-wide text-slate-600">
-                <tr>
-                  <th className="px-3 py-2">Group</th>
-                  <th className="px-3 py-2">Access</th>
-                  <th className="px-3 py-2">Members</th>
-                  <th className="px-3 py-2">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((g) => (
-                  <tr key={g.id} className="border-t border-cream-200 align-top">
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap items-center gap-2 font-medium">
-                        {g.name}
-                        {g.builtin && <span className="chip bg-brand-600 text-white">Built in</span>}
-                      </div>
-                      {g.description && !g.builtin && <div className="mt-0.5 text-xs text-slate-500">{g.description}</div>}
-                    </td>
-                    <td className="px-3 py-2">{accessSummary(g, catalogue)}</td>
-                    <td className="break-words px-3 py-2">{members(g)}</td>
-                    <td className="px-3 py-2">
-                      <GroupButtons group={g} onAction={setAction} />
-                    </td>
+          <div className="card overflow-hidden d-none d-md-block">
+            <div className="table-responsive">
+              <table className="table table-hover mb-0 small">
+                <caption className="visually-hidden">Groups</caption>
+                <thead>
+                  <tr>
+                    <th>Group</th>
+                    <th>Access</th>
+                    <th>Members</th>
+                    <th>
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {groups.map((g) => (
+                    <tr key={g.id} className="align-top">
+                      <td>
+                        <div className="d-flex flex-wrap align-items-center gap-2 fw-medium">
+                          {g.name}
+                          {g.builtin && <span className="badge rounded-pill bg-primary">Built in</span>}
+                        </div>
+                        {g.description && !g.builtin && <div className="mt-1 fs-8 text-body-secondary">{g.description}</div>}
+                      </td>
+                      <td>{accessSummary(g, catalogue)}</td>
+                      <td className="text-break">{members(g)}</td>
+                      <td>
+                        <GroupButtons group={g} onAction={setAction} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
@@ -101,15 +104,16 @@ export function GroupsAdmin({ groups, catalogue, users, meId, onChanged }: { gro
 }
 
 /** GroupButtons are the compressed edit and delete buttons of a group. */
-function GroupButtons({ group, onAction }: { group: Group; onAction: (a: GroupAction) => void }) {
+function GroupButtons({ group, onAction, large }: { group: Group; onAction: (a: GroupAction) => void; large?: boolean }) {
+  const size = large ? 'btn-lg' : 'btn-sm'
   return (
-    <div className="flex gap-2 md:justify-end">
-      <button className="btn-secondary h-11 w-11 px-0 md:h-9 md:w-9" title={group.builtin ? 'Change members' : 'Edit'} aria-label={`Edit ${group.name}`} onClick={() => onAction({ kind: 'edit', group })}>
-        <IconEdit width={16} height={16} />
+    <div className="d-flex gap-2 justify-content-md-end">
+      <button className={`btn ${size} btn-outline-primary btn-icon`} title={group.builtin ? 'Change members' : 'Edit'} aria-label={`Edit ${group.name}`} onClick={() => onAction({ kind: 'edit', group })}>
+        <IconEdit width={16} />
       </button>
       {!group.builtin && (
-        <button className="btn-secondary h-11 w-11 px-0 text-red-700 md:h-9 md:w-9" title="Delete" aria-label={`Delete ${group.name}`} onClick={() => onAction({ kind: 'delete', group })}>
-          <IconTrash width={16} height={16} />
+        <button className={`btn ${size} btn-outline-danger btn-icon`} title="Delete" aria-label={`Delete ${group.name}`} onClick={() => onAction({ kind: 'delete', group })}>
+          <IconTrash width={16} />
         </button>
       )}
     </div>
@@ -121,29 +125,31 @@ function PermissionPicker({ catalogue, value, onChange }: { catalogue: Permissio
   const implied = withImplied(value, catalogue)
   const toggle = (k: string, on: boolean) => onChange(on ? [...value, k] : value.filter((x) => x !== k))
   return (
-    <fieldset className="space-y-2">
-      <legend className="label">Access</legend>
-      <div className="divide-y divide-cream-200 rounded-xl ring-1 ring-cream-300">
+    <fieldset>
+      <legend className="form-label fs-6">Access</legend>
+      <div className="list-group">
         {areas(catalogue).map(({ area, items }) => (
-          <fieldset key={area} className="grid gap-1 px-3 py-2 sm:grid-cols-[9rem_1fr]">
-            <legend className="sr-only">{area}</legend>
-            <span aria-hidden="true" className="pt-2 text-sm font-semibold text-brand-900">
-              {area}
-            </span>
-            <div className="flex flex-col">
-              {items.map((p) => {
-                const granted = value.includes(p.key)
-                const included = !granted && implied.has(p.key)
-                return (
-                  <label key={p.key} className="flex min-h-[40px] items-center gap-2 text-sm">
-                    <input type="checkbox" checked={granted || included} disabled={included} onChange={(e) => toggle(p.key, e.target.checked)} />
-                    <span>
-                      {p.label}
-                      {included && <span className="ml-1 text-xs text-slate-500">(included)</span>}
-                    </span>
-                  </label>
-                )
-              })}
+          <fieldset key={area} className="list-group-item px-3 py-2">
+            <legend className="visually-hidden">{area}</legend>
+            <div className="row g-1">
+              <span aria-hidden="true" className="col-12 col-sm-3 pt-sm-2 small fw-semibold text-primary-emphasis">
+                {area}
+              </span>
+              <div className="col-12 col-sm-9 d-flex flex-column">
+                {items.map((p) => {
+                  const granted = value.includes(p.key)
+                  const included = !granted && implied.has(p.key)
+                  return (
+                    <label key={p.key} className="d-flex align-items-center gap-2 small" style={{ minHeight: 40 }}>
+                      <input type="checkbox" className="form-check-input mt-0 flex-shrink-0" checked={granted || included} disabled={included} onChange={(e) => toggle(p.key, e.target.checked)} />
+                      <span>
+                        {p.label}
+                        {included && <span className="ms-1 fs-8 text-body-secondary">(included)</span>}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           </fieldset>
         ))}
@@ -171,32 +177,33 @@ function GroupSheet({ group, catalogue, users, meId, onClose, onDone }: { group?
     <Sheet title={group ? (builtin ? 'Administrators: members' : `Edit ${group.name}`) : 'New group'} open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label={group ? 'Save' : 'Create group'} onClose={onClose}>
         {builtin ? (
-          <p className="text-sm text-slate-600">Administrators can do everything, including users, groups, backups and restore. Only its members can change, and you cannot remove yourself.</p>
+          <p className="small text-body-secondary mb-0">Administrators can do everything, including users, groups, backups and restore. Only its members can change, and you cannot remove yourself.</p>
         ) : (
           <>
-            <Field label="Name">{(f) => <input id={f} className="input" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} required />}</Field>
+            <Field label="Name">{(f) => <input id={f} className="form-control" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} required />}</Field>
             <Field label="Description" hint="Optional: who the group is for.">
-              {(f) => <input id={f} className="input" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />}
+              {(f) => <input id={f} className="form-control" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />}
             </Field>
             <PermissionPicker catalogue={catalogue} value={permissions} onChange={setPermissions} />
           </>
         )}
         <fieldset>
-          <legend className="label">Members</legend>
-          <div className="max-h-56 overflow-y-auto rounded-xl px-3 py-1 ring-1 ring-cream-300">
+          <legend className="form-label fs-6">Members</legend>
+          <div className="overflow-y-auto border rounded-3 bg-white px-3 py-1" style={{ maxHeight: '14rem' }}>
             {users.map((u) => {
               const self = builtin && u.id === meId
               return (
-                <label key={u.id} className="flex min-h-[40px] items-center gap-2 text-sm">
+                <label key={u.id} className="d-flex align-items-center gap-2 small" style={{ minHeight: 40 }}>
                   <input
                     type="checkbox"
+                    className="form-check-input mt-0 flex-shrink-0"
                     checked={memberIds.includes(u.id)}
                     disabled={self}
                     onChange={(e) => setMemberIds(e.target.checked ? [...memberIds, u.id] : memberIds.filter((x) => x !== u.id))}
                   />
-                  <span className="break-all">{u.email}</span>
-                  {!u.active && <span className="text-xs text-slate-500">(disabled)</span>}
-                  {self && <span className="text-xs text-slate-500">(you cannot remove yourself)</span>}
+                  <span className="text-break min-w-0">{u.email}</span>
+                  {!u.active && <span className="fs-8 text-body-secondary">(disabled)</span>}
+                  {self && <span className="fs-8 text-body-secondary">(you cannot remove yourself)</span>}
                 </label>
               )
             })}
@@ -217,7 +224,7 @@ function DeleteGroupSheet({ group, onClose, onDone }: { group: Group; onClose: (
   return (
     <Sheet title={`Delete ${group.name}?`} open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Delete group" danger onClose={onClose}>
-        <p className="text-sm text-slate-700">
+        <p className="small text-body mb-0">
           {group.memberIds.length
             ? `Its ${group.memberIds.length === 1 ? 'member loses' : `${group.memberIds.length} members lose`} the access it gave, at once. Their accounts and what they did stay.`
             : 'Nobody is in it.'}
@@ -232,27 +239,27 @@ function DeleteGroupSheet({ group, onClose, onDone }: { group: Group; onClose: (
 export function GroupChoice({ groups, value, onChange, locked }: { groups: Group[]; value: string[]; onChange: (v: string[]) => void; locked?: string }) {
   return (
     <fieldset>
-      <legend className="label">Groups</legend>
-      <div className="rounded-xl px-3 py-1 ring-1 ring-cream-300">
+      <legend className="form-label fs-6">Groups</legend>
+      <div className="border rounded-3 bg-white px-3 py-1">
         {groups.map((g) => (
-          <label key={g.id} className="flex min-h-[44px] items-start gap-2 py-2 text-sm">
+          <label key={g.id} className="d-flex align-items-start gap-2 py-2 small" style={{ minHeight: 44 }}>
             <input
               type="checkbox"
-              className="mt-0.5"
+              className="form-check-input mt-1 flex-shrink-0"
               checked={value.includes(g.id)}
               disabled={g.id === locked}
               onChange={(e) => onChange(e.target.checked ? [...value, g.id] : value.filter((x) => x !== g.id))}
             />
             <span>
-              <span className="font-medium">{g.name}</span>
-              {g.id === locked && <span className="ml-1 text-xs text-slate-500">(you cannot remove yourself)</span>}
-              {g.description && <span className="block text-xs text-slate-500">{g.description}</span>}
+              <span className="fw-medium">{g.name}</span>
+              {g.id === locked && <span className="ms-1 fs-8 text-body-secondary">(you cannot remove yourself)</span>}
+              {g.description && <span className="d-block fs-8 text-body-secondary">{g.description}</span>}
             </span>
           </label>
         ))}
       </div>
       {value.length === 0 && (
-        <p role="note" className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+        <p role="note" className="alert alert-warning small py-2 mt-2 mb-0">
           In no group they can sign in but see nothing, until you put them in one.
         </p>
       )}
@@ -272,7 +279,7 @@ export function UserGroupsSheet({ user, groups, meId, onClose, onDone }: { user:
   return (
     <Sheet title={`Access of ${user.email}`} open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Save access" onClose={onClose}>
-        <p className="text-sm text-slate-600">They may do what any of these groups allows. A change applies at once.</p>
+        <p className="small text-body-secondary mb-0">They may do what any of these groups allows. A change applies at once.</p>
         <GroupChoice groups={groups} value={groupIds} onChange={setGroupIds} locked={locked} />
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>

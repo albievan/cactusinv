@@ -5,7 +5,7 @@ import { formatDateTime } from '../../../lib/format'
 import { useAsync } from '../../../lib/useAsync'
 import { Empty, ErrorBanner, Field, Sheet, Spinner } from '../../../components/ui'
 import { useAuth } from '../../../components/auth'
-import { IconBan, IconHistory, IconPlay, IconUsers } from '../../../components/icons'
+import { IconBan, IconHistory, IconPlay, IconPlus, IconUsers } from '../../../components/icons'
 import { ChangePassword, SettingsPage } from '../Settings'
 import { GroupChoice, GroupsAdmin, UserGroupsSheet } from './Groups'
 import { MIN_PASSWORD, useSubmit, UserForm, YourPassword, type Group, type User } from './shared'
@@ -20,6 +20,7 @@ export function UsersSettingsPage() {
   const { user: me } = useAuth()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') === 'groups' ? 'groups' : 'users'
+  const onUsers = tab === 'users'
   const users = useAsync(() => unwrap(api.GET('/users')), [])
   const groups = useAsync(() => unwrap(api.GET('/groups')), [])
   const [msg, setMsg] = useState('')
@@ -28,24 +29,24 @@ export function UsersSettingsPage() {
     users.reload()
     groups.reload()
   }
-  const tabClass = (on: boolean) => `inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold ${on ? 'bg-brand-600 text-white' : 'bg-white text-brand-900 ring-1 ring-cream-300'}`
+  const tabClass = (on: boolean) => `nav-link rounded-pill d-inline-flex align-items-center px-3 small fw-semibold ${on ? 'active' : 'bg-white border'}`
   const show = (t: 'users' | 'groups') => {
     setMsg('')
     setParams(t === 'groups' ? { tab: 'groups' } : {}, { replace: true })
   }
   return (
     <SettingsPage>
-      <div role="tablist" aria-label="Users and groups" className="mb-4 flex gap-2">
-        <button role="tab" aria-selected={tab === 'users'} className={tabClass(tab === 'users')} onClick={() => show('users')}>
+      <div role="tablist" aria-label="Users and groups" className="nav nav-pills mb-3 gap-2">
+        <button role="tab" aria-selected={tab === 'users'} className={tabClass(onUsers)} style={{ minHeight: 44 }} onClick={() => show('users')}>
           Users
         </button>
-        <button role="tab" aria-selected={tab === 'groups'} className={tabClass(tab === 'groups')} onClick={() => show('groups')}>
+        <button role="tab" aria-selected={tab === 'groups'} className={tabClass(!onUsers)} style={{ minHeight: 44 }} onClick={() => show('groups')}>
           Groups
         </button>
       </div>
       <ErrorBanner error={users.error ?? groups.error} />
       {msg && (
-        <p role="status" className="mb-3 text-sm font-medium text-green-700">
+        <p role="status" className="mb-3 small fw-medium text-success">
           {msg}
         </p>
       )}
@@ -75,16 +76,17 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
   const active = items.filter((u) => u.active).length
   const me = { id: meId }
   return (
-    <section className="space-y-4" aria-labelledby="users-heading">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="users-heading" className="text-xl font-bold text-brand-900">
+    <section className="vstack gap-3" aria-labelledby="users-heading">
+      <div className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <h2 id="users-heading" className="fs-5 fw-bold mb-0">
           Users
         </h2>
-        <button className="btn-primary" onClick={() => open({ kind: 'add' })}>
+        <button className="btn btn-primary" onClick={() => open({ kind: 'add' })}>
+          <IconPlus width={16} />
           Add user
         </button>
       </div>
-      <p className="text-sm text-slate-600">
+      <p className="small text-body-secondary mb-0">
         What a user may do comes from their groups (see the Groups tab). Users are disabled, never deleted, so the audit log keeps naming them. Nobody can
         disable themselves or the last active user.
       </p>
@@ -92,57 +94,59 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
         <Empty>No users.</Empty>
       ) : (
         <>
-          <ul className="space-y-2 md:hidden" aria-label="Users">
+          <ul className="list-unstyled vstack gap-2 mb-0 d-md-none" aria-label="Users">
             {items.map((u) => (
-              <li key={u.id} className="card space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="min-w-0 break-all font-semibold">{u.email}</span>
+              <li key={u.id} className="card card-body vstack gap-2">
+                <div className="d-flex flex-wrap align-items-center gap-2">
+                  <span className="min-w-0 text-break fw-semibold">{u.email}</span>
                   <Badges user={u} you={u.id === me?.id} />
                 </div>
-                <div className="text-sm">
+                <div className="small">
                   <GroupChips user={u} groups={groups} />
                 </div>
-                <div className="text-sm text-slate-500">Last sign-in: {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</div>
+                <div className="small text-body-secondary">Last sign-in: {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</div>
                 <Actions user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
               </li>
             ))}
           </ul>
-          <div className="card hidden overflow-x-auto p-0 md:block">
-            <table className="w-full text-sm">
-              <caption className="sr-only">Users</caption>
-              <thead className="bg-cream-100 text-left text-xs uppercase tracking-wide text-slate-600">
-                <tr>
-                  <th className="px-3 py-2">Login</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Groups</th>
-                  <th className="px-3 py-2">Last sign-in</th>
-                  <th className="px-3 py-2">Added</th>
-                  <th className="px-3 py-2">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((u) => (
-                  <tr key={u.id} className="border-t border-cream-200 align-middle">
-                    <td className="min-w-[12rem] break-all px-3 py-2 font-medium">{u.email}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        <Badges user={u} you={u.id === me?.id} />
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <GroupChips user={u} groups={groups} />
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</td>
-                    <td className="whitespace-nowrap px-3 py-2">{formatDateTime(u.createdAt)}</td>
-                    <td className="px-3 py-2">
-                      <Actions compact user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
-                    </td>
+          <div className="card overflow-hidden d-none d-md-block">
+            <div className="table-responsive">
+              <table className="table table-hover align-middle mb-0 small">
+                <caption className="visually-hidden">Users</caption>
+                <thead>
+                  <tr>
+                    <th>Login</th>
+                    <th>Status</th>
+                    <th>Groups</th>
+                    <th>Last sign-in</th>
+                    <th>Added</th>
+                    <th>
+                      <span className="visually-hidden">Actions</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {items.map((u) => (
+                    <tr key={u.id}>
+                      <td className="text-break fw-medium" style={{ minWidth: '12rem' }}>{u.email}</td>
+                      <td>
+                        <div className="d-flex flex-wrap gap-1">
+                          <Badges user={u} you={u.id === me?.id} />
+                        </div>
+                      </td>
+                      <td>
+                        <GroupChips user={u} groups={groups} />
+                      </td>
+                      <td className="text-nowrap">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</td>
+                      <td className="text-nowrap">{formatDateTime(u.createdAt)}</td>
+                      <td>
+                        <Actions compact user={u} you={u.id === me?.id} lastActive={u.active && active <= 1} onAction={open} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}
@@ -167,16 +171,15 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
   )
 }
 
+const tone = (c: string) => `badge rounded-pill bg-${c}-subtle text-${c}-emphasis border border-${c}-subtle`
+const chip = { active: tone('success'), disabled: tone('secondary'), warning: tone('warning') }
+
 function Badges({ user, you }: { user: User; you: boolean }) {
   return (
     <>
-      {you && <span className="chip bg-brand-600 text-white">You</span>}
-      {user.active ? (
-        <span className="chip bg-green-100 text-green-800 ring-1 ring-green-200">Active</span>
-      ) : (
-        <span className="chip bg-slate-100 text-slate-700 ring-1 ring-slate-200">Disabled</span>
-      )}
-      {user.mustChangePassword && <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">Must change password</span>}
+      {you && <span className="badge rounded-pill bg-primary">You</span>}
+      {user.active ? <span className={chip.active}>Active</span> : <span className={chip.disabled}>Disabled</span>}
+      {user.mustChangePassword && <span className={chip.warning}>Must change password</span>}
     </>
   )
 }
@@ -184,11 +187,11 @@ function Badges({ user, you }: { user: User; you: boolean }) {
 /** GroupChips names the groups a user is in, or says they have no access. */
 function GroupChips({ user, groups }: { user: User; groups: Group[] }) {
   const names = user.groupIds.map((id) => groups.find((g) => g.id === id)?.name ?? id)
-  if (names.length === 0) return <span className="chip bg-amber-50 text-amber-800 ring-1 ring-amber-200">No access</span>
+  if (names.length === 0) return <span className={chip.warning}>No access</span>
   return (
-    <span className="flex flex-wrap gap-1">
+    <span className="d-flex flex-wrap gap-1">
       {names.map((n) => (
-        <span key={n} className="chip bg-cream-100 text-brand-900 ring-1 ring-cream-300">
+        <span key={n} className="badge rounded-pill bg-body-tertiary text-primary-emphasis border">
           {n}
         </span>
       ))}
@@ -201,7 +204,7 @@ function Actions({ user, you, lastActive, onAction, compact }: { user: User; you
   const btn = (label: string, aria: string, icon: ReactNode, onClick: () => void, opts: { danger?: boolean; disabled?: boolean; title?: string } = {}) =>
     compact ? (
       <button
-        className={`btn-secondary h-9 w-9 shrink-0 px-0 ${opts.danger ? 'text-red-700' : ''}`}
+        className={`btn btn-sm btn-icon flex-shrink-0 ${opts.danger ? 'btn-outline-danger' : 'btn-outline-primary'}`}
         title={opts.title ?? label.replace('…', '')}
         aria-label={aria}
         onClick={onClick}
@@ -210,16 +213,17 @@ function Actions({ user, you, lastActive, onAction, compact }: { user: User; you
         {icon}
       </button>
     ) : (
-      <button className={opts.danger ? 'btn-danger' : 'btn-secondary'} title={opts.title} aria-label={aria} onClick={onClick} disabled={opts.disabled}>
+      <button className={opts.danger ? 'btn btn-outline-danger' : 'btn btn-outline-primary'} title={opts.title} aria-label={aria} onClick={onClick} disabled={opts.disabled}>
+        {icon}
         {label}
       </button>
     )
   const access = btn('Access…', `Change the groups of ${user.email}`, <IconUsers width={16} height={16} />, () => onAction({ kind: 'access', user }))
   return (
-    <div className={`flex items-center gap-2 ${compact ? 'flex-nowrap justify-end' : 'flex-wrap'}`}>
+    <div className={`d-flex align-items-center gap-2 ${compact ? 'flex-nowrap justify-content-end' : 'flex-wrap'}`}>
       {access}
       {you ? (
-        !compact && <span className="text-xs text-slate-500">Change your own password below.</span>
+        !compact && <span className="fs-8 text-body-secondary">Change your own password below.</span>
       ) : (
         <>
           {btn('Reset password…', `Reset the password of ${user.email}`, <IconHistory width={16} height={16} />, () => onAction({ kind: 'reset', user }))}
@@ -249,15 +253,15 @@ function AddUserSheet({ groups, onClose, onDone }: { groups: Group[]; onClose: (
   return (
     <Sheet title="Add a user" open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Add user" onClose={onClose}>
-        <p className="text-sm text-slate-600">They sign in with their e-mail address and must choose their own password the first time. What they may do comes from their groups.</p>
+        <p className="small text-body-secondary mb-0">They sign in with their e-mail address and must choose their own password the first time. What they may do comes from their groups.</p>
         <Field label="E-mail address" hint="This is their login.">
-          {(f) => <input id={f} type="email" inputMode="email" autoComplete="off" autoCapitalize="none" className="input" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} required />}
+          {(f) => <input id={f} type="email" inputMode="email" autoComplete="off" autoCapitalize="none" className="form-control" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} required />}
         </Field>
         <Field label="First password" hint={`At least ${MIN_PASSWORD} characters. Give it to them safely; they must change it.`}>
-          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="input" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
+          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="form-control" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
         </Field>
-        <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the first password
+        <label className="d-flex align-items-center gap-2 small text-body-secondary" style={{ minHeight: 44 }}>
+          <input type="checkbox" className="form-check-input mt-0" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the first password
         </label>
         <GroupChoice groups={groups} value={groupIds} onChange={setGroupIds} />
         <YourPassword value={current} onChange={setCurrent} />
@@ -278,14 +282,14 @@ function ResetSheet({ user, onClose, onDone }: { user: User; onClose: () => void
   return (
     <Sheet title="Reset a password" open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Reset password" onClose={onClose}>
-        <p className="text-sm text-slate-600">
-          <strong className="break-all">{user.email}</strong> is signed out everywhere and must choose their own password the next time they sign in.
+        <p className="small text-body-secondary mb-0">
+          <strong className="text-break">{user.email}</strong> is signed out everywhere and must choose their own password the next time they sign in.
         </p>
         <Field label="Temporary password" hint={`At least ${MIN_PASSWORD} characters. Give it to them safely.`}>
-          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="input" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
+          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="form-control" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
         </Field>
-        <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the temporary password
+        <label className="d-flex align-items-center gap-2 small text-body-secondary" style={{ minHeight: 44 }}>
+          <input type="checkbox" className="form-check-input mt-0" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the temporary password
         </label>
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>
@@ -304,7 +308,7 @@ function ToggleSheet({ kind, user, onClose, onDone }: { kind: 'disable' | 'enabl
   return (
     <Sheet title={disabling ? `Disable ${user.email}?` : `Enable ${user.email}?`} open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label={disabling ? 'Disable' : 'Enable'} danger={disabling} onClose={onClose}>
-        <p className="text-sm text-slate-700">
+        <p className="small text-body mb-0">
           {disabling
             ? 'They are signed out at once and can no longer sign in. Nothing they did is removed, and you can enable them again later.'
             : 'They can sign in again with their existing password.'}

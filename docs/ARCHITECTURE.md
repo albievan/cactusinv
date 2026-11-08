@@ -52,7 +52,7 @@ cactusInv/
 │       └── worker/                # tickers: schedules, e-mail, invoice export, housekeeping
 ├── migrations/                    # goose SQL (embedded), 00001_init.sql …
 ├── api/openapi/cactusinv.yaml     # THE contract
-├── web/                           # React + TS + Vite + Tailwind (mobile-first); dist embedded
+├── web/                           # React + TS + Vite + Bootstrap 5.3 (mobile-first); dist embedded
 ├── deploy/mariadb/initdb/         # creates the restore staging database on a new install
 ├── deploy/k8s/cactusinv.yaml      # k3s/k8s manifests (rendered from .env)
 ├── deploy.sh  docker-compose.yml  .env   # one-script deployment; .env = defaults
@@ -279,16 +279,24 @@ Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (
 
 ## 8. Frontend
 
-React 18 + TypeScript + Vite 5 + Tailwind 3, `openapi-fetch` client generated from the
-contract. Feature folders under `web/src/features/{dashboard,invoices,customers,products,
+React 18 + TypeScript + Vite 5 + Bootstrap 5.3.8 (compiled from its Sass in
+`web/src/styles/app.scss`, themed cactus green on cream) + Bootstrap Icons 1.13.2 (the icon font,
+wrapped as components in `components/icons.tsx`), `openapi-fetch` client generated from the
+contract. No Bootstrap JavaScript: React owns the state of menus and dialogs (`Sheet` is a
+Bootstrap modal that is a bottom sheet on phones). App-only styles (sidebar, bottom tabs, sticky
+actions, stage tracker, `btn-icon` for icon-only buttons, `fs-7`/`fs-8`) live in `app.scss`;
+`classes.test.ts` compiles it and fails on any class in `web/src` the stylesheet does not define.
+Every compact button is icon-only with a Bootstrap icon, an `aria-label` and a `title`. Feature folders under `web/src/features/{dashboard,invoices,customers,products,
 schedules,settings,auth}`. Mobile layout: sticky top bar, bottom tab bar (Home, Invoices,
 Customers, Products, More), full-screen forms with a sticky action bar. ≥ `md`: side nav,
 tables. Settings has sub-pages — `/settings/business`, `/settings/email`,
 `/settings/currencies`, `/settings/users`, `/settings/backup` (`/settings` opens the first) — listed once in
 `features/settings/settingsNav.ts`: the side nav nests them under Settings while a settings
 route is open, the phone More page lists them, and each settings page links its siblings.
-The app is light-only: Tailwind `darkMode: 'class'` (the class is never set) and no `dark:`
-classes in `web/src` (`lightOnly.test.ts`). The production build is embedded in the binary and served with SPA fallback. While
+The app is light-only: `index.html` pins `data-bs-theme="light"`, Bootstrap's colour modes switch
+only on that attribute (never on the system setting), and `lightOnly.test.ts` refuses a dark mode
+or `prefers-color-scheme` anywhere in `web/src`. The server sends `.woff2` as `font/woff2`
+(Go's MIME table has no font types). The production build is embedded in the binary and served with SPA fallback. While
 `Me.mustChangePassword` is set, `AuthProvider` shows only the forced change-password screen.
 
 ## 9. Statements, e-mail schedules, SMTP and the disclaimer

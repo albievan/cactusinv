@@ -36,9 +36,6 @@ export function useNav() {
   return nav.filter((t) => !t.need || can(t.need))
 }
 
-const itemClass = 'flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-100'
-const activeClass = 'bg-brand-500 font-semibold text-white ring-2 ring-cream-100/90'
-const idleClass = 'text-cream-100/90 hover:bg-brand-700/70'
 
 /**
  * SettingsNavItem is the Settings entry of the sidebar. On a settings route it expands to
@@ -56,22 +53,20 @@ function SettingsNavItem({ folded }: { folded: boolean }) {
         title={folded ? 'Settings' : undefined}
         aria-label={folded ? 'Settings' : undefined}
         aria-current={open ? 'true' : undefined}
-        className={`${itemClass} ${folded ? 'justify-center' : ''} ${open ? 'bg-brand-700/80 font-semibold text-white' : idleClass}`}
+        className={`app-nav-link${folded ? ' justify-content-center' : ''}${open ? ' section' : ''}`}
       >
         <IconSettings />
         {!folded && 'Settings'}
       </NavLink>
       {open && (
-        <ul aria-label="Settings" className={`mt-1 space-y-1 ${folded ? '' : 'ml-5 border-l border-cream-300/30 pl-2'}`}>
+        <ul aria-label="Settings" className={`list-unstyled vstack gap-1 mt-1 mb-0${folded ? '' : ' app-subnav'}`}>
           {settingsNav.map((s) => (
             <li key={s.path}>
               <NavLink
                 to={settingsHref(s)}
                 title={folded ? s.label : undefined}
                 aria-label={folded ? s.label : undefined}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cream-100 ${folded ? 'justify-center' : ''} ${isActive ? activeClass : idleClass}`
-                }
+                className={({ isActive }) => `app-nav-link sub${folded ? ' justify-content-center' : ''}${isActive ? ' active' : ''}`}
               >
                 <s.icon width={folded ? 18 : 16} height={folded ? 18 : 16} />
                 {!folded && s.label}
@@ -108,15 +103,15 @@ function PausedBanner() {
     }
   }
   return (
-    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-      <span className="min-w-0 flex-1">
-        <strong>Automatic sending is paused after a restore.</strong> Check the <Link className="underline" to="/emails">Outbox</Link> and{' '}
-        <Link className="underline" to="/schedules">schedules</Link>, then resume.
+    <div role="status" className="alert alert-warning rounded-0 border-0 border-bottom border-warning-subtle d-flex flex-wrap align-items-center gap-3 mb-0 px-3 py-3 small">
+      <span className="min-w-0 flex-grow-1">
+        <strong>Automatic sending is paused after a restore.</strong> Check the <Link className="alert-link text-decoration-underline" to="/emails">Outbox</Link> and{' '}
+        <Link className="alert-link text-decoration-underline" to="/schedules">schedules</Link>, then resume.
         {!can('administer') && ' An administrator resumes it.'}
-        {error && <span className="ml-2 font-semibold text-red-700">{error}</span>}
+        {error && <span className="ms-2 fw-semibold text-danger">{error}</span>}
       </span>
       {can('administer') && (
-        <button className="btn-primary" onClick={resume} disabled={busy}>
+        <button className="btn btn-primary" onClick={resume} disabled={busy}>
           Resume automatic sending
         </button>
       )}
@@ -156,18 +151,18 @@ export function Layout() {
     navigate(`/invoices?q=${encodeURIComponent(q.trim())}`)
   }
   return (
-    <div className="min-h-screen md:flex">
-      <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-gradient-to-b from-brand-800 to-brand-950 text-cream-100 md:flex ${folded ? 'w-[4.5rem]' : 'w-60'}`}>
-        <div className={`px-3 pt-4 ${folded ? 'text-center' : ''}`}>
+    <div className="min-vh-100 d-md-flex">
+      <aside className={`app-sidebar d-none d-md-flex flex-column${folded ? ' folded' : ''}`}>
+        <div className={`px-3 pt-3${folded ? ' text-center' : ''}`}>
           {/* The version sits beside the mark, under the name, so the mark never runs into it. */}
-          <div className={`flex items-center gap-2.5 ${folded ? 'justify-center' : ''}`}>
-            <CactusMark className="h-8 w-8 shrink-0" color="#e9dfc9" />
+          <div className={`d-flex align-items-center gap-2${folded ? ' justify-content-center' : ''}`}>
+            <CactusMark className="flex-shrink-0" size={32} color="#e9dfc9" />
             {!folded && (
-              <div className="min-w-0 leading-tight">
-                <span className="block text-lg font-semibold">
-                  cactus<span className="text-[#d9c89f]">Inv</span>
+              <div className="min-w-0 lh-sm">
+                <span className="d-block fs-5 fw-semibold">
+                  cactus<span className="text-gold">Inv</span>
                 </span>
-                <span className="block truncate text-xs text-cream-300/80" data-testid="version">
+                <span className="d-block text-truncate fs-8 text-cream-muted" data-testid="version">
                   {version}
                 </span>
               </div>
@@ -175,14 +170,14 @@ export function Layout() {
           </div>
         </div>
         {!folded && can('invoices.view') && (
-          <form onSubmit={search} className="mt-4 flex gap-2 px-3" role="search">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoices" aria-label="Search invoices" className="min-w-0 flex-1 rounded-lg border border-cream-300/30 bg-brand-900/40 px-3 py-2 text-sm text-cream-50 placeholder:text-cream-300/70 focus:border-cream-300 focus:outline-none" />
-            <button className="rounded-lg border border-cream-300/30 px-2.5 text-cream-100 hover:bg-brand-700" aria-label="Search">
+          <form onSubmit={search} className="d-flex gap-2 mt-3 px-3" role="search">
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoices" aria-label="Search invoices" className="form-control form-control-sm app-search min-w-0" />
+            <button className="btn btn-sm btn-outline-light app-sidebar-btn btn-icon" aria-label="Search" title="Search">
               <IconSearch width={16} height={16} />
             </button>
           </form>
         )}
-        <nav className="mt-3 flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-1" aria-label="Main">
+        <nav className="d-flex flex-column flex-grow-1 gap-1 overflow-y-auto mt-2 px-3 py-1" aria-label="Main">
           {menu.map((t) =>
             t.to === '/settings' ? (
               <SettingsNavItem key={t.to} folded={folded} />
@@ -193,7 +188,7 @@ export function Layout() {
                 end={t.end}
                 title={folded ? t.label : undefined}
                 aria-label={folded ? t.label : undefined}
-                className={({ isActive }) => `${itemClass} ${folded ? 'justify-center' : ''} ${isActive ? activeClass : idleClass}`}
+                className={({ isActive }) => `app-nav-link${folded ? ' justify-content-center' : ''}${isActive ? ' active' : ''}`}
               >
                 <t.icon />
                 {!folded && t.label}
@@ -201,41 +196,37 @@ export function Layout() {
             ),
           )}
         </nav>
-        <div className="space-y-2 border-t border-cream-300/20 p-2 text-sm">
+        <div className="vstack gap-2 border-top border-light border-opacity-25 p-2 small">
           {!folded && (
-            <div className="flex items-center gap-2 px-2 py-1 text-cream-200">
+            <div className="d-flex align-items-center gap-2 px-2 py-1 text-cream text-break">
               <IconUser width={18} height={18} /> Signed in as {user?.email}
             </div>
           )}
-          <button onClick={logout} title="Sign out" className={`flex w-full items-center gap-3 rounded-lg border border-cream-300/30 px-3 py-2 font-semibold hover:bg-brand-700 ${folded ? 'justify-center' : ''}`}>
+          <button onClick={logout} title="Sign out" aria-label={folded ? 'Sign out' : undefined} className={`btn btn-sm app-sidebar-btn border w-100${folded ? '' : ' justify-content-start'}`}>
             <IconLogout width={18} height={18} /> {!folded && 'Sign out'}
           </button>
-          <button onClick={toggle} title={folded ? 'Unfold' : 'Fold'} className={`flex w-full items-center gap-3 rounded-lg border border-cream-300/30 px-3 py-2 font-semibold hover:bg-brand-700 ${folded ? 'justify-center' : ''}`}>
+          <button onClick={toggle} title={folded ? 'Unfold' : 'Fold'} aria-label={folded ? 'Unfold' : undefined} className={`btn btn-sm app-sidebar-btn border w-100${folded ? '' : ' justify-content-start'}`}>
             {folded ? <IconUnfold width={18} height={18} /> : <IconFold width={18} height={18} />} {!folded && 'Fold'}
           </button>
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex items-center gap-2 bg-gradient-to-r from-brand-800 to-brand-900 px-4 py-3 text-cream-100 md:hidden">
-          <CactusMark className="h-6 w-6" color="#e9dfc9" />
-          <span className="font-semibold">
-            cactus<span className="text-[#d9c89f]">Inv</span>
+      <div className="d-flex flex-column flex-grow-1 min-w-0">
+        <header className="app-topbar sticky-top d-flex d-md-none align-items-center gap-2 px-3 py-2">
+          <CactusMark size={24} color="#e9dfc9" />
+          <span className="fw-semibold">
+            cactus<span className="text-gold">Inv</span>
           </span>
         </header>
         <PausedBanner />
-        <main className="flex-1">
+        <main className="flex-grow-1">
           <Outlet />
         </main>
       </div>
 
-      <nav
-        aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-40 grid border-t border-cream-300 bg-white pb-[env(safe-area-inset-bottom)] md:hidden"
-        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
-      >
+      <nav aria-label="Main" className="app-tabs fixed-bottom d-md-none bg-white border-top" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
         {tabs.map((t) => (
-          <NavLink key={t.to} to={t.to} end={'end' in t} className={({ isActive }) => `flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${isActive ? 'text-brand-600' : 'text-slate-500'}`}>
+          <NavLink key={t.to} to={t.to} end={'end' in t} className={({ isActive }) => `app-tab${isActive ? ' active' : ''}`}>
             <t.icon width={22} height={22} />
             {t.label}
           </NavLink>

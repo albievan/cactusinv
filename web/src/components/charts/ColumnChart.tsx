@@ -44,45 +44,45 @@ export function ColumnChart({ categories, series, unit, height = 240, decimals =
 
   return (
     <div>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <ul className="flex flex-wrap gap-4 text-sm text-slate-700" aria-label="Legend">
+      <div className="mb-2 d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <ul className="list-unstyled d-flex flex-wrap gap-3 mb-0 small text-body" aria-label="Legend">
           {series.map((s) => (
-            <li key={s.key} className="flex items-center gap-2">
-              <span className="inline-block h-3 w-3 rounded-sm" style={{ background: s.color }} aria-hidden="true" />
+            <li key={s.key} className="d-flex align-items-center gap-2">
+              <span className="d-inline-block rounded-1" style={{ width: 12, height: 12, background: s.color }} aria-hidden="true" />
               {s.label}
             </li>
           ))}
         </ul>
-        <button type="button" className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => setTable((t) => !t)} aria-pressed={table}>
+        <button type="button" className="btn btn-link btn-sm p-0 fs-8 fw-semibold" onClick={() => setTable((t) => !t)} aria-pressed={table}>
           {table ? 'Show chart' : 'Show table'}
         </button>
       </div>
       {table ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="table-head">
+        <div className="table-responsive">
+          <table className="table table-sm align-middle mb-0 small">
+            <thead>
               <tr>
-                <th className="px-3 py-2">Month</th>
-                {series.map((s) => <th key={s.key} className="px-3 py-2 text-right">{s.label} ({unit})</th>)}
+                <th>Month</th>
+                {series.map((s) => <th key={s.key} className="text-end">{s.label} ({unit})</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-cream-200">
+            <tbody>
               {categories.map((c, i) => (
                 <tr key={c}>
-                  <td className="px-3 py-1.5">{c}</td>
-                  {series.map((s) => <td key={s.key} className="px-3 py-1.5 text-right tabular-nums">{fmt2(s.values[i] ?? 0)}</td>)}
+                  <td>{c}</td>
+                  {series.map((s) => <td key={s.key} className="text-end" style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt2(s.values[i] ?? 0)}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <div className="relative">
-          <svg viewBox={`0 0 ${W} ${height}`} className="h-auto w-full" role="img" aria-label={`${series.map((s) => s.label).join(' and ')} per month, ${unit}`}>
+        <div className="position-relative">
+          <svg viewBox={`0 0 ${W} ${height}`} className="d-block w-100 h-auto" role="img" aria-label={`${series.map((s) => s.label).join(' and ')} per month, ${unit}`}>
             {ticks.map((t) => (
               <g key={t}>
-                <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#e7e2d6" strokeWidth={1} />
-                <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="#6b7280">{fmt(t)}</text>
+                <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--bs-border-color)" strokeWidth={1} />
+                <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--bs-secondary-color)">{fmt(t)}</text>
               </g>
             ))}
             {categories.map((c, ci) => {
@@ -113,7 +113,7 @@ export function ColumnChart({ categories, series, unit, height = 240, decimals =
                       onMouseLeave={() => setHover(null)}
                     />
                   ))}
-                  <text x={padL + ci * band + band / 2} y={height - 8} textAnchor="middle" fontSize="11" fill="#6b7280">{c}</text>
+                  <text x={padL + ci * band + band / 2} y={height - 8} textAnchor="middle" fontSize="11" fill="var(--bs-secondary-color)">{c}</text>
                 </g>
               )
             })}
@@ -122,13 +122,13 @@ export function ColumnChart({ categories, series, unit, height = 240, decimals =
           {hover && (
             <div
               role="tooltip"
-              className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-lg bg-white px-3 py-2 text-xs shadow-lg ring-1 ring-cream-300"
+              className="pe-none position-absolute z-3 translate-middle-x rounded-2 bg-white px-3 py-2 fs-8 shadow border"
               style={{ left: `${((padL + hover.c * band + band / 2) / W) * 100}%`, top: 0 }}
             >
-              <div className="font-semibold text-brand-900">{categories[hover.c]}</div>
+              <div className="fw-semibold text-primary-emphasis">{categories[hover.c]}</div>
               {series.map((s) => (
-                <div key={s.key} className="flex items-center gap-2 tabular-nums text-slate-700">
-                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: s.color }} />
+                <div key={s.key} className="d-flex align-items-center gap-2 text-body" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <span className="d-inline-block rounded-1" style={{ width: 8, height: 8, background: s.color }} />
                   {s.label}: {unit} {fmt2(s.values[hover.c] ?? 0)}
                 </div>
               ))}

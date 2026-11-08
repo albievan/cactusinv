@@ -94,11 +94,15 @@ func migrationLock(ctx context.Context, db *sql.DB) (release func(), err error) 
 		}
 		return nil, err
 	}
+	afterMigrationLock()
 	return func() {
 		_, _ = conn.ExecContext(context.WithoutCancel(ctx), "SELECT RELEASE_LOCK('cactusinv_migrate')")
 		_ = conn.Close()
 	}, nil
 }
+
+// afterMigrationLock lets a test cancel the context once the lock is held.
+var afterMigrationLock = func() {}
 
 // SchemaNewerError: the database was migrated by a newer version of cactusInv. Goose would
 // start this version on it without complaint (it only applies what is missing), and its
@@ -128,6 +132,9 @@ func Migrate(ctx context.Context, db *sql.DB, down bool) error {
 		return fmt.Errorf("mariadb.Migrate: lock: %w", err)
 	}
 	defer release()
+	// Once started, the migrations run to the end: MariaDB cannot roll back DDL, so a
+	// shutdown between two statements would leave a migration half applied.
+	ctx = context.WithoutCancel(ctx)
 	provider, err := newProvider(db)
 	if err != nil {
 		return fmt.Errorf("mariadb.Migrate: %w", err)
@@ -156,6 +163,9 @@ func MigrateTo(ctx context.Context, db *sql.DB, version int64) error {
 		return fmt.Errorf("mariadb.MigrateTo: lock: %w", err)
 	}
 	defer release()
+	// Once started, the migrations run to the end: MariaDB cannot roll back DDL, so a
+	// shutdown between two statements would leave a migration half applied.
+	ctx = context.WithoutCancel(ctx)
 	provider, err := newProvider(db)
 	if err != nil {
 		return fmt.Errorf("mariadb.MigrateTo: %w", err)
@@ -178,6 +188,9 @@ func MigrateDownTo(ctx context.Context, db *sql.DB, version int64) error {
 		return fmt.Errorf("mariadb.MigrateDownTo: lock: %w", err)
 	}
 	defer release()
+	// Once started, the migrations run to the end: MariaDB cannot roll back DDL, so a
+	// shutdown between two statements would leave a migration half applied.
+	ctx = context.WithoutCancel(ctx)
 	provider, err := newProvider(db)
 	if err != nil {
 		return fmt.Errorf("mariadb.MigrateDownTo: %w", err)
