@@ -12,14 +12,19 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Invoices** — draft → issue (gap-free numbers like `CD/2108-1195/26`: customer code, issue
   day and month, sequence, year — the format is yours to set) → send → paid / void.
   Classic business-invoice PDF layout (header band, bill-to/ship-to, line table, bank details,
-  totals box), with DRAFT/VOID watermarks.
+  totals box), with a DRAFT, PAID or VOID mark on every page. Issuing a draft dated in the past
+  asks whether to keep its date or issue it dated today (the due date follows the date used).
+  Lists page through everything ("Show more"), however many invoices, customers or products.
 - **Automated e-mail** — send now, schedule a send for later, or let a **recurring schedule**
   (weekly, monthly, quarterly, yearly) issue invoices and, if you opt in, e-mail them.
   Outstanding invoices are never e-mailed automatically. Reliable
-  transactional outbox with retries; failed sends visible in the Outbox.
+  transactional outbox with retries; the Outbox shows what is queued, sending, sent and failed.
+  A message the mail server has accepted is never sent again, even if recording it fails.
 - **Multi-currency** — every customer is billed in one currency; every currency has its own
   bank accounts (one default, printed on its invoices); products carry an explicit price per
-  currency. No exchange-rate guessing.
+  currency. No exchange-rate guessing. A customer pinned to a bank account that is later
+  deactivated is invoiced with the currency's default account; a customer's currency cannot
+  change while they have unpaid invoices.
 - **VAT** — set a default VAT % for the business (0 by default) and override it per invoice or
   schedule. At 0 % nothing about VAT appears on the invoice.
 - **Product look-up** — every invoice line is picked from a searchable product grid (no free
@@ -197,9 +202,12 @@ Settings → Users & groups (on a phone: More → Users & groups; Administrators
 everyone who can sign in, with their groups, status and last sign-in. What a user may do
 comes from their **groups** (ADR-012):
 
-- **Groups tab** — create a group, tick what it may do (view and edit per area: Dashboard;
-  Invoices — view, edit, e-mail, mark paid/overdue/void; Customers; Statements — view, send;
-  Schedules; Products; Outbox; Audit log; Settings) and who is in it; change or delete it
+- **Groups tab** — create a group, tick what it may do (each action on its own, per area:
+  Dashboard; Invoices — view, create, edit, issue, e-mail, mark paid/overdue/void, delete;
+  Customers; Statements — view, send; Schedules — incl. pause and resume separately; Products;
+  Outbox — view, cancel, retry; Audit log — view, verify; and per Settings page: Business (view,
+  edit), E-mail server (view, edit, test), Currencies (view, add, edit), Bank accounts (view, add,
+  edit, delete), Import/Export (export and import separately) and System Settings (view, edit)) and who is in it; change or delete it
   later. Permissions a ticked one needs (e.g. seeing invoices, to e-mail them) are included
   and shown greyed. A change applies at once.
 - **Administrators** is built in: it can do everything, including users, groups, backups and
@@ -272,6 +280,8 @@ make help        # list targets
 make gen         # regenerate sqlc, OpenAPI server and web API types
 make check       # the full quality gate: format, lint, vet, unit tests + coverage,
                  # MariaDB integration tests, govulncheck, contract drift, web checks
+make build       # web checks + bundle, then bin/cactusinv with the web app embedded
+make image       # the container image cactusinv:latest (deploy.sh builds it too)
 pnpm -C web dev  # web app with hot reload, proxying /api to localhost:8080
 make remote-test-int                      # integration tests on a Docker host over ssh
 make remote-test-int REMOTE=user@host     # REMOTE is required; runs in /data/cactusinv/src there
@@ -287,7 +297,7 @@ Read [PLAN.md](PLAN.md), [docs/ENGINEERING_PRINCIPLES.md](docs/ENGINEERING_PRINC
 ### Layout
 
 ```
-cmd/cactusinv        composition root (serve, migrate, admin, healthcheck)
+cmd/cactusinv        composition root (serve, migrate, admin, system, backup, healthcheck, version)
 internal/domain      money, currencies, invoices, terms, numbering, schedules, outbox — pure Go
 internal/app         use cases
 internal/ports       interfaces (+ in-memory fakes)

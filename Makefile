@@ -3,6 +3,9 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -euo pipefail -c
 GO_PKGS := ./...
 COVER_MIN := 80
+# Release version (VERSION file) and build number (commit count), as deploy.sh stamps them.
+VERSION := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo dev)
+BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 
 .PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build image check \
         install uninstall status backup
@@ -88,10 +91,10 @@ web-check: web-install ## web lint, typecheck, tests, build
 	pnpm -C web check
 
 build: web-check ## build the binary with the web app embedded
-	CGO_ENABLED=0 go build -trimpath -o bin/cactusinv ./cmd/cactusinv
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.build=$(BUILD)" -o bin/cactusinv ./cmd/cactusinv
 
 image: ## build the container image
-	docker build -t cactusinv:latest .
+	docker build --build-arg VERSION=$(VERSION) --build-arg BUILD=$(BUILD) -t cactusinv:latest .
 
 check: fmt-check lint vet cover test-int vuln contracts web-check ## THE quality bar
 

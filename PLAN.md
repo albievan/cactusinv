@@ -553,6 +553,16 @@ Business → Time zone, then edit the "Weekly" schedule's time zone (both are no
 | 25.36 | Low (from the fixes) | A message reclaimed by another dispatcher got a second sent event; the import's and Business's sequence lock came after the audit head (deadlock with issuing); a server that could never send failed an import; the first unknown login took twice as long; `compose run` created the .env folders as root on Linux | `recordSent` says whether it was ours; the sequence is locked first; such a server is imported switched off; the dummy hash is made at start (`WarmUp`); the folders are made first | `TestImportSwitchesOffAServerThatCannotSend`, app tests |
 | 25.37 | — | Docs (ADR-003 amendment, ARCHITECTURE §18), VERSION 1.12.1, gate, integration, push, deploy | done | 2026-10-17: `make fmt-check lint vet cover vuln contracts web-check` exit 0 (domain 97.5 %, app 85.1 %, "No vulnerabilities found.", contracts in sync, web 90 tests, build OK); integration ok 38.2 s (`headSchema` 22); pushed `4af97fe` (with M23 and M24); Docker Desktop (192.168.1.191): backup `cactusinv-20261017T104655Z-s20-manual.age` first, then v1.12.1 build 29, schema 22, 4 customers, 10 invoices, 5 products, 2 schedules, groups migrated (`schedules.pause` → also `schedules.resume`), deploy target and host folders passed in, 0 error lines, LAN 200; k3s (192.168.1.72): v1.12.1 build 29, all pods 1/1 Running, target `k3s`, 0 error lines |
 
+### M26 — Documentation refresh and rebuild (Albie, 2026-11-08) — v1.12.1
+
+> "update documentation, rebuild all binaries then commit to github"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 26.1 | README: M25 behaviour (DRAFT/PAID/VOID on every page, issue-date choice, paging, Outbox sending tab, no double send, inactive bank account falls back, currency change refused with unpaid invoices); the Groups tab lists the split permissions (M24); `make build`/`make image`; CLI commands in Layout | done | README.md |
+| 26.2 | `make build` and `make image` stamp the version and build number as `deploy.sh` does (a local binary said `dev (build 0)`) | done | Makefile |
+| 26.3 | Rebuild: web bundle, `bin/cactusinv`, image `cactusinv:latest` | done | 2026-11-08: `make build` (web lint, typecheck, 90 tests, bundle; `bin/cactusinv version` → `1.12.1 (build 30)`); `make image` (`docker run --rm cactusinv:latest version` → `1.12.1 (build 30)`); rebuilt after the commit so both carry its build number |
+
 ## Decisions
 
 | Date | Decision | Why |
