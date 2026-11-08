@@ -345,6 +345,81 @@ another class: take a backup (`--backup-now`), copy it and the backup key off th
 On k3s, `local-path` stores the data in `/var/lib/rancher/k3s/storage/` on the node. Its volumes
 are deleted with their claims (`--delete-uninstall`), so keep the backups elsewhere as well.
 
+#### Keeping the volumes in a folder you choose (k3s)
+
+`local-path` puts each volume in a generated folder under its own path
+(`/var/lib/rancher/k3s/storage/pvc-<id>_cactusinv_<claim>`). To keep the data in a folder you
+choose, e.g. `/data/k3s/local.volumes/cactusinv`, set a **no-provisioner** class and create
+the three volumes yourself, each tied to its claim:
+
+```
+K8S_STORAGE_CLASS=local-storage
+```
+
+`local-storage` must exist (`kubectl get storageclass`). If it doesn't, create it once:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata: { name: local-storage }
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+```
+
+On the node, create the folders, owned by the users the pods run as (MariaDB 999, the app
+65532):
+
+```
+mkdir -p /data/k3s/local.volumes/cactusinv/{mariadb,invoices,backups}
+chown 999:999     /data/k3s/local.volumes/cactusinv/mariadb
+chown 65532:65532 /data/k3s/local.volumes/cactusinv/{invoices,backups}
+chmod 700 /data/k3s/local.volumes/cactusinv/{mariadb,invoices,backups}
+```
+
+Then apply this before `./deploy.sh --install --k3s`, with `<node>` from
+`kubectl get node`. Each volume's `capacity` must be at least the claim's `K8S_*_STORAGE`;
+for a local folder it is only a label, and the disk's free space is the real limit:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata: { name: cactusinv-mariadb-data }
+spec:
+  capacity: { storage: 10Gi }
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  claimRef: { namespace: cactusinv, name: mariadb-data }
+  local: { path: /data/k3s/local.volumes/cactusinv/mariadb }
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions: [{ key: kubernetes.io/hostname, operator: In, values: [<node>] }]
+---
+# the same twice more, with:
+#   name cactusinv-invoices, capacity 5Gi,  claimRef name invoices, path …/cactusinv/invoices
+#   name cactusinv-backups,  capacity 10Gi, claimRef name backups,  path …/cactusinv/backups
+```
+
+`claimRef` ties each volume to its claim. Without it, a claim can bind to any free volume of
+the class that is big enough, such as the database landing in the backups folder. With
+`Retain`, `--delete-uninstall` deletes the claims but not the volumes or the folders: delete
+those yourself (`kubectl delete pv cactusinv-mariadb-data …`, then the folders) before
+installing again.
+
+**Moving an existing install:** the live claims already use `local-path`, which cannot be
+changed in place. `--delete-uninstall` deletes the namespace, and with it the claims, their data,
+the stored backups and the backup key. So take the backup **off the cluster** first:
+1. Settings → Backup & restore → **Download a backup**, with a passphrase you keep. The file
+   is saved on your computer.
+2. `./deploy.sh --delete-uninstall --k3s --ssh-access root@<node>`.
+3. Create the folders and volumes as above, and set `K8S_STORAGE_CLASS=local-storage`.
+4. `./deploy.sh --install --k3s --ssh-access root@<node>`, sign in as `admin` / `admin`, then go to
+   Settings → Backup & restore → **Restore from file** with the downloaded file and its
+   passphrase.
+5. Copy the new install's backup key off the cluster (see [Deploying](#deploying--deploysh)).
+
 ### Set by `deploy.sh`, not in `.env`
 
 `deploy.sh` sets `CACTUSINV_VERSION`, `CACTUSINV_BUILD`, `CACTUSINV_DEPLOY_TARGET` and the
