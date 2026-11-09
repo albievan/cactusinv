@@ -37,6 +37,19 @@ test('sends the CSRF header on mutations', async () => {
   expect(seen).toContain('POST cactusinv')
 })
 
+test('sign-in over plain http says HTTPS is needed and why', async () => {
+  mockFetch({
+    'GET /api/v1/auth/me': json({ type: 'u', title: 'Sign in required', status: 401 }, 401),
+    'POST /api/v1/auth/login': json({ type: 'https-required', title: 'Sign-in needs HTTPS', status: 403, detail: 'Open this site with https://.' }, 403),
+    'GET /api/v1/version': json({ version: '1.1.0', build: '7' }),
+  })
+  render(<App />)
+  await userEvent.type(await screen.findByLabelText('User name'), 'admin')
+  await userEvent.type(screen.getByLabelText('Password'), 'admin')
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+  expect(await screen.findByText('Sign-in needs HTTPS: Open this site with https://.')).toBeInTheDocument()
+})
+
 test('the login screen shows the version and build', async () => {
   mockFetch({
     'GET /api/v1/auth/me': json({ type: 'u', title: 'Sign in required', status: 401 }, 401),

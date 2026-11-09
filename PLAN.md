@@ -613,6 +613,16 @@ migrations runs the new version's down migrations first.
 | 29.5 | Guards: `classes.test.ts` (every class used in `web/src` exists in the compiled stylesheet), `lightOnly.test.ts` for Bootstrap colour modes; the server sends `.woff2` as `font/woff2` | done | `TestSPANeverListsOrFakesAssets` |
 | 29.6 | Gate, screenshots at 390 px and desktop on a throwaway stack, docs (CLAUDE.md, README, ARCHITECTURE §8, ENGINEERING_PRINCIPLES), VERSION 1.14.0 | done | 2026-11-09: 19 pages × 2 widths in headless Chrome against a throwaway MariaDB + binary on :18080 with sample data: no page scrolls sideways, no console error beyond the expected 401 before sign-in and 404 for no restore; fixed on the way: the dashboard's Outstanding figure wrapped at xl (now one line, sized to the screen) |
 
+### M30 — Sign-in over HTTPS on k3s (Albie, 2026-11-09) — v1.15.0
+
+> "i installed the app on 10.101.18.101 and now trying to login using admin/admin and i'm getting a 402 error" — `.env` has `CACTUSINV_COOKIE_SECURE=true` and the site was plain `http://10.101.18.101:30080`: login answered 204 with a `Secure` cookie, the browser dropped it, and every next call answered 401 "Sign in required". The owner chose to keep the cookie HTTPS-only and add HTTPS.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 30.1 | Server: while the cookie is HTTPS-only, `POST /auth/login` over plain http answers 403 `https-required` "Sign-in needs HTTPS" with what to do (TLS, `X-Forwarded-Proto: https` and localhost count as secure); the sign-in page shows the problem's detail | done | `TestSecureSignInRefusesPlainHTTP` (11 cases), `App.test.tsx` "sign-in over plain http" |
+| 30.2 | `deploy.sh`: `K8S_HTTPS=true` adds Ingress `cactusinv` (Traefik `websecure` on k3s, port 443), optional `K8S_HTTPS_HOST`, `K8S_TLS_CERT`/`K8S_TLS_KEY` into secret `cactusinv-tls` (sent on stdin; kubectl may run on the node), else the controller's certificate; `false` removes it; `--uninstall` removes it | done | server dry-run on 10.101.18.101; shellcheck clean |
+| 30.3 | Docs (README `.env` k3s rows and "HTTPS on k3s/k8s", ARCHITECTURE §6/§10), `.env` `K8S_HTTPS=true`, VERSION 1.15.0, deploy to 10.101.18.101 and sign in over https | done | see the report |
+
 ## Decisions
 
 | Date | Decision | Why |

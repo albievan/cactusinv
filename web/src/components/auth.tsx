@@ -156,7 +156,7 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
     const { response, error } = await api.POST('/auth/login', { body: { email: user, password } })
     setBusy(false)
     if (!response.ok) {
-      setError(error ? new ApiError(error).problem.title : 'Sign-in failed')
+      setError(error ? new ApiError(error).message : 'Sign-in failed')
       return
     }
     onLogin()

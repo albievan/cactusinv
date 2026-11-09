@@ -188,7 +188,7 @@ On k3s/k8s the app is exposed on NodePort `K8S_NODE_PORT` (default 30080) and Ma
 `K8S_MAILPIT_NODE_PORT` (30025). The app's Service uses `externalTrafficPolicy: Local`, so
 the sign-in rate limit sees each client's own address; the port then answers only on the
 node that runs the app (on a single-node k3s, that node). On a multi-node cluster open that
-node (`kubectl get pod -o wide`) or put an ingress in front. Behind NAT or a proxy, clients
+node (`kubectl get pod -o wide`) or use the Ingress (`K8S_HTTPS=true`). Behind NAT or a proxy, clients
 share one address and so share its limit of 10 failed password attempts a minute; a
 signed-in user also has a limit of their own.
 
@@ -253,7 +253,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
 | `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.14.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.15.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -261,9 +261,9 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.14.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.15.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
-`localhost` in another browser, set `false`). Set `false` **only** if people open the app over plain `http://` on another address (e.g. `http://192.168.1.72:30080`), because otherwise the browser drops the cookie and sign-in fails. |
+`localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |
 | `CACTUSINV_DEFAULT_ADMIN_PASSWORD` | `admin` | That user's first password. You are asked to change it at the first sign-in. |
 
@@ -312,6 +312,9 @@ Used only with `--k3s` and `--k8s`.
 | `K8S_MARIADB_STORAGE` | `10Gi` | Size of the database claim (`Gi` = GiB, `Mi` = MiB). |
 | `K8S_INVOICES_STORAGE` | `5Gi` | Size of the invoices claim. |
 | `K8S_BACKUP_STORAGE` | `10Gi` | Size of the backups claim. Allow room for `BACKUP_RETENTION_DAYS` × backups per day. |
+| `K8S_HTTPS` | `false` | `true` serves the app over HTTPS through the cluster's ingress controller (on k3s: Traefik, port 443), so sign-in works with `CACTUSINV_COOKIE_SECURE=true`. `false` removes that Ingress. See below. |
+| `K8S_HTTPS_HOST` | empty | The DNS name people use for the site (e.g. `invoices.example.com`). Empty = any name, or the node's address (`https://10.101.18.101/`). |
+| `K8S_TLS_CERT` / `K8S_TLS_KEY` | empty | A certificate and its key (PEM files on the machine running `deploy.sh`). `deploy.sh` stores them in secret `cactusinv-tls`. Empty = the controller's own self-signed certificate. |
 | `K8S_REGISTRY` | empty | `--k8s` only: registry the image is pushed to (e.g. `registry.example.com/team`); you must be logged in to it (`docker login`). Not used by k3s, which imports the image straight into the node. |
 
 The sizes apply when a claim is created. A claim that exists keeps its size: claims cannot
@@ -386,6 +389,24 @@ the stored backups and the backup key. So take the backup **off the cluster** fi
    Settings → Backup & restore → **Restore from file** with the downloaded file and its
    passphrase.
 5. Copy the new install's backup key off the cluster (see [Deploying](#deploying--deploysh)).
+
+#### HTTPS on k3s/k8s
+
+The sign-in cookie is HTTPS-only while `CACTUSINV_COOKIE_SECURE=true`, so over plain
+`http://<node>:30080` the browser drops it. The server then refuses to sign in and says
+"Sign-in needs HTTPS"; before 1.15.0 sign-in looked like it worked, and the next page
+answered "Sign in required". There are two fixes:
+
+- **HTTPS (recommended).** Set `K8S_HTTPS=true` and run `--install` again. `deploy.sh` adds
+  an Ingress for the app on the cluster's ingress controller. k3s ships Traefik, which
+  listens on ports 80 and 443 of the node, and the Ingress answers on 443 only. Open
+  `https://<node>/`, or `https://<K8S_HTTPS_HOST>/` when that is set. Without
+  `K8S_TLS_CERT`/`K8S_TLS_KEY`, Traefik presents its own self-signed certificate: the
+  browser warns once, and you accept it. For no warning, point a DNS name at the node and
+  give a certificate for that name (from your CA, or e.g. `mkcert`). The NodePort stays
+  plain http.
+- **Plain http.** Set `CACTUSINV_COOKIE_SECURE=false` and run `--install` again. Only do this on
+  a network you trust: the cookie then travels unencrypted.
 
 ### Set by `deploy.sh`, not in `.env`
 

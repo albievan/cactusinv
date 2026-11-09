@@ -256,7 +256,7 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 | `CACTUSINV_SMTP_HOST` / `_PORT` / `_USER` / `_FROM` / `_TLS` | SMTP | – / `587` / – / – / `starttls` |
 | `CACTUSINV_WORKERS` | run schedule runner + dispatcher in this replica | `true` |
 | `CACTUSINV_MIGRATE_ON_START` | apply migrations at start | `true` |
-| `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag | `true` |
+| `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag; while `true`, `POST /auth/login` over plain http (no TLS, no `X-Forwarded-Proto: https`, not localhost) answers 403 `https-required` | `true` |
 | `CACTUSINV_BACKUP_DIR` / `_BACKUP_TIMES` / `_BACKUP_RETENTION_DAYS` / `_BACKUP_MAX_UPLOAD_MB` | backups (§12) | `/data/backups` / `02:00` / `14` / `256` |
 | `CACTUSINV_RESTORE_DB_NAME` | restore staging database | `<db>_restore` |
 | `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never), §19 | GitHub `main` `VERSION` |
@@ -345,6 +345,7 @@ or `prefers-color-scheme` anywhere in `web/src`. The server sends `.woff2` as `f
 | Backup key | `${SECRETS_DIR}/backup_key` (generated) | `backup_key` in `cactusinv-secrets` (generated) |
 | Restore staging | `<db>_restore`, created by the MariaDB init script and granted by `--install` | granted by `--install` |
 | Secrets | files in `${SECRETS_DIR}` (generated) | Secret `cactusinv-secrets` (generated in-cluster) |
+| HTTPS | a TLS proxy in front of `:8080` | `K8S_HTTPS=true`: Ingress `cactusinv` on the cluster's controller (k3s: Traefik `websecure`, 443), TLS from `K8S_TLS_CERT`/`_KEY` (secret `cactusinv-tls`) or the controller's default certificate; the NodePort stays http |
 | Remote | `--ssh-access user@host` copies the project and runs it there | `--ssh-access` runs `kubectl`/`k3s ctr` over SSH |
 | Uninstall | `--uninstall` keeps data; `--delete-uninstall` removes it | same; delete removes the namespace |
 | Pods | — | no service-account token (`automountServiceAccountToken: false`); k3s: `imagePullPolicy: Never`; existing claims keep their size (ADR-007 amendment) |

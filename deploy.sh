@@ -789,6 +789,62 @@ YAML
   done
 }
 
+# k8s_https serves the app over HTTPS through the cluster's ingress controller (k3s: Traefik
+# on ports 80/443), so the HTTPS-only sign-in cookie (CACTUSINV_COOKIE_SECURE) works.
+# K8S_TLS_CERT/K8S_TLS_KEY (PEM files) go into secret cactusinv-tls; without them the
+# controller's own self-signed certificate is used. K8S_HTTPS=false removes the Ingress.
+k8s_https() {
+  if [[ "${K8S_HTTPS:-false}" != true ]]; then
+    kc -n "$K8S_NAMESPACE" delete ingress cactusinv --ignore-not-found </dev/null >/dev/null
+    return 0
+  fi
+  local host="${K8S_HTTPS_HOST:-}" cert="${K8S_TLS_CERT:-}" key="${K8S_TLS_KEY:-}"
+  [[ -z "$host" || "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] ||
+    die "K8S_HTTPS_HOST must be a DNS name such as invoices.example.com, or empty (got '$host')"
+  if [[ -n "$cert" || -n "$key" ]]; then
+    [[ -f "$cert" && -f "$key" ]] || die "K8S_TLS_CERT and K8S_TLS_KEY must both name PEM files (got '$cert' and '$key')"
+    # Sent as a manifest on stdin: kubectl may run on the node, where these files are not.
+    kc apply -f - >/dev/null <<YAML
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cactusinv-tls
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+type: kubernetes.io/tls
+data:
+  tls.crt: $(base64 <"$cert" | tr -d '\n')
+  tls.key: $(base64 <"$key" | tr -d '\n')
+YAML
+    ok "certificate ${cert} is in secret cactusinv-tls"
+  else
+    kc -n "$K8S_NAMESPACE" delete secret cactusinv-tls --ignore-not-found </dev/null >/dev/null
+  fi
+  local tls="{}" rule="{"
+  if [[ -n "$cert" ]]; then
+    tls="{ secretName: cactusinv-tls$([[ -n "$host" ]] && echo ", hosts: [${host}]") }"
+  fi
+  [[ -n "$host" ]] && rule="{ host: ${host},"
+  local node="${SSH_HOST#*@}"
+  info "serving https://${host:-${node:-<node-ip>}}/ through the ingress controller"
+  kc apply -f - <<YAML
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cactusinv
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+  annotations:
+    # Traefik (k3s): HTTPS only; other controllers ignore these and use spec.tls.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  tls: [${tls}]
+  rules:
+    - ${rule} http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: cactusinv, port: { number: 80 } } } }] } }
+YAML
+}
+
 k8s_install() {
   IMAGE="$(image_tag)"
   # k3s runs the imported image only: a missing one fails at once (ErrImageNeverPull)
@@ -839,6 +895,7 @@ YAML
   done
   k8s_volumes
   render | kc apply -f -
+  k8s_https
   info "waiting for the rollout"
   rollout mariadb
   info "granting the restore staging database ${MARIADB_DATABASE}_restore"
@@ -855,7 +912,11 @@ YAML
     ok "generated backup_key in secret cactusinv-secrets"
   fi
   local host="${SSH_HOST#*@}"; [[ -n "$host" ]] || host="<node-ip>"
-  ok "cactusInv is running at http://${host}:${K8S_NODE_PORT}"
+  if [[ "${K8S_HTTPS:-false}" == true ]]; then
+    ok "cactusInv is running at https://${K8S_HTTPS_HOST:-$host}/ (and http://${host}:${K8S_NODE_PORT}, where sign-in needs CACTUSINV_COOKIE_SECURE=false)"
+  else
+    ok "cactusInv is running at http://${host}:${K8S_NODE_PORT}"
+  fi
   echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (change it after signing in)"
   echo "    test mailbox:  http://${host}:${K8S_MAILPIT_NODE_PORT}    backups: encrypted, daily at ${BACKUP_TIMES}"
   echo "    backup_key:    copy it OFF the cluster: kubectl -n ${K8S_NAMESPACE} get secret cactusinv-secrets -o jsonpath='{.data.backup_key}' | base64 -d"
@@ -863,7 +924,7 @@ YAML
 
 k8s_uninstall() {
   info "removing cactusInv workloads (volumes and secrets are kept)"
-  kc -n "$K8S_NAMESPACE" delete deploy,svc,cronjob,job,configmap -l app.kubernetes.io/part-of=cactusinv --ignore-not-found
+  kc -n "$K8S_NAMESPACE" delete deploy,svc,ingress,cronjob,job,configmap -l app.kubernetes.io/part-of=cactusinv --ignore-not-found
   ok "uninstalled; persistent volumes kept in namespace ${K8S_NAMESPACE}"
 }
 

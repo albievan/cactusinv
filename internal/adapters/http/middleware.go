@@ -136,6 +136,48 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 
 // withAPIGuards applies the body limit and deadlines (per route, see limitsFor), the CSRF
 // check, session authentication and, on password routes, the user's rate-limit bucket.
+// withSecureSignIn refuses sign-in over plain HTTP when the session cookie is HTTPS-only:
+// the browser would drop the cookie and every later request would answer "Sign in
+// required" with no hint why. The answer says what to do instead.
+func withSecureSignIn(secureCookie bool, next http.Handler) http.Handler {
+	if !secureCookie {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/auth/login" && !secureOrigin(r) {
+			writeProblem(w, Problem{
+				Type: problemType("https-required"), Title: "Sign-in needs HTTPS", Status: http.StatusForbidden,
+				Detail: "The sign-in cookie is HTTPS-only (CACTUSINV_COOKIE_SECURE=true). Open this site with https://, or set CACTUSINV_COOKIE_SECURE=false to sign in over plain http.",
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// secureOrigin reports whether the browser reached the site over HTTPS (directly, or via
+// a TLS proxy that sets X-Forwarded-Proto) or on localhost, which browsers treat as
+// secure. A client that forges the header only gets a cookie it will not send back.
+func secureOrigin(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	if strings.EqualFold(strings.TrimSpace(proto), "https") {
+		return true
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return true
+	}
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
+}
+
 func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Larger bodies and longer deadlines only once the request is authenticated; until
