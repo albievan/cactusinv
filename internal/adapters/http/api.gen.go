@@ -1000,13 +1000,15 @@ type InvoiceInput struct {
 	BillTo *Party `json:"billTo,omitempty"`
 
 	// CustomerId Required on create; cannot change.
-	CustomerId   string              `json:"customerId,omitempty"`
-	Header       InvoiceHeader       `json:"header,omitempty"`
-	IssueDate    *openapi_types.Date `json:"issueDate,omitempty"`
-	Lines        []LineInput         `json:"lines"`
-	Notes        *string             `json:"notes,omitempty"`
-	PaymentTerms *PaymentTerms       `json:"paymentTerms,omitempty"`
-	ShipTo       *Party              `json:"shipTo,omitempty"`
+	CustomerId string              `json:"customerId,omitempty"`
+	Header     InvoiceHeader       `json:"header,omitempty"`
+	IssueDate  *openapi_types.Date `json:"issueDate,omitempty"`
+	Lines      []LineInput         `json:"lines"`
+
+	// Notes Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all).
+	Notes        *string       `json:"notes,omitempty"`
+	PaymentTerms *PaymentTerms `json:"paymentTerms,omitempty"`
+	ShipTo       *Party        `json:"shipTo,omitempty"`
 
 	// VatPercent Omit to use the business default VAT.
 	VatPercent *string `json:"vatPercent,omitempty"`
@@ -1023,6 +1025,7 @@ type InvoiceList struct {
 
 // InvoiceNotesRequest defines model for InvoiceNotesRequest.
 type InvoiceNotesRequest struct {
+	// Notes Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all).
 	Notes string `json:"notes"`
 
 	// Version The invoice version you edited (optimistic locking).
@@ -1329,9 +1332,11 @@ type Schedule struct {
 	Lines         []ScheduleLine        `json:"lines"`
 	Name          string                `json:"name"`
 	NextRunAt     *time.Time            `json:"nextRunAt,omitempty"`
-	Notes         string                `json:"notes"`
-	Recurrence    Recurrence            `json:"recurrence"`
-	Status        ScheduleStatus        `json:"status,omitempty"`
+
+	// Notes Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all). The template of each run's notes.
+	Notes      string         `json:"notes"`
+	Recurrence Recurrence     `json:"recurrence"`
+	Status     ScheduleStatus `json:"status,omitempty"`
 
 	// VatPercent Omit to use the business default VAT when each invoice is created.
 	VatPercent *string `json:"vatPercent,omitempty"`
@@ -1610,6 +1615,41 @@ type Totals struct {
 
 	// Vat Example: 2701.16
 	Vat Decimal `json:"vat"`
+}
+
+// UpcomingInvoice defines model for UpcomingInvoice.
+type UpcomingInvoice struct {
+	// AutoSend Whether the schedule e-mails it when raised.
+	AutoSend     bool   `json:"autoSend"`
+	Currency     string `json:"currency"`
+	CustomerId   string `json:"customerId"`
+	CustomerName string `json:"customerName"`
+
+	// DueDate Absent when it cannot be built.
+	DueDate *openapi_types.Date `json:"dueDate,omitempty"`
+
+	// IssueDate The date it will carry. Absent when it cannot be built.
+	IssueDate *openapi_types.Date `json:"issueDate,omitempty"`
+
+	// Period The date the invoice is for (its {month}).
+	Period openapi_types.Date `json:"period"`
+
+	// Problem Why it cannot be built now (the run would fail the same way), e.g. an inactive product.
+	Problem string `json:"problem,omitempty"`
+
+	// RunAt When it will be raised; absent while the schedule is paused.
+	RunAt          *time.Time     `json:"runAt,omitempty"`
+	ScheduleId     string         `json:"scheduleId"`
+	ScheduleName   string         `json:"scheduleName"`
+	ScheduleStatus ScheduleStatus `json:"scheduleStatus"`
+
+	// Totals Absent when it cannot be built.
+	Totals *Totals `json:"totals,omitempty"`
+}
+
+// UpcomingInvoiceList defines model for UpcomingInvoiceList.
+type UpcomingInvoiceList struct {
+	Items []UpcomingInvoice `json:"items"`
 }
 
 // UpdateCheck defines model for UpdateCheck.
@@ -2120,6 +2160,9 @@ type ServerInterface interface {
 	// (POST /schedules/preview)
 	PreviewSchedule(w http.ResponseWriter, r *http.Request, params PreviewScheduleParams)
 
+	// (GET /schedules/upcoming)
+	ListUpcomingInvoices(w http.ResponseWriter, r *http.Request)
+
 	// (DELETE /schedules/{id})
 	DeleteSchedule(w http.ResponseWriter, r *http.Request, id Id)
 
@@ -2137,6 +2180,9 @@ type ServerInterface interface {
 
 	// (POST /schedules/{id}/run-now)
 	RunScheduleNow(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /schedules/{id}/sample-pdf)
+	GetScheduleSamplePdf(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /settings/business)
 	GetBusiness(w http.ResponseWriter, r *http.Request)
@@ -3951,6 +3997,20 @@ func (siw *ServerInterfaceWrapper) PreviewSchedule(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListUpcomingInvoices operation middleware
+func (siw *ServerInterfaceWrapper) ListUpcomingInvoices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUpcomingInvoices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteSchedule operation middleware
 func (siw *ServerInterfaceWrapper) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 
@@ -4098,6 +4158,32 @@ func (siw *ServerInterfaceWrapper) RunScheduleNow(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RunScheduleNow(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScheduleSamplePdf operation middleware
+func (siw *ServerInterfaceWrapper) GetScheduleSamplePdf(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScheduleSamplePdf(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4656,6 +4742,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules", wrapper.ListSchedules)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules", wrapper.CreateSchedule)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules/preview", wrapper.PreviewSchedule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/upcoming", wrapper.ListUpcomingInvoices)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/{id}/sample-pdf", wrapper.GetScheduleSamplePdf)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/defaults", wrapper.GetScheduleDefaults)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/schedules/{id}", wrapper.DeleteSchedule)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules/{id}", wrapper.GetSchedule)
@@ -7242,6 +7330,44 @@ func (response PreviewScheduledefaultApplicationProblemPlusJSONResponse) VisitPr
 	return err
 }
 
+type ListUpcomingInvoicesRequestObject struct {
+}
+
+type ListUpcomingInvoicesResponseObject interface {
+	VisitListUpcomingInvoicesResponse(w http.ResponseWriter) error
+}
+
+type ListUpcomingInvoices200JSONResponse UpcomingInvoiceList
+
+func (response ListUpcomingInvoices200JSONResponse) VisitListUpcomingInvoicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListUpcomingInvoicesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListUpcomingInvoicesdefaultApplicationProblemPlusJSONResponse) VisitListUpcomingInvoicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteScheduleRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -7460,6 +7586,57 @@ type RunScheduleNowdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RunScheduleNowdefaultApplicationProblemPlusJSONResponse) VisitRunScheduleNowResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScheduleSamplePdfRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetScheduleSamplePdfResponseObject interface {
+	VisitGetScheduleSamplePdfResponse(w http.ResponseWriter) error
+}
+
+type GetScheduleSamplePdf200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type GetScheduleSamplePdf200ApplicationpdfResponse struct {
+	Body          io.Reader
+	Headers       GetScheduleSamplePdf200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetScheduleSamplePdf200ApplicationpdfResponse) VisitGetScheduleSamplePdfResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetScheduleSamplePdfdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetScheduleSamplePdfdefaultApplicationProblemPlusJSONResponse) VisitGetScheduleSamplePdfResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8697,6 +8874,9 @@ type StrictServerInterface interface {
 	// (POST /schedules/preview)
 	PreviewSchedule(ctx context.Context, request PreviewScheduleRequestObject) (PreviewScheduleResponseObject, error)
 
+	// (GET /schedules/upcoming)
+	ListUpcomingInvoices(ctx context.Context, request ListUpcomingInvoicesRequestObject) (ListUpcomingInvoicesResponseObject, error)
+
 	// (DELETE /schedules/{id})
 	DeleteSchedule(ctx context.Context, request DeleteScheduleRequestObject) (DeleteScheduleResponseObject, error)
 
@@ -8714,6 +8894,9 @@ type StrictServerInterface interface {
 
 	// (POST /schedules/{id}/run-now)
 	RunScheduleNow(ctx context.Context, request RunScheduleNowRequestObject) (RunScheduleNowResponseObject, error)
+
+	// (GET /schedules/{id}/sample-pdf)
+	GetScheduleSamplePdf(ctx context.Context, request GetScheduleSamplePdfRequestObject) (GetScheduleSamplePdfResponseObject, error)
 
 	// (GET /settings/business)
 	GetBusiness(ctx context.Context, request GetBusinessRequestObject) (GetBusinessResponseObject, error)
@@ -10522,6 +10705,30 @@ func (sh *strictHandler) PreviewSchedule(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+// ListUpcomingInvoices operation middleware
+func (sh *strictHandler) ListUpcomingInvoices(w http.ResponseWriter, r *http.Request) {
+	var request ListUpcomingInvoicesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListUpcomingInvoices(ctx, request.(ListUpcomingInvoicesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListUpcomingInvoices")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListUpcomingInvoicesResponseObject); ok {
+		if err := validResponse.VisitListUpcomingInvoicesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DeleteSchedule operation middleware
 func (sh *strictHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request, id Id) {
 	var request DeleteScheduleRequestObject
@@ -10678,6 +10885,32 @@ func (sh *strictHandler) RunScheduleNow(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RunScheduleNowResponseObject); ok {
 		if err := validResponse.VisitRunScheduleNowResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScheduleSamplePdf operation middleware
+func (sh *strictHandler) GetScheduleSamplePdf(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetScheduleSamplePdfRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScheduleSamplePdf(ctx, request.(GetScheduleSamplePdfRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScheduleSamplePdf")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScheduleSamplePdfResponseObject); ok {
+		if err := validResponse.VisitGetScheduleSamplePdfResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

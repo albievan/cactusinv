@@ -5,8 +5,9 @@ import { api, idempotencyKey, unwrap, type Invoice } from '../lib/api/client'
 import { IconBan, IconClockAlert, IconEdit, IconFilePdf, IconPaid, IconSend, IconStatement } from './icons'
 import type { Icon } from './icons'
 import { Field, Sheet } from './ui'
+import { RichNotesEditor } from './RichNotesEditor'
 
-function ActionButton({ icon: I, label, onClick, disabled, tone = 'default', href, showLabel }: {
+export function ActionButton({ icon: I, label, onClick, disabled, tone = 'default', href, showLabel }: {
   icon: Icon; label: string; onClick?: () => void; disabled?: boolean; tone?: 'default' | 'danger'; href?: string; showLabel: boolean
 }) {
   const cls = `btn btn-sm ${tone === 'danger' ? 'btn-outline-danger' : 'btn-outline-primary'}${showLabel ? '' : ' btn-icon'}`
@@ -56,7 +57,7 @@ export function NotesSheet({ inv, open, onClose, onSaved, onError }: {
     <Sheet title={`Notes · ${inv.number || 'Draft'}`} open={open} onClose={onClose}>
       <div className="vstack gap-3">
         <Field label="Invoice notes" hint={editable ? 'Printed under the lines. Resending the invoice uses these notes.' : undefined}>
-          {(f) => <textarea id={f} className="form-control" style={{ minHeight: 160 }} value={notes} readOnly={!editable} onChange={(e) => setNotes(e.target.value)} autoFocus={editable} />}
+          {(f) => <RichNotesEditor id={f} value={notes} readOnly={!editable} onChange={setNotes} minHeight={160} />}
         </Field>
         {editable && (
           <button className="btn btn-primary w-100" disabled={busy || notes.trim() === inv.notes.trim()} onClick={() => void save()}>

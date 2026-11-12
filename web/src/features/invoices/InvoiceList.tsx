@@ -8,6 +8,7 @@ import { usePaged } from '../../lib/usePaged'
 import { Badge, Empty, ErrorBanner, ShowMore, Page, SearchBox, Spinner } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
 import { InvoiceActions, ScheduledInvoiceActions } from '../../components/InvoiceActions'
+import { UpcomingInvoices } from './UpcomingInvoices'
 
 const tnum = { fontVariantNumeric: 'tabular-nums' } as const
 
@@ -30,16 +31,17 @@ export function InvoiceList() {
   const setQ = (v: string) => setParams(v ? { q: v } : {}, { replace: true })
   const [notice, setNotice] = useState('')
   const [actionError, setActionError] = useState<Error | null>(null)
+  const scheduled = filter === 'scheduled'
   const list = usePaged(
     (offset, limit) =>
-      unwrap(
+      // Scheduled lists the invoices still to be raised (UpcomingInvoices), not invoices.
+      scheduled ? Promise.resolve({ items: [] as Invoice[], total: 0 }) : unwrap(
         api.GET('/invoices', {
           params: {
             query: {
               q: q || undefined,
-              status: filter === 'all' || filter === 'overdue' || filter === 'scheduled' ? undefined : filter,
+              status: filter === 'all' || filter === 'overdue' ? undefined : filter,
               overdue: filter === 'overdue' ? true : undefined,
-              scheduled: filter === 'scheduled' ? true : undefined,
               limit,
               offset,
             },
@@ -59,16 +61,20 @@ export function InvoiceList() {
           </button>
         ))}
       </div>
-      <ErrorBanner error={actionError ?? error} />
-      {notice && <div role="status" className="mb-3 rounded-3 border-start border-4 border-primary bg-white p-3 small fw-medium text-primary-emphasis shadow-sm">{notice}</div>}
-      {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No invoices match.</Empty> : (
-        <InvoiceTable
-          items={data?.items ?? []}
-          onChanged={(m) => { setActionError(null); setNotice(m); reload() }}
-          onError={(e) => { setNotice(''); setActionError(e) }}
-        />
+      {scheduled ? <UpcomingInvoices q={q} /> : (
+        <>
+          <ErrorBanner error={actionError ?? error} />
+          {notice && <div role="status" className="mb-3 rounded-3 border-start border-4 border-primary bg-white p-3 small fw-medium text-primary-emphasis shadow-sm">{notice}</div>}
+          {loading && !data ? <Spinner /> : data && data.items.length === 0 ? <Empty>No invoices match.</Empty> : (
+            <InvoiceTable
+              items={data?.items ?? []}
+              onChanged={(m) => { setActionError(null); setNotice(m); reload() }}
+              onError={(e) => { setNotice(''); setActionError(e) }}
+            />
+          )}
+          <ShowMore list={list} />
+        </>
       )}
-    <ShowMore list={list} />
     </Page>
   )
 }

@@ -69,9 +69,22 @@ Released into the public domain — see [LICENSE](LICENSE).
   period now; a schedule that was running fine and was paused skips the periods missed.
   **Invoice notes** sit right under a schedule's lines: free text you change month by month
   (`{month}`, `{year}` and `{period}` become the billing month). Each raised invoice keeps its
-  own copy. Invoices → **Scheduled** lists the invoices schedules raised, each with only
-  **Preview**, **Edit schedule** and **Notes**; changing an invoice's notes there (or on the
-  invoice) is audited, and the next PDF and every resend carry them.
+  own copy; changing an invoice's notes (with **Notes** on its row, or on the invoice) is
+  audited, and the next PDF and every resend carry them. A raised scheduled invoice offers only
+  **Preview**, **Edit schedule** and **Notes**.
+  Invoices → **Scheduled** lists the invoices schedules **will** raise and have not raised yet:
+  every invoice schedule's next one, paused schedules too (what it would raise if resumed now),
+  with the month it is for, when it is raised, its due date and total. **Preview** opens a
+  sample PDF numbered `SAMPLE` and watermarked *SAMPLE - DO NOT EMAIL TO CUSTOMER* on every
+  page; nothing is stored, no number is used and nothing is e-mailed. A schedule whose next
+  invoice cannot be built (e.g. an inactive product) shows why, as its run would fail.
+- **Formatted invoice notes** — the notes of a schedule, a draft and the Notes sheet of an
+  invoice are a small word processor: font (Sans, Serif, Mono), size, **bold**, *italic*,
+  underline, strikethrough, colour, alignment, bulleted and numbered lists, tables and pictures
+  (PNG or JPEG, from a file, a paste or a drop; made smaller to at most 1000 px and 500 kB).
+  The PDF prints them as shown. Notes written before stay plain text until edited. Only what
+  the editor offers is kept: no scripts, links or pictures from elsewhere (at most 800 kB of
+  notes, pictures included).
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
@@ -276,7 +289,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
 | `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.16.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.17.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -284,7 +297,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.16.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.17.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |

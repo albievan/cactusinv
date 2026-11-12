@@ -64,6 +64,8 @@ type page struct {
 	// pages the totals, payment details or notes run on to are marked too.
 	mark      string
 	markColor rgb
+	cp1252    func(string) string // for the core fonts of formatted notes (notes.go)
+	pics      int                 // pictures registered (notes.go)
 }
 
 // The PDFs use DejaVu Sans Condensed (embedded, UTF-8; licence in fonts/LICENSE), so names
@@ -469,9 +471,17 @@ func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string
 func (p *page) notes(top float64, notes, disclaimer string) float64 {
 	type noteLine struct{ text, style string }
 	var lines []noteLine
-	p.font("", 8)
-	for _, l := range p.wrap(notes, contentW) {
-		lines = append(lines, noteLine{l, ""})
+	var rich *domain.Notes
+	if domain.IsRichNotes(notes) {
+		// Formatted notes (M33); stored notes are already clean, so an error cannot happen.
+		if n, err := domain.ParseNotes(notes); err == nil && len(n.Blocks) > 0 {
+			rich = &n
+		}
+	} else {
+		p.font("", 8)
+		for _, l := range p.wrap(notes, contentW) {
+			lines = append(lines, noteLine{l, ""})
+		}
 	}
 	if disclaimer != "" {
 		if len(lines) > 0 {
@@ -486,7 +496,7 @@ func (p *page) notes(top float64, notes, disclaimer string) float64 {
 			lines = append(lines, noteLine{l, style})
 		}
 	}
-	if len(lines) == 0 {
+	if len(lines) == 0 && rich == nil {
 		return top
 	}
 	// Starts on a new page when even a few lines do not fit; long notes and disclaimers
@@ -497,6 +507,12 @@ func (p *page) notes(top float64, notes, disclaimer string) float64 {
 	}
 	p.hline(top)
 	y := top + 6
+	if rich != nil {
+		y = p.richNotes(y-noteLineH, *rich) + noteLineH
+		if len(lines) > 0 {
+			y += noteLineH
+		}
+	}
 	for _, l := range lines {
 		if y > bodyBottom {
 			p.newPage()
@@ -533,18 +549,31 @@ func (p *page) footer() {
 	p.textRight(pageW-margin, footerY, "Page "+strconv.Itoa(p.pdf.PageNo())+" of {nb}")
 }
 
-// watermark marks drafts, voided and paid documents diagonally.
+// markMaxW is the longest a watermark may be: at 35° on A4 its width is markMaxW·cos 35°,
+// about 184 mm, leaving a margin on both sides of the 210 mm page.
+const markMaxW = 225.0
+
+// SampleMark is the watermark of a sample of a scheduled invoice.
+const SampleMark = "SAMPLE - DO NOT EMAIL TO CUSTOMER"
+
+// watermark marks drafts, samples, voided and paid documents diagonally.
 func (p *page) watermark(mark string, c rgb) {
 	if mark == "" {
 		return
 	}
 	p.pdf.SetAlpha(0.08, "Normal")
-	p.font("B", 110)
+	// A long mark (a sample's) is set smaller, so it fits along the diagonal.
+	size := 110.0
+	p.font("B", size)
+	if w := p.pdf.GetStringWidth(mark); w > markMaxW {
+		size *= markMaxW / w
+		p.font("B", size)
+	}
 	p.color(c)
 	p.pdf.TransformBegin()
 	p.pdf.TransformRotate(35, pageW/2, pageH/2)
 	w := p.pdf.GetStringWidth(mark)
-	p.put(pageW/2-w/2, pageH/2+15, mark)
+	p.put(pageW/2-w/2, pageH/2+size*0.136, mark)
 	p.pdf.TransformEnd()
 	p.pdf.SetAlpha(1, "Normal")
 }
@@ -708,6 +737,9 @@ func maxLines(cells [][]string) int {
 }
 
 func invoiceTitle(inv *domain.Invoice) string {
+	if inv.Sample {
+		return "Sample invoice (not issued)"
+	}
 	if inv.Number == "" {
 		return "Draft invoice"
 	}
@@ -715,6 +747,9 @@ func invoiceTitle(inv *domain.Invoice) string {
 }
 
 func invoiceStatus(inv *domain.Invoice) (label string, c rgb, watermark string) {
+	if inv.Sample {
+		return "SAMPLE", danger, SampleMark
+	}
 	switch inv.Status {
 	case domain.InvoiceDraft:
 		return "DRAFT", muted, "DRAFT"

@@ -125,6 +125,9 @@ type Invoice struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 	Version    int
+	// Sample marks a sample of a scheduled invoice (Schedule.SampleInvoice): built in
+	// memory, never stored or e-mailed; its PDF says so on every page.
+	Sample bool
 }
 
 // DraftContent is everything a user can edit on a draft.
@@ -205,14 +208,15 @@ func (inv *Invoice) applyContent(c DraftContent) error {
 	if c.BillTo.Name == "" {
 		return invalid("billTo.name", "is required")
 	}
-	if len(c.Notes) > 4000 {
-		return invalid("notes", "max 4000 characters")
+	notes, err := CleanNotes("notes", strings.TrimSpace(c.Notes))
+	if err != nil {
+		return err
 	}
 	inv.IssueDate = c.IssueDate
 	inv.Header = c.Header
 	inv.BillTo = c.BillTo
 	inv.ShipTo = c.ShipTo
-	inv.Notes = strings.TrimSpace(c.Notes)
+	inv.Notes = notes
 	inv.TaxRate = c.TaxRate
 	inv.Terms = terms
 	inv.Lines = lines
@@ -310,10 +314,11 @@ func (inv *Invoice) AmendNotes(notes string, now time.Time) error {
 	if inv.Status == InvoiceVoid {
 		return ErrInvalidTransition
 	}
-	if len(notes) > 4000 {
-		return invalid("notes", "max 4000 characters")
+	clean, err := CleanNotes("notes", strings.TrimSpace(notes))
+	if err != nil {
+		return err
 	}
-	inv.Notes = strings.TrimSpace(notes)
+	inv.Notes = clean
 	inv.UpdatedAt = now
 	return nil
 }

@@ -411,13 +411,17 @@ func PDFFilename(inv *domain.Invoice) string {
 	if inv.Number == "" {
 		return "Draft_" + inv.ID + ".pdf"
 	}
-	safe := strings.Map(func(r rune) rune {
+	return "Inv_no_" + safeFileName(inv.Number) + ".pdf"
+}
+
+// safeFileName keeps letters, digits and '-' and turns everything else into '_'.
+func safeFileName(s string) string {
+	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
 			return r
 		}
 		return '_'
-	}, inv.Number)
-	return "Inv_no_" + safe + ".pdf"
+	}, s)
 }
 
 // SendInput describes an e-mail of an invoice. Empty fields use the customer's addresses

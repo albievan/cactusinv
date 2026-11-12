@@ -7,6 +7,7 @@ import { useAsync } from '../../lib/useAsync'
 import { LineEditor, newLine, type EditLine } from '../../components/LineEditor'
 import { ErrorBanner, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
 import { uuid } from '../../lib/uuid'
+import { RichNotesEditor } from '../../components/RichNotesEditor'
 
 export function InvoiceEditor() {
   const { id } = useParams()
@@ -141,7 +142,7 @@ export function InvoiceEditor() {
             <Field label="Delivery date">{(fid) => <input id={fid} type="date" className="form-control" value={header.deliveryDate ?? ''} onChange={(e) => setHeader({ ...header, deliveryDate: e.target.value || undefined })} />}</Field>
             <div className="w-100">
               <Field label="Invoice notes" hint="Optional. The disclaimer is added to every PDF automatically from the customer or business settings.">
-                {(fid) => <textarea id={fid} className="form-control" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />}
+                {(fid) => <RichNotesEditor id={fid} value={notes} onChange={setNotes} minHeight={90} />}
               </Field>
             </div>
           </div>

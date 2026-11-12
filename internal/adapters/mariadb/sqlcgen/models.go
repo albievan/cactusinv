@@ -169,7 +169,6 @@ type Invoice struct {
 	BillToAttention   string
 	ShipToName        string
 	ShipToAddress     string
-	Notes             string
 	TaxRateBp         int32
 	SubtotalMinor     int64
 	DiscountMinor     int64
@@ -195,6 +194,7 @@ type Invoice struct {
 	ExportedVersion   sql.NullInt32
 	OverdueAt         sql.NullTime
 	BankCountry       string
+	Notes             string
 }
 
 type InvoiceLine struct {
@@ -247,7 +247,6 @@ type Schedule struct {
 	Job            string
 	ShippingMethod string
 	ShippingTerms  string
-	Notes          string
 	AutoSend       bool
 	EmailSubject   string
 	EmailBody      string
@@ -264,6 +263,7 @@ type Schedule struct {
 	EmailScope     string
 	EmailDelayDays int32
 	WeekendRule    string
+	Notes          string
 }
 
 type ScheduleLine struct {

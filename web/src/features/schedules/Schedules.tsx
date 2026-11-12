@@ -12,6 +12,7 @@ import { Badge, ConfirmButton, Empty, ErrorBanner, Field, NumberInput, Page, She
 import { IconBolt, IconEdit, IconPause, IconPlay, IconPlus, IconTrash } from '../../components/icons'
 import type { Icon } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
+import { RichNotesEditor } from '../../components/RichNotesEditor'
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -464,7 +465,7 @@ export function ScheduleEditor() {
         {isInvoice && (
           <section className="card card-body vstack gap-2">
             <Field label="Invoice notes" hint="Free text printed under the lines of the next invoice; change it month by month. {month}, {year} and {period} become the billing month. Each raised invoice keeps its own copy, which you can still edit from Invoices.">
-              {(f) => <textarea id={f} className="form-control" style={{ minHeight: 120 }} value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}
+              {(f) => <RichNotesEditor id={f} value={s.notes} onChange={(notes) => set({ notes })} />}
             </Field>
             {customer && <DisclaimerNote customer={customer} businessText={business.data?.defaultNotes} />}
           </section>

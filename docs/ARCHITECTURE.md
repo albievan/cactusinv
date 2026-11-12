@@ -188,6 +188,21 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
   its own copy (`invoices.notes`), editable afterwards from Invoices. `GET /invoices?scheduled=true`
   lists the invoices a schedule raised (`schedule_id IS NOT NULL`); in the Invoices list such a
   row offers only Preview, Edit schedule (`/schedules/{id}/edit`) and Notes.
+- Invoices → Scheduled lists what is still to be raised (M32): `GET /schedules/upcoming`
+  (`app.ListUpcomingInvoices`) places every active or paused invoice schedule on its next
+  invoice (`Schedule.Upcoming`: a paused one as if resumed now) and builds it in memory
+  (`Schedule.SampleInvoice`: issued with the number `SAMPLE`, `Invoice.Sample`). `GET
+  /schedules/{id}/sample-pdf` renders it with the watermark "SAMPLE - DO NOT EMAIL TO
+  CUSTOMER" on every page (audited `schedule.sample_viewed`). Nothing is stored: no invoice,
+  number, run record or e-mail. Both need `schedules.view`, and list only schedules the user
+  may run (`checkScheduleAccess`).
+- Notes are plain text or formatted (M33). Formatted notes are HTML from the web app's
+  `RichNotesEditor` (contentEditable): `domain.ParseNotes` reads it with `x/net/html` into
+  `domain.Notes` (paragraphs and list items of styled runs, tables, PNG/JPEG pictures as
+  `data:` URIs) under an allowlist, and `CleanNotes` stores the canonical HTML of that model
+  (schedule `Validate`, draft content, `AmendNotes`). The PDF adapter lays the model out
+  (`pdf/notes.go`); the editor cleans loaded and pasted HTML in an inert document before
+  showing it. `notes` columns are MEDIUMTEXT (migration 00023); at most 800 kB.
 - A failed run keeps the schedule on the failing period with backoff
   (`RecordFailure`); after `MaxScheduleFailures` it is paused, and it surfaces in the UI.
 

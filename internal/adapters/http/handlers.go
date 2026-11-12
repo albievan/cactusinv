@@ -694,6 +694,51 @@ func (h *handlers) PreviewSchedule(ctx context.Context, req PreviewScheduleReque
 	return PreviewSchedule200JSONResponse{Runs: out, TimeZone: pv.TimeZone, WeekendRule: RunPreviewWeekendRule(pv.Weekend)}, nil
 }
 
+func (h *handlers) ListUpcomingInvoices(ctx context.Context, _ ListUpcomingInvoicesRequestObject) (ListUpcomingInvoicesResponseObject, error) {
+	us, err := h.svc.ListUpcomingInvoices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mu, err := h.units(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]UpcomingInvoice, len(us))
+	for i, u := range us {
+		sc := u.Schedule
+		it := UpcomingInvoice{
+			ScheduleId: sc.ID, ScheduleName: sc.Name, ScheduleStatus: ScheduleStatus(sc.Status),
+			CustomerId: sc.CustomerID, CustomerName: u.Customer, Period: toAPIDate(u.Period),
+			Currency: string(u.Currency), AutoSend: sc.AutoSend, Problem: u.Problem,
+		}
+		if !sc.NextRunAt.IsZero() {
+			at := sc.NextRunAt.UTC()
+			it.RunAt = &at
+		}
+		if inv := u.Invoice; inv != nil {
+			c := inv.Currency
+			it.IssueDate, it.DueDate = toAPIDatePtr(inv.IssueDate), toAPIDatePtr(inv.DueDate)
+			it.Totals = &Totals{
+				Subtotal: mu.format(inv.Totals.Subtotal, c), Discount: mu.format(inv.Totals.Discount, c),
+				Vat: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
+			}
+		}
+		items[i] = it
+	}
+	return ListUpcomingInvoices200JSONResponse{Items: items}, nil
+}
+
+func (h *handlers) GetScheduleSamplePdf(ctx context.Context, req GetScheduleSamplePdfRequestObject) (GetScheduleSamplePdfResponseObject, error) {
+	pdf, name, err := h.svc.ScheduleSamplePDF(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return GetScheduleSamplePdf200ApplicationpdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: GetScheduleSamplePdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
+	}, nil
+}
+
 func toAPIEmailTemplate(t domain.EmailTemplate) EmailTemplate {
 	return EmailTemplate{Subject: t.Subject, Body: t.Body, Placeholders: t.Placeholders}
 }

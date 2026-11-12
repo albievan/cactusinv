@@ -647,6 +647,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/schedules/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description For every invoice schedule, active or paused, the next invoice it will raise and has not raised yet, soonest first. A paused schedule shows the invoice it would raise if resumed now. Nothing is stored. Schedules the user may not run are left out. */
+        get: operations["listUpcomingInvoices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/{id}/sample-pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** @description The next invoice the schedule will raise, as a sample PDF: numbered SAMPLE and watermarked "SAMPLE - DO NOT EMAIL TO CUSTOMER" on every page. Built in memory: no invoice, number or run is stored and nothing is e-mailed. */
+        get: operations["getScheduleSamplePdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/schedules/defaults": {
         parameters: {
             query?: never;
@@ -1695,6 +1731,7 @@ export interface components {
             header?: components["schemas"]["InvoiceHeader"];
             billTo?: components["schemas"]["Party"];
             shipTo?: components["schemas"]["Party"];
+            /** @description Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all). */
             notes?: string;
             /** @description Omit to use the business default VAT. */
             vatPercent?: string;
@@ -1789,6 +1826,7 @@ export interface components {
             issueDate?: string;
         };
         InvoiceNotesRequest: {
+            /** @description Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all). */
             notes: string;
             /** @description The invoice version you edited (optimistic locking). */
             version: number;
@@ -1895,6 +1933,7 @@ export interface components {
             recurrence: components["schemas"]["Recurrence"];
             lines: components["schemas"]["ScheduleLine"][];
             header: components["schemas"]["InvoiceHeader"];
+            /** @description Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all). The template of each run's notes. */
             notes: string;
             /** @description Omit to use the business default VAT when each invoice is created. */
             vatPercent?: string;
@@ -1948,6 +1987,43 @@ export interface components {
             unsent: components["schemas"]["EmailTemplate"];
             outstanding: components["schemas"]["EmailTemplate"];
             statement: components["schemas"]["EmailTemplate"];
+        };
+        UpcomingInvoice: {
+            scheduleId: string;
+            scheduleName: string;
+            scheduleStatus: components["schemas"]["ScheduleStatus"];
+            customerId: string;
+            customerName: string;
+            currency: string;
+            /**
+             * Format: date
+             * @description The date the invoice is for (its {month}).
+             */
+            period: string;
+            /**
+             * Format: date-time
+             * @description When it will be raised; absent while the schedule is paused.
+             */
+            runAt?: string;
+            /**
+             * Format: date
+             * @description The date it will carry. Absent when it cannot be built.
+             */
+            issueDate?: string;
+            /**
+             * Format: date
+             * @description Absent when it cannot be built.
+             */
+            dueDate?: string;
+            /** @description Absent when it cannot be built. */
+            totals?: components["schemas"]["Totals"];
+            /** @description Whether the schedule e-mails it when raised. */
+            autoSend: boolean;
+            /** @description Why it cannot be built now (the run would fail the same way), e.g. an inactive product. */
+            problem?: string;
+        };
+        UpcomingInvoiceList: {
+            items: components["schemas"]["UpcomingInvoice"][];
         };
         RunPreview: {
             runs: string[];
@@ -3483,6 +3559,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listUpcomingInvoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invoices still to be raised. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpcomingInvoiceList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getScheduleSamplePdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sample as a PDF. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
                 };
             };
             default: components["responses"]["Problem"];

@@ -18,7 +18,7 @@ export function Wordmark({ dark = false, tagline = true }: { dark?: boolean; tag
         <div className={`fs-3 fw-bold ${dark ? 'text-cream' : 'text-primary-emphasis'}`}>
           cactus<span className={dark ? 'text-gold' : 'text-primary'}>Inv</span>
         </div>
-        {tagline && <div className={`mt-1 fw-semibold text-uppercase wordmark-tagline ${dark ? 'text-cream-muted' : 'text-primary-emphasis'}`}>Simple invoicing</div>}
+        {tagline && <div className={`mt-1 fw-semibold text-uppercase wordmark-tagline ${dark ? 'text-cream-muted' : 'text-primary-emphasis'}`}>Simple quotes and invoicing</div>}
       </div>
     </div>
   )

@@ -38,6 +38,7 @@ var operationAccess = map[string][]domain.Permission{
 
 	"listschedules": {domain.PermSchedulesView}, "getschedule": {domain.PermSchedulesView},
 	"previewschedule": {domain.PermSchedulesView}, "getscheduledefaults": {domain.PermSchedulesView},
+	"listupcominginvoices": {domain.PermSchedulesView}, "getschedulesamplepdf": {domain.PermSchedulesView},
 	"createschedule": {domain.PermSchedulesCreate}, "updateschedule": {domain.PermSchedulesEdit}, "deleteschedule": {domain.PermSchedulesDelete},
 	"pauseschedule": {domain.PermSchedulesPause}, "resumeschedule": {domain.PermSchedulesResume}, "runschedulenow": {domain.PermSchedulesRun},
 

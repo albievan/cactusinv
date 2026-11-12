@@ -874,6 +874,41 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RunPreview' }
         default: { $ref: '#/components/responses/Problem' }
+  /schedules/upcoming:
+    get:
+      tags: [schedules]
+      operationId: listUpcomingInvoices
+      description: >-
+        For every invoice schedule, active or paused, the next invoice it will raise and has
+        not raised yet, soonest first. A paused schedule shows the invoice it would raise if
+        resumed now. Nothing is stored. Schedules the user may not run are left out.
+      responses:
+        '200':
+          description: The invoices still to be raised.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpcomingInvoiceList' }
+        default: { $ref: '#/components/responses/Problem' }
+  /schedules/{id}/sample-pdf:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [schedules]
+      operationId: getScheduleSamplePdf
+      description: >-
+        The next invoice the schedule will raise, as a sample PDF: numbered SAMPLE and
+        watermarked "SAMPLE - DO NOT EMAIL TO CUSTOMER" on every page. Built in memory: no
+        invoice, number or run is stored and nothing is e-mailed.
+      responses:
+        '200':
+          description: The sample as a PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
   /schedules/defaults:
     get:
       tags: [schedules]
@@ -2028,7 +2063,8 @@ components:
           x-go-type-skip-optional-pointer: false
         notes:
           type: string
-          maxLength: 4000
+          maxLength: 800000
+          description: 'Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all).'
           x-go-type-skip-optional-pointer: false
         vatPercent:
           type: string
@@ -2128,7 +2164,7 @@ components:
       type: object
       required: [notes, version]
       properties:
-        notes: { type: string, maxLength: 4000 }
+        notes: { type: string, maxLength: 800000, description: 'Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all).' }
         version: { type: integer, description: The invoice version you edited (optimistic locking). }
     VoidRequest:
       type: object
@@ -2243,7 +2279,7 @@ components:
         recurrence: { $ref: '#/components/schemas/Recurrence' }
         lines: { type: array, items: { $ref: '#/components/schemas/ScheduleLine' }, maxItems: 200 }
         header: { $ref: '#/components/schemas/InvoiceHeader' }
-        notes: { type: string, maxLength: 4000 }
+        notes: { type: string, maxLength: 800000, description: 'Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all). The template of each run''s notes.' }
         vatPercent:
           type: string
           pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
@@ -2306,6 +2342,31 @@ components:
         unsent: { $ref: '#/components/schemas/EmailTemplate' }
         outstanding: { $ref: '#/components/schemas/EmailTemplate' }
         statement: { $ref: '#/components/schemas/EmailTemplate' }
+    UpcomingInvoice:
+      type: object
+      required: [scheduleId, scheduleName, scheduleStatus, customerId, customerName, currency, period, autoSend]
+      properties:
+        scheduleId: { type: string }
+        scheduleName: { type: string }
+        scheduleStatus: { $ref: '#/components/schemas/ScheduleStatus' }
+        customerId: { type: string }
+        customerName: { type: string }
+        currency: { type: string }
+        period: { type: string, format: date, description: 'The date the invoice is for (its {month}).' }
+        runAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false, description: When it will be raised; absent while the schedule is paused. }
+        issueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false, description: The date it will carry. Absent when it cannot be built. }
+        dueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false, description: Absent when it cannot be built. }
+        totals:
+          description: Absent when it cannot be built.
+          x-go-type-skip-optional-pointer: false
+          allOf: [{ $ref: '#/components/schemas/Totals' }]
+        autoSend: { type: boolean, description: Whether the schedule e-mails it when raised. }
+        problem: { type: string, description: 'Why it cannot be built now (the run would fail the same way), e.g. an inactive product.' }
+    UpcomingInvoiceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/UpcomingInvoice' } }
     RunPreview:
       type: object
       required: [runs, timeZone, weekendRule]

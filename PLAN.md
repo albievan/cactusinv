@@ -636,10 +636,41 @@ migrations runs the new version's down migrations first.
 | 31.5 | Found on the way: a server with backups but no `backup_key` stopped the update at the backup; it now goes on without one (logged), as an upgrade by hand would | done | caught by the end-to-end run |
 | 31.6 | Docs (README Features, Upgrading, Publishing a release; ARCHITECTURE §3.3, §3.7, §6, §19; ENGINEERING_PRINCIPLES; CLAUDE.md), VERSION 1.16.0, `make dist` | done | see the report |
 
+### M32 — Scheduled invoices still to be raised, with a sample preview (Albie, 2026-11-12) — v1.17.0
+
+> "under the invoices | scheduled i want to show all invoices scheduled and not yet generated only, even if the schedule is paused etc. the preview will generate a temporary invoice with a watermark 'SAMPLE - DO NOT EMAIL TO CUSTOMER'"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 32.1 | Domain: `Schedule.Upcoming(now, billedUntil)` (active: its pending occurrence; paused: as `Resume` would place it, keeping the stored status; e-mail and ended schedules none), `Schedule.SampleInvoice` (the run's draft, issued in memory as `SAMPLE`), `Invoice.Sample` | done | `TestScheduleUpcoming`, `TestScheduleSampleInvoice` |
+| 32.2 | App: `ListUpcomingInvoices` (active and paused, soonest first, only schedules the user may run; a next invoice that cannot be built carries the run's reason), `ScheduleSamplePDF` (stores nothing, takes no number, audited `schedule.sample_viewed`) | done | `TestUpcomingInvoicesAndSamples` (the real run still gets CD/1195/26; an inactive product is listed with the reason, no sample) |
+| 32.3 | API: `GET /schedules/upcoming`, `GET /schedules/{id}/sample-pdf` (`schedules.view`); PDF: a sample is titled as a sample, stage SAMPLE, watermark "SAMPLE - DO NOT EMAIL TO CUSTOMER" on every page, set smaller to fit | done | `TestSampleIsWatermarked`; contracts in sync |
+| 32.4 | Web: Invoices → **Scheduled** lists `UpcomingInvoices` (schedule, customer, month, raised / "When resumed", due, Scheduled/Paused, total) with Preview sample and Edit schedule; the search box filters it; raised scheduled invoices keep Preview, Edit schedule and Notes in the other filters | done | `InvoiceList.test.tsx`; browser on a throwaway stack (in-memory MariaDB 11): an active and a paused schedule listed, the sample PDF watermarked, 0 invoices and 0 e-mails after previewing |
+| 32.5 | Docs (README Features, ARCHITECTURE §3.7), VERSION 1.17.0 | done | |
+
+### M33 — Rich invoice notes: a basic word processor (Albie, 2026-11-12) — v1.17.0
+
+> "add a basic word processor functionallaty on the invoice notes under the scheduled invoices - where i can underline, insert image, insert table, change font and colour and fiont size etc."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 33.1 | Domain `notes.go`: notes are plain text (as before) or HTML; `ParseNotes` reads HTML into a small model (paragraphs and list items of styled runs, tables, images) under an allowlist, `CleanNotes` writes it back as canonical HTML (no scripts, events, links or outside images; images only PNG/JPEG `data:` URIs); limits: plain 4000 characters, formatted 800 000 bytes, 500 kB a picture | done | `TestCleanNotes`, `TestCleanNotesRemovesWhatIsNotAllowed`, `TestNotesPictures`, `TestNotesStyleParsing` |
+| 33.2 | Notes are cleaned when saved (schedule `Validate`, draft `applyContent`, `AmendNotes`); migration 00023: `schedules.notes`, `invoices.notes` MEDIUMTEXT; API `notes` maxLength 800000 | done | migration applied on MariaDB 11 (both columns `mediumtext`); `headSchema` 23 |
+| 33.3 | PDF (`pdf/notes.go`): notes drawn from the model, word-wrapped: bold, italic, underline, strike, colour, size, Sans (DejaVu) / Serif (Times) / Mono (Courier), alignment, lists, tables with borders (rows move to the next page whole), pictures (re-encoded 8-bit PNG or JPEG, at most the page width and 120 mm high; one the PDF cannot take is named, not fatal) | done | `TestRichNotes` (3 pages, every page watermarked, nothing below the body); sample PDF looked at |
+| 33.4 | Web: `RichNotesEditor` (contentEditable, no new package; toolbar: font, size, bold, italic, underline, strike, colour, align left/centre/right, bulleted and numbered lists, table of n×m, picture from a file, paste or drop — shrunk to 1000 px and 500 kB, clear formatting) for the schedule's notes, a draft's notes and the Notes sheet; plain notes open as text; loaded and pasted HTML is cleaned in an inert document first | done | `RichNotesEditor.test.tsx`, `InvoiceList.test.tsx`; browser: formatted, saved, reopened, sample PDF and a raised invoice (Run now) carry it, `{period}` filled |
+| 33.5 | Docs (README Features, ARCHITECTURE §3.7) | done | |
+| 33.6 | The wordmark's tagline reads "Simple quotes and invoicing" (was "Simple invoicing"; sign-in and setup screens) | done | `pnpm -C web check`; Chrome: one line, 234 px |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-12 | Formatted notes are stored as canonical HTML from an allowlist model (`domain.Notes`), not as the editor's HTML, and printed from that model | what is stored, shown and printed stays the same thing; nothing outside the allowlist (scripts, events, links, outside pictures) can be stored |
+| 2026-11-12 | `golang.org/x/net/html` v0.62.0 (BSD-3-Clause, the Go team; already in the module graph) used directly by the domain to read notes; v0.62.0 because v0.58.0's parser has GO-2026-6860 (quadratic text coalescing), which `ParseNotes` would reach. It raises `x/crypto` to v0.58.0 and `x/sys` to v0.49.0 | a real HTML5 parser; a hand-written one would be the weak spot of the allowlist. It does no I/O |
+| 2026-11-12 | The notes editor is a contentEditable with `document.execCommand`, no editor package | the toolbar needs only what execCommand does; no new dependency or bundle weight. execCommand is deprecated but supported by every browser the app targets |
+| 2026-11-12 | Serif and Mono notes print in the PDF core fonts Times and Courier (cp1252) | embedding two more font families would add about 3 MB; text in other scripts stays in Sans (DejaVu) |
+| 2026-11-12 | Invoices → Scheduled lists the next invoice of each schedule still to be raised (one per schedule), not invoices already raised; a paused schedule shows what it would raise if resumed now | the owner asked for scheduled invoices "not yet generated only, even if the schedule is paused"; one per schedule because a recurrence has no end to list; resuming skips the periods missed while paused, so the stored pending period would be wrong |
+| 2026-11-12 | A sample is built and rendered in memory, issued as `SAMPLE`, and never stored | a preview must not use a gap-free invoice number, write a run record or reach the outbox |
 | 2026-11-12 | An issued invoice's notes may change (audited); nothing else on it may | The owner's monthly remarks live in the notes and must reach a resend; they carry no money, number or tax |
 | 2026-11-12 | Releases are binaries committed in `dist/` on `main` with SHA256SUMS, as in cactusDB | The owner asked for cactusDB's mechanism; no CI exists. Cost: about 100 MB of history per release |
 | 2026-10-15 | Modular monolith, one binary (ADR-001) | "Simple invoice system"; hexagonal layers without microservice overhead |

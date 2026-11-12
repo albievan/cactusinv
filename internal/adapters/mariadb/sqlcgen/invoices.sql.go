@@ -91,7 +91,7 @@ func (q *Queries) DeleteInvoiceLines(ctx context.Context, invoiceID string) erro
 }
 
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country FROM invoices WHERE id = ?
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes FROM invoices WHERE id = ?
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
@@ -118,7 +118,6 @@ func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
 		&i.BillToAttention,
 		&i.ShipToName,
 		&i.ShipToAddress,
-		&i.Notes,
 		&i.TaxRateBp,
 		&i.SubtotalMinor,
 		&i.DiscountMinor,
@@ -144,6 +143,7 @@ func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
 		&i.ExportedVersion,
 		&i.OverdueAt,
 		&i.BankCountry,
+		&i.Notes,
 	)
 	return i, err
 }
@@ -377,7 +377,7 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, invoiceID string) ([]Inv
 }
 
 const listInvoices = `-- name: ListInvoices :many
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, notes, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country FROM invoices
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes FROM invoices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
@@ -441,7 +441,6 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 			&i.BillToAttention,
 			&i.ShipToName,
 			&i.ShipToAddress,
-			&i.Notes,
 			&i.TaxRateBp,
 			&i.SubtotalMinor,
 			&i.DiscountMinor,
@@ -467,6 +466,7 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 			&i.ExportedVersion,
 			&i.OverdueAt,
 			&i.BankCountry,
+			&i.Notes,
 		); err != nil {
 			return nil, err
 		}

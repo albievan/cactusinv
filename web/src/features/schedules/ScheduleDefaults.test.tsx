@@ -78,7 +78,7 @@ test('invoice schedules show the disclaimer every invoice prints, with its sourc
   expect(note).toHaveTextContent('Disclaimer printed on every invoice — the business disclaimer:')
   expect(await screen.findByText('Business disclaimer: third-party software.')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Edit the business disclaimer' })).toHaveAttribute('href', '/settings/business')
-  expect(screen.getByLabelText('Invoice notes')).toHaveValue('') // never copied into the notes
+  expect(screen.getByRole('textbox', { name: 'Invoice notes' })).toHaveTextContent(/^$/) // never copied into the notes
 
   await userEvent.selectOptions(screen.getByLabelText('Customer'), 'c2')
   expect(screen.getByTestId('schedule-disclaimer')).toHaveTextContent("this customer's own:Own Co terms apply.")

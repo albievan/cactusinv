@@ -190,9 +190,14 @@ func (s *Schedule) Validate() error {
 	if s.TaxRate != nil && (*s.TaxRate < 0 || *s.TaxRate > 10000) {
 		return invalid("vatPercent", "must be between 0 and 100 percent")
 	}
-	if len(s.EmailSubject) > 300 || len(s.EmailBody) > 10000 || len(s.Notes) > 4000 {
-		return invalid("email", "subject, body or notes too long")
+	if len(s.EmailSubject) > 300 || len(s.EmailBody) > 10000 {
+		return invalid("email", "subject or body too long")
 	}
+	notes, err := CleanNotes("notes", s.Notes)
+	if err != nil {
+		return err
+	}
+	s.Notes = notes
 	return nil
 }
 
@@ -351,6 +356,50 @@ func (s *Schedule) UpcomingRuns(n int) []time.Time {
 		first = s.Recurrence.RunTime(s.NextOccurrence)
 	}
 	return append([]time.Time{first}, s.Recurrence.RunsAfter(s.NextOccurrence, n-1)...)
+}
+
+// Upcoming is a copy of an invoice schedule placed on the next invoice it would raise and
+// has not raised yet (its run record does not exist): an active schedule's pending
+// occurrence, and a paused one's as if resumed at now (Resume: a failed pending period is
+// kept, otherwise the next occurrence after now, never inside billed time). The copy keeps
+// the stored Status. ok is false for an e-mail schedule and when nothing is left to raise.
+func (s *Schedule) Upcoming(now time.Time, billedUntil Date) (up Schedule, ok bool) {
+	if s.Kind == ScheduleEmail || s.Status == ScheduleEnded || s.NextOccurrence.IsZero() {
+		return Schedule{}, false
+	}
+	up = *s
+	up.Lines = append([]ScheduleLine(nil), s.Lines...)
+	if up.Status == SchedulePaused {
+		if err := up.Resume(now, billedUntil); err != nil || up.Status != ScheduleActive {
+			return Schedule{}, false
+		}
+		up.Status = SchedulePaused
+		up.NextRunAt = time.Time{}
+	}
+	return up, true
+}
+
+// SampleNumber is the number printed on a sample of a scheduled invoice: never a real one.
+const SampleNumber = "SAMPLE"
+
+// SampleInvoice is the invoice the schedule would raise for its current period, issued
+// in memory only: numbered SampleNumber, dated issue, paid into bank. It is never stored,
+// takes no invoice number and is never e-mailed.
+func (s *Schedule) SampleInvoice(c Customer, products map[string]Product, defaultVAT BasisPoints, issue Date, bank BankDetails, now time.Time) (*Invoice, error) {
+	content, err := s.BuildDraft(c, products, defaultVAT, issue)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := NewDraftInvoice("sample-"+s.ID, c, content, now)
+	if err != nil {
+		return nil, err
+	}
+	inv.ScheduleID = s.ID
+	if err := inv.Issue(SampleNumber, issue, bank, now); err != nil {
+		return nil, err
+	}
+	inv.Sample = true
+	return inv, nil
 }
 
 // BillingPeriod is the billing period [start, end) of the occurrence being processed (see
