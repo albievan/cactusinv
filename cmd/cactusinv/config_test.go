@@ -66,9 +66,22 @@ func TestUpdateURL(t *testing.T) {
 	if c, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": "https://mirror.example/cactusinv/VERSION"})); err != nil || c.UpdateURL != "https://mirror.example/cactusinv/VERSION" {
 		t.Fatalf("mirror %q %v", c.UpdateURL, err)
 	}
-	for _, bad := range []string{"file:///etc/passwd", "ftp://x/VERSION", "https://", "not a url"} {
+	if c, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": "http://127.0.0.1:9000/VERSION"})); err != nil || c.UpdateURL == "" {
+		t.Fatalf("local mirror %q %v", c.UpdateURL, err)
+	}
+	for _, bad := range []string{"file:///etc/passwd", "ftp://x/VERSION", "https://", "not a url", "http://mirror.example/VERSION"} {
 		if _, err := loadConfig(env(map[string]string{"CACTUSINV_UPDATE_URL": bad})); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+func TestTrustedProxies(t *testing.T) {
+	c, err := loadConfig(env(map[string]string{"CACTUSINV_TRUSTED_PROXIES": "10.42.0.0/16, 192.168.1.5"}))
+	if err != nil || len(c.TrustedProxies) != 2 || c.TrustedProxies[1].String() != "192.168.1.5/32" {
+		t.Fatalf("%v %v", c.TrustedProxies, err)
+	}
+	if _, err := loadConfig(env(map[string]string{"CACTUSINV_TRUSTED_PROXIES": "nope"})); err == nil {
+		t.Fatal("a bad proxy was accepted")
 	}
 }

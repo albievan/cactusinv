@@ -264,6 +264,20 @@ func (s *Service) editSchedule(ctx context.Context, r ports.Repos, cur *domain.S
 	if err := s.checkSchedule(ctx, r, sc); err != nil {
 		return err
 	}
+	if sc.CustomerID != cur.CustomerID && hasFixedPrices(*sc) {
+		was, err := r.Customers.Get(ctx, cur.CustomerID)
+		if err != nil {
+			return err
+		}
+		now, err := r.Customers.Get(ctx, sc.CustomerID)
+		if err != nil {
+			return err
+		}
+		if was.Currency != now.Currency {
+			return &domain.ValidationError{Field: "lines.unitPrice", Reason: "the fixed prices are in " + string(was.Currency) +
+				", but " + now.Name + " is billed in " + string(now.Currency) + ": clear them, save, then enter prices in " + string(now.Currency)}
+		}
+	}
 	// The run state is the server's: a paused schedule keeps its pending occurrence and
 	// failure count (Resume decides from them); an active one keeps an unrun overdue
 	// occurrence and continues after what was billed (ActivateFrom).

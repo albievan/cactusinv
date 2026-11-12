@@ -110,10 +110,12 @@ func checkCustomer(ctx context.Context, r ports.Repos, c *domain.Customer, cur *
 }
 
 // noOpenInvoices refuses a currency change while the customer owes invoices in the old
-// currency: a statement is in one currency, so they would drop off it.
+// currency (a statement is in one currency, so they would drop off it), has drafts priced
+// in it (they would be issued in the old currency), or has a schedule with fixed prices,
+// which are amounts in the old currency and would be billed unchanged in the new one.
 func noOpenInvoices(ctx context.Context, r ports.Repos, c domain.Customer) error {
 	open := 0
-	for _, st := range []domain.InvoiceStatus{domain.InvoiceIssued, domain.InvoiceSent, domain.InvoiceOverdue} {
+	for _, st := range []domain.InvoiceStatus{domain.InvoiceDraft, domain.InvoiceIssued, domain.InvoiceSent, domain.InvoiceOverdue} {
 		_, n, err := r.Invoices.List(ctx, ports.InvoiceFilter{CustomerID: c.ID, Status: st, Page: ports.Page{Limit: 1}})
 		if err != nil {
 			return err
@@ -122,7 +124,34 @@ func noOpenInvoices(ctx context.Context, r ports.Repos, c domain.Customer) error
 	}
 	if open > 0 {
 		return &domain.ValidationError{Field: "currency", Reason: fmt.Sprintf(
-			"cannot change while %d invoice(s) in %s are unpaid: mark them paid or void them first", open, c.Currency)}
+			"cannot change while %d invoice(s) in %s are drafts or unpaid: issue and settle, void or delete them first", open, c.Currency)}
 	}
-	return nil
+	page := ports.Page{Limit: 200}.Normalize()
+	for {
+		list, total, err := r.Schedules.List(ctx, ports.ScheduleFilter{CustomerID: c.ID, Page: page})
+		if err != nil {
+			return err
+		}
+		for _, sc := range list {
+			if hasFixedPrices(sc) {
+				return &domain.ValidationError{Field: "currency", Reason: fmt.Sprintf(
+					"cannot change while schedule %q has fixed prices in %s: clear its fixed prices first", sc.Name, c.Currency)}
+			}
+		}
+		page.Offset += len(list)
+		if len(list) == 0 || page.Offset >= total {
+			return nil
+		}
+	}
+}
+
+// hasFixedPrices reports whether a schedule has a line with its own price (an amount in
+// its customer's currency) rather than the product's price list.
+func hasFixedPrices(sc domain.Schedule) bool {
+	for _, l := range sc.Lines {
+		if l.UnitPrice != nil {
+			return true
+		}
+	}
+	return false
 }

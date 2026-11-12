@@ -58,6 +58,7 @@ services:
       CACTUSINV_LOG_LEVEL: ${CACTUSINV_LOG_LEVEL}
       CACTUSINV_UPDATE_URL: ${CACTUSINV_UPDATE_URL:-}
       CACTUSINV_COOKIE_SECURE: ${CACTUSINV_COOKIE_SECURE}
+      CACTUSINV_TRUSTED_PROXIES: ${CACTUSINV_TRUSTED_PROXIES:-}
       CACTUSINV_DEFAULT_ADMIN_USER: ${CACTUSINV_DEFAULT_ADMIN_USER}
       CACTUSINV_DEFAULT_ADMIN_PASSWORD: ${CACTUSINV_DEFAULT_ADMIN_PASSWORD}
       CACTUSINV_SMTP_HOST: ${CACTUSINV_SMTP_HOST}
@@ -88,7 +89,8 @@ services:
     profiles: [mailpit]
     restart: unless-stopped
     ports:
-      - "${MAILPIT_PORT}:8025"
+      # This machine only: the test mailbox holds real invoices and has no sign-in.
+      - "127.0.0.1:${MAILPIT_PORT}:8025"
 
 secrets:
   db_password:

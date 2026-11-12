@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, unwrap, type AdhocCustomer, type Customer, type Schemas } from '../../lib/api/client'
 import { todayISO } from '../../lib/format'
@@ -85,10 +85,37 @@ export function QuoteEditor() {
   const vat = vatPercent ?? business.data?.vatPercent ?? '0'
   const shownTerms = terms ?? settings.data?.terms ?? ''
 
-  const pickCustomer = (cid: string) => { setCustomer(customers.data?.find((c) => c.id === cid)); resetPrices() }
-  const pickAdhoc = (aid: string) => { setAdhoc(adhocs.data?.find((a) => a.id === aid)); resetPrices() }
-  // Another party may be in another currency: the products are priced again when saved.
-  const resetPrices = () => setLines((cur) => cur.map((l) => ({ ...l, unitPrice: '' })))
+  const pickCustomer = (cid: string) => {
+    const c = customers.data?.find((x) => x.id === cid)
+    setCustomer(c)
+    reprice(c?.currency ?? '')
+  }
+  const pickAdhoc = (aid: string) => {
+    const a = adhocs.data?.find((x) => x.id === aid)
+    setAdhoc(a)
+    reprice(a?.currency ?? '')
+  }
+  // Another party may be in another currency: every chosen product is priced again in it,
+  // and one with no price there is cleared so the user picks another. Only the newest
+  // change may set prices (a slower answer for an earlier party is dropped).
+  const repriceSeq = useRef(0)
+  const reprice = (nextCur: string) => {
+    const seq = ++repriceSeq.current
+    if (!nextCur || nextCur === currency) return
+    const chosen = lines.filter((l) => l.productId)
+    if (chosen.length === 0) return
+    setLines((cur) => cur.map((l) => ({ ...l, unitPrice: '' })))
+    void Promise.all(chosen.map((l) => unwrap(api.GET('/products/{id}', { params: { path: { id: l.productId } } })).catch(() => null))).then((products) => {
+      if (seq !== repriceSeq.current) return
+      setLines((cur) =>
+        cur.map((l) => {
+          if (!l.productId) return l
+          const price = products.find((p) => p?.id === l.productId)?.prices.find((x) => x.currency === nextCur)?.unitPrice
+          return price ? { ...l, unitPrice: price } : { ...l, productId: '', productName: '', description: '', unitPrice: '' }
+        }),
+      )
+    })
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -126,7 +153,7 @@ export function QuoteEditor() {
           {!id && (
             <div className="btn-group" role="radiogroup" aria-label="Quote for">
               {(['customer', 'adhoc'] as const).map((p) => (
-                <button key={p} type="button" role="radio" aria-checked={party === p} className={`btn btn-outline-primary${party === p ? ' active' : ''}`} onClick={() => { setParty(p); setQuery('') }}>
+                <button key={p} type="button" role="radio" aria-checked={party === p} className={`btn btn-outline-primary${party === p ? ' active' : ''}`} onClick={() => { setParty(p); setQuery(''); reprice((p === 'customer' ? customer?.currency : adhoc?.currency) ?? '') }}>
                   {p === 'customer' ? 'Customer' : 'Ad-hoc customer'}
                 </button>
               ))}
@@ -189,7 +216,7 @@ export function QuoteEditor() {
           <button className="btn btn-primary" disabled={busy || (!id && !chosen)}>{busy ? 'Saving…' : 'Save quote'}</button>
         </StickyActions>
       </form>
-      {adding && <AdhocSheet initial={blankAdhoc()} onClose={() => setAdding(false)} onSaved={(a) => { setAdding(false); setAdhoc(a); adhocs.reload(); resetPrices() }} />}
+      {adding && <AdhocSheet initial={blankAdhoc()} onClose={() => setAdding(false)} onSaved={(a) => { setAdding(false); setAdhoc(a); adhocs.reload(); reprice(a.currency) }} />}
     </Page>
   )
 }

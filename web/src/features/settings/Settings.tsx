@@ -66,8 +66,11 @@ export function ChangePassword() {
   const [next, setNext] = useState('')
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
+  const [busy, setBusy] = useState(false)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (busy) return
+    setBusy(true)
     setErr(null)
     setMsg('')
     try {
@@ -77,6 +80,8 @@ export function ChangePassword() {
       setMsg('Password changed. Your other sessions were signed out.')
     } catch (x) {
       setErr(x as Error)
+    } finally {
+      setBusy(false)
     }
   }
   return (
@@ -87,7 +92,7 @@ export function ChangePassword() {
       <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} maxLength={200} className="form-control" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
       <div className="d-flex align-items-center justify-content-end gap-3">
         {msg && <span className="small text-success">{msg}</span>}
-        <button className="btn btn-primary">Change password</button>
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Changing…' : 'Change password'}</button>
       </div>
     </form>
   )
@@ -172,6 +177,7 @@ function EmailServer() {
   const [msg, setMsg] = useState('')
   const [msgWarns, setMsgWarns] = useState(false)
   const [err, setErr] = useState<Error | null>(null)
+  const [saving, setSaving] = useState(false)
   const [guide, setGuide] = useState(false)
   // The test uses the SAVED settings, so it waits until the form is saved.
   const [saved, setSaved] = useState('')
@@ -182,6 +188,8 @@ function EmailServer() {
   const set = (patch: Partial<EmailSettings>) => setE({ ...e, ...patch })
   const save = async (ev: FormEvent) => {
     ev.preventDefault()
+    if (saving) return
+    setSaving(true)
     setErr(null)
     setMsg('')
     setMsgWarns(false)
@@ -193,6 +201,8 @@ function EmailServer() {
       setMsg('Saved.')
     } catch (x) {
       setErr(x as Error)
+    } finally {
+      setSaving(false)
     }
   }
   const test = async () => {
@@ -270,7 +280,7 @@ function EmailServer() {
         {can('settings.email.test') && dirty && <span className="fs-8 text-body-secondary">Save first — the test uses the saved settings.</span>}
         <span className="flex-grow-1" />
         {msg && <span role="status" className={msgWarns ? 'small fw-medium text-warning-emphasis' : 'small text-success'}>{msg}</span>}
-        {can('settings.email') && <button className="btn btn-primary">Save e-mail server</button>}
+        {can('settings.email') && <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save e-mail server'}</button>}
       </div>
       <EmailSetupGuide open={guide} onClose={() => setGuide(false)} provider={preset as GuideProvider} />
     </form>
@@ -283,6 +293,7 @@ function BusinessForm() {
   const [b, setB] = useState<BusinessSettings>()
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
+  const [saving, setSaving] = useState(false)
   // The next number as loaded: sent only when changed (0 = unchanged), so saving the profile
   // after an invoice was issued meanwhile does not fail as "may only increase".
   const [loadedSeq, setLoadedSeq] = useState(0)
@@ -291,6 +302,8 @@ function BusinessForm() {
   const set = (patch: Partial<BusinessSettings>) => setB({ ...b, ...patch })
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (saving) return
+    setSaving(true)
     setErr(null)
     try {
       const out = await unwrap(api.PUT('/settings/business', { body: { ...b, nextSequence: b.nextSequence === loadedSeq ? 0 : b.nextSequence } }))
@@ -299,6 +312,8 @@ function BusinessForm() {
       setMsg('Saved.')
     } catch (x) {
       setErr(x as Error)
+    } finally {
+      setSaving(false)
     }
   }
   return (
@@ -325,7 +340,7 @@ function BusinessForm() {
       </div>
       <div className="d-flex align-items-center justify-content-end gap-3">
         {msg && <span className="small text-success">{msg}</span>}
-        {can('settings.business') && <button className="btn btn-primary">Save business</button>}
+        {can('settings.business') && <button className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save business'}</button>}
       </div>
     </form>
   )
@@ -340,33 +355,38 @@ function CurrenciesAndBanks() {
   const [editCur, setEditCur] = useState<Currency & { isNew?: boolean }>()
   const [editBank, setEditBank] = useState<BankAccount>()
   const [err, setErr] = useState<Error | null>(null)
-  const saveCurrency = async (c: Currency & { isNew?: boolean }) => {
+  // One request at a time: a double tap on Save created a bank account twice.
+  const [saving, setSaving] = useState(false)
+  const once = async (fn: () => Promise<void>) => {
+    if (saving) return
+    setSaving(true)
     setErr(null)
     try {
+      await fn()
+    } catch (x) {
+      setErr(x as Error)
+    } finally {
+      setSaving(false)
+    }
+  }
+  const saveCurrency = (c: Currency & { isNew?: boolean }) => once(async () => {
       const body = { code: c.code, name: c.name, symbol: c.symbol, minorUnits: c.minorUnits, active: c.active }
       if (c.isNew) await unwrap(api.POST('/currencies', { body }))
       else await unwrap(api.PUT('/currencies/{code}', { params: { path: { code: c.code } }, body }))
       setEditCur(undefined)
       currencies.reload()
-    } catch (x) { setErr(x as Error) }
-  }
-  const saveBank = async (b: BankAccount) => {
-    setErr(null)
-    try {
+  })
+  const saveBank = (b: BankAccount) => once(async () => {
       if (b.id) await unwrap(api.PUT('/bank-accounts/{id}', { params: { path: { id: b.id } }, body: b }))
       else await unwrap(api.POST('/bank-accounts', { body: b }))
       setEditBank(undefined)
       banks.reload()
-    } catch (x) { setErr(x as Error) }
-  }
-  const deleteBank = async (b: BankAccount) => {
-    setErr(null)
-    try {
+  })
+  const deleteBank = (b: BankAccount) => once(async () => {
       await unwrap(api.DELETE('/bank-accounts/{id}', { params: { path: { id: b.id! } } }))
       setEditBank(undefined)
       banks.reload()
-    } catch (x) { setErr(x as Error) }
-  }
+  })
   return (
     <section className="card card-body vstack gap-3">
       <div className="d-flex align-items-center justify-content-between gap-2">
@@ -396,30 +416,30 @@ function CurrenciesAndBanks() {
         </div>
       ))}
       <Sheet title={editCur?.isNew ? 'New currency' : `Currency ${editCur?.code ?? ''}`} open={!!editCur} onClose={() => setEditCur(undefined)}>
-        {editCur && <CurrencyForm c={editCur} onSave={saveCurrency} />}
+        {editCur && <CurrencyForm c={editCur} onSave={(c) => void saveCurrency(c)} busy={saving} />}
       </Sheet>
       <Sheet title={editBank?.id ? 'Bank account' : `New ${editBank?.currency ?? ''} bank account`} open={!!editBank} onClose={() => setEditBank(undefined)}>
-        {editBank && <BankForm b={editBank} onSave={saveBank} onDelete={deleteBank} />}
+        {editBank && <BankForm b={editBank} onSave={(b) => void saveBank(b)} onDelete={(b) => void deleteBank(b)} busy={saving} />}
       </Sheet>
     </section>
   )
 }
 
-function CurrencyForm({ c: initial, onSave }: { c: Currency & { isNew?: boolean }; onSave: (c: Currency & { isNew?: boolean }) => void }) {
+function CurrencyForm({ c: initial, onSave, busy }: { c: Currency & { isNew?: boolean }; onSave: (c: Currency & { isNew?: boolean }) => void; busy: boolean }) {
   const [c, setC] = useState(initial)
   return (
     <form className="vstack gap-3" onSubmit={(e) => { e.preventDefault(); onSave(c) }}>
       <Field label="ISO code">{(f) => <input id={f} className="form-control text-uppercase" maxLength={3} value={c.code} disabled={!c.isNew} onChange={(e) => setC({ ...c, code: e.target.value.toUpperCase() })} required />}</Field>
       <Field label="Name">{(f) => <input id={f} className="form-control" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} required />}</Field>
       <Field label="Symbol">{(f) => <input id={f} className="form-control" value={c.symbol} onChange={(e) => setC({ ...c, symbol: e.target.value })} />}</Field>
-      <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} className="form-control" value={c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: Number(e.target.value) })} />}</Field>
+      <Field label="Decimal places" hint="Cannot change later.">{(f) => <input id={f} type="number" min={0} max={3} step={1} className="form-control" value={Number.isNaN(c.minorUnits) ? '' : c.minorUnits} disabled={!c.isNew} onChange={(e) => setC({ ...c, minorUnits: e.target.value === '' ? NaN : Number(e.target.value) })} required />}</Field>
       <div className="form-check"><input type="checkbox" id="currency-active" className="form-check-input" checked={c.active} onChange={(e) => setC({ ...c, active: e.target.checked })} /><label className="form-check-label" htmlFor="currency-active">Active</label></div>
-      <Can need={c.isNew ? 'settings.currencies.create' : 'settings.currencies.edit'}><button className="btn btn-primary w-100">Save</button></Can>
+      <Can need={c.isNew ? 'settings.currencies.create' : 'settings.currencies.edit'}><button className="btn btn-primary w-100" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></Can>
     </form>
   )
 }
 
-function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b: BankAccount) => void; onDelete: (b: BankAccount) => void }) {
+function BankForm({ b: initial, onSave, onDelete, busy }: { b: BankAccount; onSave: (b: BankAccount) => void; onDelete: (b: BankAccount) => void; busy: boolean }) {
   const [b, setB] = useState(initial)
   const text = (k: keyof BankAccount, label: string, required = false) => (
     <Field label={label}>{(f) => <input id={f} className="form-control" value={String(b[k] ?? '')} onChange={(e) => setB({ ...b, [k]: e.target.value })} required={required} />}</Field>
@@ -440,7 +460,7 @@ function BankForm({ b: initial, onSave, onDelete }: { b: BankAccount; onSave: (b
       <div className="form-check"><input type="checkbox" id="bank-active" className="form-check-input" checked={b.active} onChange={(e) => setB({ ...b, active: e.target.checked })} /><label className="form-check-label" htmlFor="bank-active">Active</label></div>
       <div className="d-flex gap-2">
         <Can need="settings.banks.delete">{b.id && <ConfirmButton label="Delete" title="Delete this bank account?" message="It is no longer offered for new invoices. Invoices already issued keep the bank details printed on them." confirmLabel="Delete" onConfirm={() => onDelete(b)} />}</Can>
-        <Can need={b.id ? 'settings.banks.edit' : 'settings.banks.create'}><button className="btn btn-primary flex-grow-1">Save</button></Can>
+        <Can need={b.id ? 'settings.banks.edit' : 'settings.banks.create'}><button className="btn btn-primary flex-grow-1" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button></Can>
       </div>
     </form>
   )

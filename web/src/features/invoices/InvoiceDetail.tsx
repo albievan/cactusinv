@@ -22,6 +22,8 @@ export function InvoiceDetail() {
   // A draft dated in the past is issued with a date the user picks: it used to be issued
   // backdated silently (perhaps overdue at once, out of number order).
   const [askDate, setAskDate] = useState(false)
+  // thenSend: the date was asked for "Send later / other address…", which opens once issued.
+  const [thenSend, setThenSend] = useState(false)
 
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Invoice" back="/invoices"><ErrorBanner error={error} /></Page>
@@ -70,13 +72,13 @@ export function InvoiceDetail() {
           <>
             <Can need="invoices.edit"><Link to={`/invoices/${id}/edit`} className="btn btn-sm btn-outline-primary"><IconEdit width={15} /> Edit</Link></Can>
             <Can need="invoices.issue"><button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => (inv.issueDate < todayISO() ? setAskDate(true) : act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} }))))}>Issue</button></Can>
-            <Sheet title="Issue with which date?" open={askDate} onClose={() => setAskDate(false)}>
+            <Sheet title="Issue with which date?" open={askDate} onClose={() => { setAskDate(false); setThenSend(false) }}>
               <p className="small text-body-secondary mb-0">This draft is dated {formatDate(inv.issueDate)}. The due date follows from the date it is issued with.</p>
               <div className="mt-3 d-flex flex-wrap justify-content-end gap-2">
-                <button className="btn btn-outline-primary" disabled={busy} onClick={() => { setAskDate(false); void act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} }))) }}>
+                <button className="btn btn-outline-primary" disabled={busy} onClick={() => { setAskDate(false); setThenSend(false); void act(async () => { await unwrap(api.POST('/invoices/{id}/issue', { ...path, body: {} })); if (thenSend) setSendOpen(true) }) }}>
                   Keep {formatDate(inv.issueDate)}
                 </button>
-                <button className="btn btn-primary" disabled={busy} onClick={() => { setAskDate(false); void act(() => unwrap(api.POST('/invoices/{id}/issue', { ...path, body: { issueDate: todayISO() } }))) }}>
+                <button className="btn btn-primary" disabled={busy} onClick={() => { setAskDate(false); setThenSend(false); void act(async () => { await unwrap(api.POST('/invoices/{id}/issue', { ...path, body: { issueDate: todayISO() } })); if (thenSend) setSendOpen(true) }) }}>
                   Issue dated today
                 </button>
               </div>
@@ -96,7 +98,7 @@ export function InvoiceDetail() {
           // Sending a draft issues it, which also needs invoices.issue (as "Issue & send").
           <Can need={inv.status === 'draft' ? 'invoices.issue' : 'invoices.send'}>
           <Can need="invoices.send">
-            <button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => setSendOpen(true)}>Send later / other address…</button>
+            <button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => (inv.status === 'draft' && inv.issueDate < todayISO() ? (setThenSend(true), setAskDate(true)) : setSendOpen(true))}>Send later / other address…</button>
           </Can>
           </Can>
         )}

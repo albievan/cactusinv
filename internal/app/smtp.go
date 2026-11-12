@@ -39,9 +39,13 @@ func (s *Service) UpdateSMTPSettings(ctx context.Context, st domain.SMTPSettings
 		return SMTPView{}, wrap("app.UpdateSMTPSettings", err)
 	}
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		_, enc, err := r.SMTP.Get(ctx)
+		cur, enc, err := r.SMTP.Get(ctx)
 		if err != nil && !errors.Is(err, domain.ErrNotFound) {
 			return err
+		}
+		if password == nil && len(enc) > 0 && (!strings.EqualFold(st.Host, cur.Host) || st.Username != cur.Username) {
+			// The stored password belongs to that server's account: never send it to another.
+			return &domain.ValidationError{Field: "password", Reason: "enter the password again: the stored one is for " + cur.Username + " at " + cur.Host}
 		}
 		if password != nil {
 			enc = nil

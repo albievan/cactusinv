@@ -38,14 +38,14 @@ func (r quoteRepo) List(ctx context.Context, f ports.QuoteFilter) ([]domain.Quot
 	p := f.Page.Normalize()
 	rows, err := r.q.ListQuotes(ctx, sqlcgen.ListQuotesParams{
 		Status: string(f.Status), CustomerID: filter(f.CustomerID), AdhocCustomerID: filter(f.AdhocCustomerID),
-		Query: f.Query, Expired: f.Expired, Today: quoteToday(f.Today), Limit: i32(p.Limit), Offset: i32(p.Offset),
+		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today), Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
 	total, err := r.q.CountQuotes(ctx, sqlcgen.CountQuotesParams{
 		Status: string(f.Status), CustomerID: filter(f.CustomerID), AdhocCustomerID: filter(f.AdhocCustomerID),
-		Query: f.Query, Expired: f.Expired, Today: quoteToday(f.Today),
+		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
@@ -173,12 +173,12 @@ func toAdhocCustomer(r sqlcgen.AdhocCustomer) domain.AdhocCustomer {
 func (r adhocCustomerRepo) List(ctx context.Context, f ports.AdhocCustomerFilter) ([]domain.AdhocCustomer, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListAdhocCustomers(ctx, sqlcgen.ListAdhocCustomersParams{
-		Query: f.Query, IncludeConverted: f.IncludeConverted, Limit: i32(p.Limit), Offset: i32(p.Offset),
+		Query: likeEscape(f.Query), IncludeConverted: f.IncludeConverted, Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
-	total, err := r.q.CountAdhocCustomers(ctx, sqlcgen.CountAdhocCustomersParams{Query: f.Query, IncludeConverted: f.IncludeConverted})
+	total, err := r.q.CountAdhocCustomers(ctx, sqlcgen.CountAdhocCustomersParams{Query: likeEscape(f.Query), IncludeConverted: f.IncludeConverted})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}

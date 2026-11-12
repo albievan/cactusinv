@@ -76,7 +76,7 @@ var operationAccess = map[string][]domain.Permission{
 	// and an import changes many things at once: each has its own permission (M24).
 	"exportsettings": {domain.PermSettingsExport}, "importsettings": {domain.PermSettingsImport},
 	"getsystemsettings": {domain.PermSettingsSystemView}, "updatesystemsettings": {domain.PermSettingsSystemEdit},
-	"checkforupdate": {domain.PermSettingsSystemView}, "getupdateprogress": {domain.PermSettingsSystemView}, "installupdate": {domain.PermSettingsSystemEdit},
+	"checkforupdate": {domain.PermSettingsSystemView}, "getupdateprogress": {domain.PermSettingsSystemView}, "installupdate": {domain.PermAdminister},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).

@@ -688,10 +688,54 @@ migrations runs the new version's down migrations first.
 | 35.2 | PDF: linked runs blue, underlined, with a URI link annotation; web addresses in plain notes, the disclaimer and quote terms clickable too | done | `TestNotesLinksAreClickable` |
 | 35.3 | Editor: *Insert link* (selection, or the address as text), *Remove link*; pastes keep only safe `href`s; read-only notes open links in a new tab; links blue and underlined in the editor | done | `RichNotesEditor.test.tsx` (3 new tests); Chrome: a link inserted in a draft's notes, saved, and the invoice PDF has four clickable links (pypdf) |
 
+### M36 — Code review: bugs, edge cases and security (Albie, 2026-11-12) — v1.19.0
+
+> "Read this whole codebase and find real bugs, broken edge cases, and anything that falls over in front of a user. List everything by severity and fix anything until no more bugs exist. Then look for any security vulnerabilities and fix it"
+
+Five reviewers read domain/app, HTTP/auth, MariaDB/backup/restore, PDF/SMTP/self-update/deploy and the web app; every finding was checked against the code before it was fixed. Severity is the reviewers' after checking.
+
+| # | Severity | Finding → fix | Status | Evidence |
+|---|---|---|---|---|
+| 36.1 | High (security) | A user allowed to change the e-mail server could point it at their own host and receive the stored mail password at the next send → a host or account change needs the password typed again (the import already refused this) | done | `TestSMTPPasswordStaysWithItsServer` |
+| 36.2 | High (security) | A PNG of a few hundred kB but 60000×60000 pixels passed the 500 kB check and unpacked to gigabytes when a PDF was made (the pod is OOM-killed on every render and outbox retry) → pictures at most 5000 px a side and 16 MP, checked when notes are saved and again before decoding | done | `TestNotePicturePixelBound`, `TestHugePictureIsNotDecoded` |
+| 36.3 | High | A schedule's fixed prices were billed unchanged after its customer's currency changed (R1 500 became USD 1 500, issued and e-mailed automatically) → a currency change is refused while a schedule of the customer has fixed prices, and a schedule with fixed prices cannot move to a customer in another currency | done | `TestFixedPricesKeepTheirCurrency` |
+| 36.4 | Medium | A restore rewound the quote sequence, so quote numbers already sent were given again → the live quote sequence is kept when ahead, as the invoice one is; a backup without one gets the live one (`SetQuoteSequence` is an upsert) | done | `TestRestoreKeepsTheQuoteSequence` |
+| 36.5 | Medium | A currency change was allowed while drafts existed; issued later, they fell off the customer's statements → drafts count as open | done | `TestCurrencyChangeWaitsForDrafts` |
+| 36.6 | Medium | An ad-hoc customer converted into another currency left their quotes impossible to invoice → refused while they have quotes | done | `TestAdhocConversionKeepsQuoteCurrency` |
+| 36.7 | Medium | A quote created while its ad-hoc customer was being converted kept no customer for good → converting a quote adopts the customer the ad-hoc customer became | done | `TestQuoteAdoptsConvertedCustomer` |
+| 36.8 | Medium (security) | Behind the k3s ingress every client shares its address, so one client's wrong passwords locked everyone out of sign-in → `CACTUSINV_TRUSTED_PROXIES` (k8s manifest: the k3s pod network); behind a trusted proxy the client is the right-most X-Forwarded-For address it did not add | done | `TestClientAddress`, `TestTrustedProxies` |
+| 36.9 | Medium (security) | The mail-server test returned the raw connection error, so it could map which internal ports are open and what answers on them → anything before a mail server answers is "could not reach a mail server" (`ports.ErrMailUnreachable`) | done | `TestUnreachableMailServer` |
+| 36.10 | Medium (security) | Self-update accepted `http://` URLs and followed redirects from https to http, then ran what it downloaded → https only (http to localhost), no downgrade on redirect, the download file is created fresh (`O_EXCL`) | done | `config_test.go` |
+| 36.11 | Medium (security) | Mailpit's SMTP port got a node port on k8s, and its web page was on every interface in Docker → SMTP is cluster-only (`mailpit-web` keeps the page's node port); compose binds it to 127.0.0.1 | done | manifest, compose |
+| 36.12 | Medium | Settings → Quotes and the next quote number were not in a settings file, so a move restarted quote numbers at 1 → a `quoteSettings` section; its sequence only moves forward and needs `settings.quotes` | done | `TestSettingsFileCarriesQuoteSettings`, `ImportExport.test.tsx` |
+| 36.13 | Medium | "Issue & send" (and "Send later") on a draft dated in the past issued it backdated without asking → the same date question as Issue | done | `InvoiceEditor.test.tsx` |
+| 36.14 | Medium | Settings forms (bank account, currency, business, e-mail server, password) could be submitted twice; a double tap created two bank accounts → one request at a time | done | review |
+| 36.15 | Medium | Switching customers quickly on an invoice could fill the lines with an earlier customer's currency prices; the quote editor blanked every price on any customer change → only the newest change sets prices, and only when the currency changes | done | review |
+| 36.16 | Medium | Schedule screens loaded only the first 200 customers and schedules → all pages | done | `Schedules.test.tsx` |
+| 36.17 | Low | A queued e-mail of a quote declined meanwhile was still sent → not sent | done | `TestDeclinedQuoteIsNotEmailed` |
+| 36.18 | Low | A panic in a worker pass or while preparing an e-mail ended the process (and again on every retry) → contained and logged; the message fails like any other error | done | `TestPanickingPassIsContained` |
+| 36.19 | Low | Search terms treated `%` and `_` as wildcards → matched literally | done | `TestQuotesPersistence` (MariaDB) |
+| 36.20 | Low | Notes: a table row taller than a page ran off it; a very long word took quadratic time and could be cut inside a character → rows continue on the next page; words are cut in linear time on whole characters | done | `TestNotesThatDoNotFit` |
+| 36.21 | Low | Very large quantities and amounts overflowed their PDF columns → they wrap | done | review |
+| 36.22 | Low (security) | Whatever was typed as the login of a failed sign-in (often a password) was stored for good in the audit trail → an unknown login is recorded as a fingerprint | done | `TestAuditTrail` |
+| 36.23 | Low (security) | A 400 showed the JSON decoder's Go type names → the field and the expected type | done | `TestMalformedRequestDetail` |
+| 36.24 | Low (security) | Installing an update needed only "Settings: System Settings" → administrators only | done | `access.go` |
+| 36.25 | Low (security) | Mail servers' errors (often quoting the recipient) were logged with the address → addresses redacted in the log | done | review |
+| 36.26 | Low | The k8s secret broke on an SMTP password with `"` or `\` → sent base64-encoded | done | `deploy.sh` |
+| 36.27 | Low | Sign-in stayed on "Signing in…" after a network error; sign-out did nothing → an error is shown; sign-out always signs out here | done | review |
+| 36.28 | Low | Enter in the product search could submit the form; dropped text was ignored; the schedule preview could show an older answer; Pause/Resume and outbox Cancel/Retry could be sent twice; "Quote" shown without `quotes.create`; an empty "Decimal places" meant 0 → fixed | done | review |
+| 36.29 | Low (tests) | Web tests failed at random when the machine was busy (the default 1 s for a screen to appear) → 5 s for async queries, 20 s a test | done | `pnpm -C web check` |
+
+Not changed, and why (also under Open questions): an expired quote can still be accepted or converted (a customer may accept late, by agreement); the default `admin`/`admin` account (an owner's decision, must be changed at first sign-in); `/metrics` is not behind sign-in; a restored outbox may send a message again after Resume (automation is held, with a warning); invoice PDF archive names can collide only if the number format changes between `/` and `_`; no HSTS (the k3s default certificate is self-signed, and HSTS would stop the browser letting the user past its warning); self-update checks SHA256SUMS from the same https origin, not a signature.
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-12 | Behind a trusted proxy (`CACTUSINV_TRUSTED_PROXIES`), the client address is the right-most X-Forwarded-For entry that is not a trusted proxy; without one, the peer address | entries further left are written by the client and can be forged; trusting nobody by default keeps a directly reached server from believing a forged header |
+| 2026-11-12 | A stored mail password is never used for another host or account: changing either needs it typed again | it is the business's mail account password; whoever may edit the server settings must not be able to send it elsewhere |
+| 2026-11-12 | Note pictures are bounded in pixels (5000 a side, 16 MP) as well as bytes | the byte limit does not bound the memory a picture takes to draw |
+| 2026-11-12 | A customer's currency cannot change while it has drafts or a schedule with fixed prices | both hold amounts in the old currency that would be billed unchanged in the new one |
 | 2026-11-12 | Quote PDFs are encrypted print-only with the PDF standard security handler, revision 4 (AES-128), written by us over fpdf's output (`pdf/encrypt.go`); no user password, a random discarded owner password; each quote prints a content fingerprint | The owner asked that a quote PDF cannot be modified, only printed. The permission is what every PDF reader honours; no PDF can stop a determined editor, so the verification code makes a changed copy detectable. fpdf's `SetProtection` (RC4, 40-bit) mis-encrypts every string after the first in an object (still so in codeberg v0.12.0); pdfcpu would have added a large dependency |
 | 2026-11-12 | Quotes have their own number sequence and are numbered on creation; gaps are allowed | A quote is not a tax document; the user refers to it by number from the first draft |
 | 2026-11-12 | Ad-hoc customers are a separate table; converting creates a customer and points their quotes at it, keeping the ad-hoc row | A prospect needs no invoice code, e-mail or terms; the ad-hoc row records who the quote was made out to |
@@ -841,4 +885,5 @@ migrations runs the new version's down migrations first.
 
 ## Open questions
 
-- None outstanding. (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)
+- Left as they are after the M36 review, for the owner to decide: should an expired quote be refused for acceptance and conversion? Should a restore cancel e-mails that were pending in the backup? Should `/metrics` need sign-in (or move to its own port)? Should the default `admin`/`admin` be replaced by a generated password? Should releases be signed (today SHA256SUMS from the same https origin)?
+- (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)

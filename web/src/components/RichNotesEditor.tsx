@@ -193,6 +193,7 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
   label?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const draggingInside = useRef(false)
   const emitted = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [tableOpen, setTableOpen] = useState(false)
@@ -380,10 +381,29 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
             emit()
           }
         }}
+        onDragStart={() => { draggingInside.current = true }}
+        onDragEnd={() => { draggingInside.current = false }}
         onDrop={(e) => {
-          const file = [...e.dataTransfer.files].find((f) => /^image\/(png|jpeg)$/.test(f.type))
+          // Text moved within the notes is the browser's to move (the input event saves it).
+          if (draggingInside.current) return
           e.preventDefault()
-          if (file) void addPicture(file)
+          const file = [...e.dataTransfer.files].find((f) => /^image\/(png|jpeg)$/.test(f.type))
+          if (file) {
+            void addPicture(file)
+            return
+          }
+          // Anything else dropped in is cleaned like a paste, where it was dropped.
+          const html = e.dataTransfer.getData('text/html')
+          const text = e.dataTransfer.getData('text/plain')
+          if ((!html && !text) || !ref.current) return
+          const at = document.caretRangeFromPoint?.(e.clientX, e.clientY)
+          if (at && ref.current.contains(at.startContainer)) {
+            const sel = window.getSelection()
+            sel?.removeAllRanges()
+            sel?.addRange(at)
+          }
+          insertHTML(ref.current, html ? cleanPasted(html) : escapeHTML(text).replace(/\n/g, '<br>'))
+          emit()
         }}
       />
     </div>

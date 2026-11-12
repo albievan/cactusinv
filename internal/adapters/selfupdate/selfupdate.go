@@ -55,7 +55,7 @@ type Installer struct {
 // New returns an Installer downloading from dist (see DistURL). container marks an
 // installation that must not replace itself.
 func New(dist string, container bool) *Installer {
-	i := &Installer{dist: dist, container: container, client: &http.Client{Timeout: 10 * time.Minute}}
+	i := &Installer{dist: dist, container: container, client: &http.Client{Timeout: 10 * time.Minute, CheckRedirect: noDowngrade}}
 	exe, err := os.Executable()
 	if err == nil {
 		exe, err = filepath.EvalSymlinks(exe)
@@ -163,7 +163,11 @@ func (i *Installer) download(ctx context.Context, asset, tmp, want string, progr
 	if resp.ContentLength > maxBinary {
 		return fmt.Errorf("selfupdate: %s is %d bytes, more than %d", asset, resp.ContentLength, maxBinary)
 	}
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) //nolint:gosec // an executable must be executable
+	// A file left by an earlier attempt (or planted there) is removed, not written through.
+	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("selfupdate: %w", err)
+	}
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755) //nolint:gosec // an executable must be executable
 	if err != nil {
 		return fmt.Errorf("selfupdate: %w", err)
 	}
@@ -261,6 +265,18 @@ func Restart(exe string) error {
 	}
 	if rerr := restart(exe); rerr != nil {
 		return fmt.Errorf("%w; the old version did not start either: %w", err, rerr)
+	}
+	return nil
+}
+
+// noDowngrade follows a redirect only if it does not leave HTTPS: the download is a
+// program the server will run.
+func noDowngrade(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("selfupdate: too many redirects")
+	}
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("selfupdate: refused a redirect from https to %s", req.URL.Scheme)
 	}
 	return nil
 }

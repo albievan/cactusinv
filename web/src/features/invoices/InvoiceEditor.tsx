@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, unwrap, type Customer, type Schemas } from '../../lib/api/client'
 import { todayISO } from '../../lib/format'
@@ -47,11 +47,15 @@ export function InvoiceEditor() {
     )
   }, [existing.data])
 
+  // Only the newest customer change may set prices: a slower answer for an earlier
+  // customer must not fill the lines with another currency's prices.
+  const repriceSeq = useRef(0)
   const customer: Customer | undefined = customers.data?.find((c) => c.id === customerId)
   const currency = existing.data?.invoice.currency ?? customer?.currency ?? ''
   // A different customer may bill in another currency: every chosen product is priced again
   // in it, and a product with no price there is cleared so the user picks another.
   const changeCustomer = (next: string) => {
+    const seq = ++repriceSeq.current
     const chosen = customers.data?.find((c) => c.id === next)
     const nextCur = chosen?.currency ?? ''
     setPicked(chosen)
@@ -62,15 +66,16 @@ export function InvoiceEditor() {
     // The old prices are in the old currency: cleared at once, so a save before the new
     // ones arrive lets the server price the lines instead of reading them in the new one.
     setLines((cur) => cur.map((l) => ({ ...l, unitPrice: '' })))
-    void Promise.all(picked.map((l) => unwrap(api.GET('/products/{id}', { params: { path: { id: l.productId } } })).catch(() => null))).then((products) =>
+    void Promise.all(picked.map((l) => unwrap(api.GET('/products/{id}', { params: { path: { id: l.productId } } })).catch(() => null))).then((products) => {
+      if (seq !== repriceSeq.current) return
       setLines((cur) =>
         cur.map((l) => {
           if (!l.productId) return l
           const price = products.find((p) => p?.id === l.productId)?.prices.find((x) => x.currency === nextCur)?.unitPrice
           return price ? { ...l, unitPrice: price } : { ...l, productId: '', productName: '', description: '', unitPrice: '' }
         }),
-      ),
-    )
+      )
+    })
   }
   const vat = vatPercent ?? business.data?.vatPercent ?? '0'
 

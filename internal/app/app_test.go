@@ -1275,7 +1275,7 @@ func TestAuditTrail(t *testing.T) {
 
 	// Everything else is audited too, and the whole chain verifies.
 	_, _, _ = h.svc.Login(h.ctx, "nobody@example.com", "wrong")
-	if fails, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{Action: "auth.login_failed"})); n != 1 || fails[0].ActorName != "nobody@example.com" {
+	if fails, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{Action: "auth.login_failed"})); n != 1 || !strings.HasPrefix(fails[0].ActorName, "unknown login ") || strings.Contains(fails[0].Summary, "nobody") {
 		t.Fatalf("failed login = %+v", fails)
 	}
 	if seeded, n := must3(h.svc.ListAudit(h.ctx, ports.AuditFilter{EntityType: "customer"})); n == 0 || seeded[0].ActorName != "System" {

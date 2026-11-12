@@ -19,6 +19,7 @@ const sections: { key: Section; label: string; many: boolean }[] = [
   { key: 'customers', label: 'Customers', many: true },
   { key: 'business', label: 'Business', many: false },
   { key: 'emailServer', label: 'E-mail server', many: false },
+  { key: 'quoteSettings', label: 'Quote settings', many: false },
   { key: 'schedules', label: 'Schedules', many: true },
 ]
 

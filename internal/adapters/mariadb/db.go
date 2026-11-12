@@ -10,6 +10,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -341,4 +342,10 @@ func affected(n int64, err error, missing error) error {
 		return missing
 	}
 	return nil
+}
+
+// likeEscape makes a search term match literally inside LIKE '%…%': % and _ are not
+// wildcards and \ is not an escape (MariaDB's LIKE escapes with a backslash).
+func likeEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }

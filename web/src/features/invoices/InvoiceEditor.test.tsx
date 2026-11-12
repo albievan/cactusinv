@@ -38,3 +38,30 @@ test('saving an edited draft keeps its prices, parties and terms', async () => {
   expect(body).toMatchObject({ billTo: party, shipTo: party, paymentTerms: { kind: 'days_after', value: 14 } })
   expect((body.lines as { unitPrice?: string }[])[0]!.unitPrice).toBe('100.00')
 })
+
+test('Issue & send asks which date a draft dated in the past is issued with (M36)', async () => {
+  const calls: string[] = []
+  let issued: Record<string, unknown> = {}
+  mockFetch({
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'a@b.example', automationPaused: false }),
+    'GET /api/v1/version': json({ version: '1.19.0', build: '1' }),
+    'GET /api/v1/currencies': json({ items: [{ code: 'ZAR', name: 'Rand', symbol: 'R', minorUnits: 2, active: true }] }),
+    'GET /api/v1/invoices/i1': json({ invoice: draft, events: [], emails: [] }),
+    'POST /api/v1/invoices/i1/issue': async (req) => {
+      calls.push('issue')
+      issued = (await req.json()) as Record<string, unknown>
+      return json({ ...draft, status: 'issued' })()
+    },
+    'POST /api/v1/invoices/i1/send': () => {
+      calls.push('send')
+      return json({ id: 'm1' }, 202)()
+    },
+  })
+  window.history.pushState({}, '', '/invoices/i1')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Issue & send' }))
+  expect(calls).toEqual([]) // nothing happens before the date is chosen
+  await userEvent.click(await screen.findByRole('button', { name: 'Issue dated today' }))
+  await vi.waitFor(() => expect(calls).toEqual(['issue', 'send']))
+  expect(issued.issueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+})

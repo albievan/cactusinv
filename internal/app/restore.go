@@ -584,6 +584,10 @@ func (s *Service) apply(ctx context.Context, id, safety string) (RestoreResult, 
 		if err != nil {
 			return err
 		}
+		liveQuoteSeq, err := r.QuoteSequences.Peek(ctx)
+		if err != nil {
+			return err
+		}
 		liveAudit, err := s.auditChain(ctx, r)
 		if err != nil {
 			return err
@@ -597,6 +601,17 @@ func (s *Service) apply(ctx context.Context, id, safety string) (RestoreResult, 
 		} else if liveSeq > backupSeq {
 			res.SequenceKept = true
 			if err := r.Sequences.Set(ctx, liveSeq); err != nil {
+				return err
+			}
+		}
+		// Nor do quote numbers: a quote sent after the backup keeps its number. A backup
+		// without the quote sequence (it predates quotes) gets the live one.
+		backupQuoteSeq, err := r.QuoteSequences.Peek(ctx)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return err
+		}
+		if liveQuoteSeq > backupQuoteSeq {
+			if err := r.QuoteSequences.Set(ctx, liveQuoteSeq); err != nil {
 				return err
 			}
 		}

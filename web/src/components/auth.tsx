@@ -73,7 +73,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void load()
   }, [load])
   const logout = async () => {
-    await api.POST('/auth/logout')
+    // Signed out here even when the server cannot be reached (its session then simply
+    // expires); the screen must not stay as it was.
+    await api.POST('/auth/logout').catch(() => undefined)
     setNotice('You signed out.')
     setExpired(false)
     userRef.current = null
@@ -153,8 +155,16 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
     e.preventDefault()
     setBusy(true)
     setError('')
-    const { response, error } = await api.POST('/auth/login', { body: { email: user, password } })
-    setBusy(false)
+    let res
+    try {
+      res = await api.POST('/auth/login', { body: { email: user, password } })
+    } catch {
+      setError('Could not reach the server. Check the connection and try again.')
+      return
+    } finally {
+      setBusy(false)
+    }
+    const { response, error } = res
     if (!response.ok) {
       setError(error ? new ApiError(error).message : 'Sign-in failed')
       return

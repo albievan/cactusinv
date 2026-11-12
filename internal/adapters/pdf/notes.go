@@ -121,20 +121,25 @@ func (p *page) layout(runs []domain.NoteRun, w float64) []noteLine {
 			if len(cur.segs) > 0 {
 				push()
 			}
-			// A word wider than the line is cut where it fills it.
+			// A word wider than the line is cut where it fills it (at least one whole
+			// character a line). Widths add up character by character, so each character
+			// is measured once: a very long word costs no more than its length.
 			for ww > w {
-				cut := 1
+				_, cut := utf8.DecodeRuneInString(word)
+				cw := width(word[:cut], r.Style)
 				for cut < len(word) {
 					_, size := utf8.DecodeRuneInString(word[cut:])
-					if width(word[:cut+size], r.Style) > w {
+					rw := width(word[cut:cut+size], r.Style)
+					if cw+rw > w {
 						break
 					}
+					cw += rw
 					cut += size
 				}
 				add(word[:cut], r.Style)
 				push()
 				word = word[cut:]
-				ww = width(word, r.Style)
+				ww -= cw
 			}
 			if word != "" {
 				add(word, r.Style)
@@ -289,27 +294,52 @@ func (p *page) noteTable(y float64, rows [][]domain.NoteCell) float64 {
 			p.newPage()
 			top = 20
 		}
-		p.draw(hairline)
-		p.pdf.SetLineWidth(0.2)
-		for i := range cols {
-			x := margin + float64(i)*colW
-			style := "D"
-			if i < len(r) && r[i].Header {
-				p.fill(cardFill)
-				style = "FD"
+		// A row taller than a whole page carries on over the next pages, a slice a page.
+		for {
+			sliceH, rest := 0.0, false
+			take := make([]int, cols)
+			for i := range cols {
+				h := 0.0
+				for take[i] < len(cells[i]) {
+					lh := cells[i][take[i]].height()
+					if take[i] > 0 && top+2*cellPad+h+lh > bodyBottom {
+						break
+					}
+					h += lh
+					take[i]++
+				}
+				sliceH = max(sliceH, h)
+				rest = rest || take[i] < len(cells[i])
 			}
-			p.pdf.Rect(x, top, colW, rowH, style)
-			ly := top + cellPad
-			align := ""
-			if i < len(r) {
-				align = r[i].Align
+			sliceH += 2 * cellPad
+			p.draw(hairline)
+			p.pdf.SetLineWidth(0.2)
+			for i := range cols {
+				x := margin + float64(i)*colW
+				style := "D"
+				if i < len(r) && r[i].Header {
+					p.fill(cardFill)
+					style = "FD"
+				}
+				p.pdf.Rect(x, top, colW, sliceH, style)
+				ly := top + cellPad
+				align := ""
+				if i < len(r) {
+					align = r[i].Align
+				}
+				for _, l := range cells[i][:take[i]] {
+					ly += l.height()
+					p.drawLine(l, alignX(align, x+cellPad, colW-2*cellPad, l.w), ly-0.9)
+				}
+				cells[i] = cells[i][take[i]:]
 			}
-			for _, l := range cells[i] {
-				ly += l.height()
-				p.drawLine(l, alignX(align, x+cellPad, colW-2*cellPad, l.w), ly-0.9)
+			top += sliceH
+			if !rest {
+				break
 			}
+			p.newPage()
+			top = 20
 		}
-		top += rowH
 	}
 	return top + noteLineH - 1.2
 }
@@ -336,6 +366,11 @@ func (p *page) notePicture(y float64, b domain.NoteBlock) float64 {
 		top = 20
 	}
 	data, typ := pic.Data, "JPG"
+	// Notes stored before pictures were bounded in pixels are checked again here, before
+	// anything is decoded.
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(pic.Data)); err != nil || !domain.NotePictureFits(cfg.Width, cfg.Height) {
+		return p.missingPicture(top)
+	}
 	if pic.Format == "png" {
 		// Re-encoded as plain 8-bit PNG: the PDF cannot take interlaced or 16-bit ones.
 		img, err := png.Decode(bytes.NewReader(pic.Data))

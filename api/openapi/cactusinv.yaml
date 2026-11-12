@@ -2078,6 +2078,10 @@ components:
           allOf: [{ $ref: '#/components/schemas/EmailSettings' }]
           x-go-type-skip-optional-pointer: false
           description: Never holds the password.
+        quoteSettings:
+          allOf: [{ $ref: '#/components/schemas/QuoteSettings' }]
+          x-go-type-skip-optional-pointer: false
+          description: Settings → Quotes; its nextSequence only moves forward on import.
         currencies: { type: array, items: { $ref: '#/components/schemas/Currency' } }
         bankAccounts: { type: array, items: { $ref: '#/components/schemas/BankAccount' } }
         products: { type: array, items: { $ref: '#/components/schemas/Product' } }
@@ -2100,7 +2104,7 @@ components:
         schedule: { $ref: '#/components/schemas/Schedule' }
     SettingsSection:
       type: string
-      enum: [business, emailServer, currencies, bankAccounts, products, customers, schedules]
+      enum: [business, emailServer, quoteSettings, currencies, bankAccounts, products, customers, schedules]
     SettingsExportRequest:
       type: object
       properties:
@@ -2117,11 +2121,12 @@ components:
           description: The sections to import; omitted means all.
     SettingsSectionCounts:
       type: object
-      description: How many items each section of the file holds (business and emailServer 0 or 1).
-      required: [business, emailServer, currencies, bankAccounts, products, customers, schedules]
+      description: How many items each section of the file holds (business, emailServer and quoteSettings 0 or 1).
+      required: [business, emailServer, quoteSettings, currencies, bankAccounts, products, customers, schedules]
       properties:
         business: { type: integer }
         emailServer: { type: integer }
+        quoteSettings: { type: integer }
         currencies: { type: integer }
         bankAccounts: { type: integer }
         products: { type: integer }
@@ -2136,11 +2141,12 @@ components:
         unchanged: { type: integer }
     SettingsImportResult:
       type: object
-      required: [applied, business, emailServer, currencies, bankAccounts, products, customers, schedules, warnings, inFile]
+      required: [applied, business, emailServer, quoteSettings, currencies, bankAccounts, products, customers, schedules, warnings, inFile]
       properties:
         applied: { type: boolean, description: false for a check (nothing saved). }
         business: { $ref: '#/components/schemas/ImportCounts' }
         emailServer: { $ref: '#/components/schemas/ImportCounts' }
+        quoteSettings: { $ref: '#/components/schemas/ImportCounts' }
         currencies: { $ref: '#/components/schemas/ImportCounts' }
         bankAccounts: { $ref: '#/components/schemas/ImportCounts' }
         products: { $ref: '#/components/schemas/ImportCounts' }

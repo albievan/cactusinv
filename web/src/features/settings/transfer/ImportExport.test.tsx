@@ -28,9 +28,9 @@ const sealed = { format: 'cactusinv-settings', formatVersion: 1, exportedAt: '20
 
 const counts = (created: number, updated: number, unchanged: number) => ({ created, updated, unchanged })
 const none = counts(0, 0, 0)
-const inFile = { business: 1, emailServer: 0, currencies: 1, bankAccounts: 0, products: 1, customers: 1, schedules: 0 }
+const inFile = { business: 1, emailServer: 0, quoteSettings: 0, currencies: 1, bankAccounts: 0, products: 1, customers: 1, schedules: 0 }
 const result = (applied: boolean) => ({
-  applied, inFile, business: counts(0, 1, 0), emailServer: none, currencies: counts(0, 0, 1), bankAccounts: none, products: counts(1, 0, 0),
+  applied, inFile, business: counts(0, 1, 0), emailServer: none, quoteSettings: none, currencies: counts(0, 0, 1), bankAccounts: none, products: counts(1, 0, 0),
   customers: counts(1, 0, 0), schedules: none,
   warnings: ['The next invoice sequence stays 20: the file has 10, and numbers already used are never given again.'],
 })

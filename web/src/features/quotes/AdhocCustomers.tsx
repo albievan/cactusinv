@@ -44,7 +44,7 @@ export function AdhocCustomers() {
                 </div>
                 {!a.customerId && (
                   <div className="d-flex flex-wrap gap-2">
-                    <Link to={`/quotes/new?adhoc=${a.id}`} className="btn btn-sm btn-outline-primary">Quote</Link>
+                    <Can need="quotes.create"><Link to={`/quotes/new?adhoc=${a.id}`} className="btn btn-sm btn-outline-primary">Quote</Link></Can>
                     <Can need="quotes.edit"><button className="btn btn-sm btn-outline-primary" onClick={() => setEditing(a)}><IconEdit width={14} /> Edit</button></Can>
                     <Can need="customers.create"><button className="btn btn-sm btn-primary" onClick={() => setConverting(a)}><IconPersonPlus width={14} /> Make customer</button></Can>
                     <Can need="quotes.delete">

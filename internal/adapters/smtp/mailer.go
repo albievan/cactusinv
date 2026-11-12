@@ -97,7 +97,7 @@ func (m *Mailer) Send(ctx context.Context, msg ports.Mail) error {
 		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return fmt.Errorf("smtp.Send: dial: %w", err)
+		return fmt.Errorf("smtp.Send: dial: %w", unreachable(err))
 	}
 	defer conn.Close()
 	if dl, ok := ctx.Deadline(); ok {
@@ -105,11 +105,11 @@ func (m *Mailer) Send(ctx context.Context, msg ports.Mail) error {
 	}
 	c, err := smtp.NewClient(conn, m.cfg.Host)
 	if err != nil {
-		return fmt.Errorf("smtp.Send: greeting: %w", err)
+		return fmt.Errorf("smtp.Send: greeting: %w", unreachable(err))
 	}
 	defer c.Close()
 	if err := c.Hello(helloName(m.from.Address)); err != nil {
-		return fmt.Errorf("smtp.Send: hello: %w", err)
+		return fmt.Errorf("smtp.Send: hello: %w", unreachable(err))
 	}
 	if m.cfg.TLS == TLSStartTLS {
 		if ok, _ := c.Extension("STARTTLS"); !ok {
@@ -239,4 +239,17 @@ func messageID(id, from string) string {
 		id = base64.RawURLEncoding.EncodeToString(b)
 	}
 	return "<" + id + "@" + domain + ">"
+}
+
+// unreachable marks a failure to reach a mail server as ports.ErrMailUnreachable, unless
+// it is a mail server's own reply or a TLS certificate problem: the raw error tells
+// whether a port is open and what answered, which the API must not show (the host is
+// user-supplied, so it could be any address the server can reach).
+func unreachable(err error) error {
+	var reply *textproto.Error
+	var cert *tls.CertificateVerificationError
+	if errors.As(err, &reply) || errors.As(err, &cert) {
+		return err
+	}
+	return fmt.Errorf("%w (%w)", ports.ErrMailUnreachable, err)
 }

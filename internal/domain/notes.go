@@ -343,6 +343,18 @@ func tableRows(t *html.Node, st NoteStyle) [][]NoteCell {
 
 var dataURI = regexp.MustCompile(`^data:image/(png|jpeg|jpg);base64,([A-Za-z0-9+/=\s]+)$`)
 
+// A picture's size in pixels is bounded as well as its bytes: a small, highly compressed
+// file can unpack to gigabytes when it is drawn.
+const (
+	NoteImageMaxSide   = 5000
+	NoteImageMaxPixels = 16_000_000
+)
+
+// NotePictureFits reports whether a picture of w×h pixels is within the bounds.
+func NotePictureFits(w, h int) bool {
+	return w > 0 && h > 0 && w <= NoteImageMaxSide && h <= NoteImageMaxSide && w*h <= NoteImageMaxPixels
+}
+
 // pictureOf reads an img: nil for one that is not a data: URI (dropped), an error for a
 // data: URI that is not a PNG or JPEG within NoteImageMax.
 func pictureOf(n *html.Node) (*NotePicture, error) {
@@ -368,6 +380,9 @@ func pictureOf(n *html.Node) (*NotePicture, error) {
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "png" && format != "jpeg") || cfg.Width <= 0 || cfg.Height <= 0 {
 		return nil, fmt.Errorf("a picture must be a PNG or JPEG")
+	}
+	if !NotePictureFits(cfg.Width, cfg.Height) {
+		return nil, fmt.Errorf("a picture may be at most %d pixels a side and %d megapixels", NoteImageMaxSide, NoteImageMaxPixels/1_000_000)
 	}
 	pic := &NotePicture{Format: format, Data: data, Width: cfg.Width, Height: cfg.Height}
 	shown := atoiPx(attr(n, "width"))

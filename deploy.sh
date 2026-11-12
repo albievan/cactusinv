@@ -869,8 +869,10 @@ type: Opaque
 stringData:
   db_password: "$(random_secret)"
   db_root_password: "$(random_secret)"
-  smtp_password: "${CACTUSINV_SMTP_PASSWORD:-}"
   app_key: "$(random_key)"
+data:
+  # base64, so a password with quotes or backslashes arrives as typed
+  smtp_password: "$(printf '%s' "${CACTUSINV_SMTP_PASSWORD:-}" | base64 | tr -d '\n')"
 YAML
     kc -n "$K8S_NAMESPACE" label secret cactusinv-secrets app.kubernetes.io/part-of=cactusinv
     ok "generated database passwords in secret cactusinv-secrets"

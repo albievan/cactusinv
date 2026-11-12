@@ -23,12 +23,12 @@ func toCustomer(c sqlcgen.Customer) domain.Customer {
 func (r customerRepo) List(ctx context.Context, f ports.CustomerFilter) ([]domain.Customer, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListCustomers(ctx, sqlcgen.ListCustomersParams{
-		IncludeInactive: f.IncludeInactive, Query: f.Query, Limit: i32(p.Limit), Offset: i32(p.Offset),
+		IncludeInactive: f.IncludeInactive, Query: likeEscape(f.Query), Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
-	total, err := r.q.CountCustomers(ctx, sqlcgen.CountCustomersParams{IncludeInactive: f.IncludeInactive, Query: f.Query})
+	total, err := r.q.CountCustomers(ctx, sqlcgen.CountCustomersParams{IncludeInactive: f.IncludeInactive, Query: likeEscape(f.Query)})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
@@ -119,13 +119,13 @@ func (r productRepo) withPrices(ctx context.Context, rows []sqlcgen.Product) ([]
 func (r productRepo) List(ctx context.Context, f ports.ProductFilter) ([]domain.Product, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListProducts(ctx, sqlcgen.ListProductsParams{
-		IncludeInactive: f.IncludeInactive, Query: f.Query, Currency: string(f.Currency),
+		IncludeInactive: f.IncludeInactive, Query: likeEscape(f.Query), Currency: string(f.Currency),
 		Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
-	total, err := r.q.CountProducts(ctx, sqlcgen.CountProductsParams{IncludeInactive: f.IncludeInactive, Query: f.Query, Currency: string(f.Currency)})
+	total, err := r.q.CountProducts(ctx, sqlcgen.CountProductsParams{IncludeInactive: f.IncludeInactive, Query: likeEscape(f.Query), Currency: string(f.Currency)})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}

@@ -507,13 +507,14 @@ func (e SettingsFileFormatVersion) Valid() bool {
 
 // Defines values for SettingsSection.
 const (
-	SettingsSectionBankAccounts SettingsSection = "bankAccounts"
-	SettingsSectionBusiness     SettingsSection = "business"
-	SettingsSectionCurrencies   SettingsSection = "currencies"
-	SettingsSectionCustomers    SettingsSection = "customers"
-	SettingsSectionEmailServer  SettingsSection = "emailServer"
-	SettingsSectionProducts     SettingsSection = "products"
-	SettingsSectionSchedules    SettingsSection = "schedules"
+	SettingsSectionBankAccounts  SettingsSection = "bankAccounts"
+	SettingsSectionBusiness      SettingsSection = "business"
+	SettingsSectionCurrencies    SettingsSection = "currencies"
+	SettingsSectionCustomers     SettingsSection = "customers"
+	SettingsSectionEmailServer   SettingsSection = "emailServer"
+	SettingsSectionProducts      SettingsSection = "products"
+	SettingsSectionQuoteSettings SettingsSection = "quoteSettings"
+	SettingsSectionSchedules     SettingsSection = "schedules"
 )
 
 // Valid indicates whether the value is a known member of the SettingsSection enum.
@@ -530,6 +531,8 @@ func (e SettingsSection) Valid() bool {
 	case SettingsSectionEmailServer:
 		return true
 	case SettingsSectionProducts:
+		return true
+	case SettingsSectionQuoteSettings:
 		return true
 	case SettingsSectionSchedules:
 		return true
@@ -1662,7 +1665,10 @@ type SettingsFile struct {
 	Format        SettingsFileFormat        `json:"format"`
 	FormatVersion SettingsFileFormatVersion `json:"formatVersion"`
 	Products      []Product                 `json:"products,omitempty"`
-	Schedules     []SettingsSchedule        `json:"schedules,omitempty"`
+
+	// QuoteSettings Settings → Quotes; its nextSequence only moves forward on import.
+	QuoteSettings *QuoteSettings     `json:"quoteSettings,omitempty"`
+	Schedules     []SettingsSchedule `json:"schedules,omitempty"`
 }
 
 // SettingsFileFormat defines model for SettingsFile.Format.
@@ -1693,11 +1699,12 @@ type SettingsImportResult struct {
 	Customers    ImportCounts `json:"customers"`
 	EmailServer  ImportCounts `json:"emailServer"`
 
-	// InFile How many items each section of the file holds (business and emailServer 0 or 1).
-	InFile    SettingsSectionCounts `json:"inFile"`
-	Products  ImportCounts          `json:"products"`
-	Schedules ImportCounts          `json:"schedules"`
-	Warnings  []string              `json:"warnings"`
+	// InFile How many items each section of the file holds (business, emailServer and quoteSettings 0 or 1).
+	InFile        SettingsSectionCounts `json:"inFile"`
+	Products      ImportCounts          `json:"products"`
+	QuoteSettings ImportCounts          `json:"quoteSettings"`
+	Schedules     ImportCounts          `json:"schedules"`
+	Warnings      []string              `json:"warnings"`
 }
 
 // SettingsSchedule A schedule in a settings file; its customer and products are named by code and SKU.
@@ -1714,15 +1721,16 @@ type SettingsSchedule struct {
 // SettingsSection defines model for SettingsSection.
 type SettingsSection string
 
-// SettingsSectionCounts How many items each section of the file holds (business and emailServer 0 or 1).
+// SettingsSectionCounts How many items each section of the file holds (business, emailServer and quoteSettings 0 or 1).
 type SettingsSectionCounts struct {
-	BankAccounts int `json:"bankAccounts"`
-	Business     int `json:"business"`
-	Currencies   int `json:"currencies"`
-	Customers    int `json:"customers"`
-	EmailServer  int `json:"emailServer"`
-	Products     int `json:"products"`
-	Schedules    int `json:"schedules"`
+	BankAccounts  int `json:"bankAccounts"`
+	Business      int `json:"business"`
+	Currencies    int `json:"currencies"`
+	Customers     int `json:"customers"`
+	EmailServer   int `json:"emailServer"`
+	Products      int `json:"products"`
+	QuoteSettings int `json:"quoteSettings"`
+	Schedules     int `json:"schedules"`
 }
 
 // StageRestoreRequest defines model for StageRestoreRequest.

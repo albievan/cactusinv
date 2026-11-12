@@ -617,7 +617,8 @@ func (q *Queries) PeekQuoteSequence(ctx context.Context) (int64, error) {
 }
 
 const setQuoteSequence = `-- name: SetQuoteSequence :exec
-UPDATE invoice_sequences SET next_value = ? WHERE name = 'quote'
+INSERT INTO invoice_sequences (name, next_value) VALUES ('quote', ?)
+ON DUPLICATE KEY UPDATE next_value = VALUES(next_value)
 `
 
 func (q *Queries) SetQuoteSequence(ctx context.Context, nextValue int64) error {

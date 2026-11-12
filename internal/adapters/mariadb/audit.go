@@ -72,12 +72,12 @@ func (r auditRepo) insert(ctx context.Context, e domain.AuditEntry) error {
 func (r auditRepo) List(ctx context.Context, f ports.AuditFilter) ([]domain.AuditEntry, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListAudit(ctx, sqlcgen.ListAuditParams{
-		EntityType: f.EntityType, EntityID: f.EntityID, Actor: f.Actor, Action: f.Action, Limit: i32(p.Limit), Offset: i32(p.Offset),
+		EntityType: f.EntityType, EntityID: f.EntityID, Actor: likeEscape(f.Actor), Action: likeEscape(f.Action), Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
-	n, err := r.q.CountAudit(ctx, sqlcgen.CountAuditParams{EntityType: f.EntityType, EntityID: f.EntityID, Actor: f.Actor, Action: f.Action})
+	n, err := r.q.CountAudit(ctx, sqlcgen.CountAuditParams{EntityType: f.EntityType, EntityID: f.EntityID, Actor: likeEscape(f.Actor), Action: likeEscape(f.Action)})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}

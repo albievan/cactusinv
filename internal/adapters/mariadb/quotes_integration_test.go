@@ -68,6 +68,12 @@ func TestQuotesPersistence(t *testing.T) {
 	if got.CustomerID != c.ID || got.AdhocCustomerID != a.ID {
 		t.Fatalf("quote after conversion = %+v", got)
 	}
+	// Search terms match literally: _ and % are not wildcards (M36).
+	for _, term := range []string{"_", "%", "Q_6", `\`} {
+		if _, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{Query: term})); n != 0 {
+			t.Fatalf("search %q matched %d quotes", term, n)
+		}
+	}
 	if list, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{CustomerID: c.ID, Query: "Q26"})); n != 1 || list[0].ID != q.ID {
 		t.Fatalf("customer's quotes = %d", n)
 	}

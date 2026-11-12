@@ -323,6 +323,9 @@ func (s *Service) ConvertQuote(ctx context.Context, id string) (*domain.Invoice,
 		if err != nil {
 			return err
 		}
+		if err := s.adoptCustomer(ctx, r, q); err != nil {
+			return err
+		}
 		if err := q.CanConvert(); err != nil {
 			return err
 		}
@@ -383,6 +386,23 @@ func (s *Service) quoteInvoiceDeleted(ctx context.Context, r ports.Repos, invoic
 		return err
 	}
 	return s.quoteEvent(ctx, r, q.ID, "invoice_deleted", q.Number+": its draft invoice was deleted; accepted again")
+}
+
+// adoptCustomer gives a quote for an ad-hoc customer who has since become a customer that
+// customer. Converting the ad-hoc customer does this for their quotes, but a quote created
+// while the conversion was committing is missed by it.
+func (s *Service) adoptCustomer(ctx context.Context, r ports.Repos, q *domain.Quote) error {
+	if q.CustomerID != "" || q.AdhocCustomerID == "" {
+		return nil
+	}
+	a, err := r.AdhocCustomers.Get(ctx, q.AdhocCustomerID)
+	if err != nil {
+		return err
+	}
+	if a.Converted() {
+		q.CustomerBecame(a.CustomerID, s.now())
+	}
+	return nil
 }
 
 // QuotePDF renders a quote. It returns the PDF and a file name.
@@ -527,6 +547,9 @@ func (s *Service) deliverQuote(ctx context.Context, m *domain.EmailMessage) erro
 	doc, err := s.quoteDocument(ctx, s.tx.Repos(), m.QuoteID)
 	if err != nil {
 		return err
+	}
+	if doc.Quote.Status == domain.QuoteDeclined {
+		return errQuoteDeclined // a quote declined after the e-mail was queued is not sent
 	}
 	pdf, err := s.renderer.RenderQuote(ctx, doc)
 	if err != nil {

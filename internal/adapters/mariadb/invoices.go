@@ -43,14 +43,14 @@ func toInvoice(r sqlcgen.Invoice) *domain.Invoice {
 func (r invoiceRepo) List(ctx context.Context, f ports.InvoiceFilter) ([]domain.Invoice, int, error) {
 	p := f.Page.Normalize()
 	rows, err := r.q.ListInvoices(ctx, sqlcgen.ListInvoicesParams{
-		Status: string(f.Status), CustomerID: f.CustomerID, Query: f.Query, Overdue: f.Overdue, Scheduled: f.Scheduled,
+		Status: string(f.Status), CustomerID: f.CustomerID, Query: likeEscape(f.Query), Overdue: f.Overdue, Scheduled: f.Scheduled,
 		Today: nullDate(f.Today), Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
 	total, err := r.q.CountInvoices(ctx, sqlcgen.CountInvoicesParams{
-		Status: string(f.Status), CustomerID: f.CustomerID, Query: f.Query, Overdue: f.Overdue, Scheduled: f.Scheduled, Today: nullDate(f.Today),
+		Status: string(f.Status), CustomerID: f.CustomerID, Query: likeEscape(f.Query), Overdue: f.Overdue, Scheduled: f.Scheduled, Today: nullDate(f.Today),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)

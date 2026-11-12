@@ -21,13 +21,18 @@ export function Outbox() {
     return { items: pages.flatMap((p) => p.items), total: pages[0]?.total ?? 0 }
   }, [status, shown])
   const [actionError, setActionError] = useState<Error | null>(null)
+  const [acting, setActing] = useState('')
   const act = async (id: string, what: 'cancel' | 'retry') => {
+    if (acting) return
+    setActing(id)
     setActionError(null)
     try {
       await unwrap(what === 'cancel' ? api.POST('/emails/{id}/cancel', { params: { path: { id } } }) : api.POST('/emails/{id}/retry', { params: { path: { id } } }))
       reload()
     } catch (e) {
       setActionError(e as Error)
+    } finally {
+      setActing('')
     }
   }
   return (
@@ -56,8 +61,8 @@ export function Outbox() {
               <div className="text-body-secondary">{m.status === 'sent' ? `Sent ${formatDateTime(m.sentAt)}` : `Due ${formatDateTime(m.nextAttemptAt)}`}{m.attempts ? ` · ${m.attempts} attempt(s)` : ''}</div>
               {m.lastError && <div className="text-danger">{m.lastError}</div>}
               <div className="mt-2 d-flex gap-2">
-                {can('emails.cancel') && (m.status === 'pending' || m.status === 'failed') && <button className="btn btn-outline-primary" onClick={() => act(m.id, 'cancel')}>Cancel</button>}
-                {can('emails.retry') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn btn-primary" onClick={() => act(m.id, 'retry')}>Retry now</button>}
+                {can('emails.cancel') && (m.status === 'pending' || m.status === 'failed') && <button className="btn btn-outline-primary" disabled={!!acting} onClick={() => act(m.id, 'cancel')}>Cancel</button>}
+                {can('emails.retry') && (m.status === 'failed' || m.status === 'cancelled') && <button className="btn btn-primary" disabled={!!acting} onClick={() => act(m.id, 'retry')}>Retry now</button>}
               </div>
             </li>
           ))}

@@ -123,6 +123,17 @@ func (s *Service) ConvertAdhocCustomer(ctx context.Context, id string, d domain.
 		if err != nil {
 			return err
 		}
+		if c.Currency != a.Currency {
+			// Their quotes are priced in the ad-hoc customer's currency and become the
+			// customer's: an invoice made from one must be in the same currency.
+			_, n, err := r.Quotes.List(ctx, ports.QuoteFilter{AdhocCustomerID: a.ID, Page: ports.Page{Limit: 1}})
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				return &domain.ValidationError{Field: "currency", Reason: "must stay " + string(a.Currency) + ": their quotes are in " + string(a.Currency)}
+			}
+		}
 		if err := checkCustomer(ctx, r, &c, nil); err != nil {
 			return err
 		}

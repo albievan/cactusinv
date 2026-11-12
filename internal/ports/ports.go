@@ -4,6 +4,7 @@ package ports
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
@@ -527,6 +528,11 @@ type Mail struct {
 	Body        string
 	Attachments []Attachment
 }
+
+// ErrMailUnreachable is a Mailer failure before any mail server answered (nothing
+// listening, a timeout, something other than a mail server). Its text is not shown to
+// the user beyond this message.
+var ErrMailUnreachable = errors.New("could not reach a mail server at that host and port")
 
 // Mailer delivers e-mail.
 type Mailer interface {

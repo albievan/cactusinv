@@ -295,7 +295,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	store := mariadb.NewStore(db)
 	arch := archive.Dir{Root: cfg.InvoicesDir}
 	handler := httpapi.NewHandler(httpapi.Options{
-		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, Registry: reg, Web: web.FS(), Version: version, Build: build,
+		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, TrustedProxies: cfg.TrustedProxies, Registry: reg, Web: web.FS(), Version: version, Build: build,
 		MaxUploadBytes: int64(cfg.BackupMaxUploadMB) << 20,
 		Ready:          map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
 	})

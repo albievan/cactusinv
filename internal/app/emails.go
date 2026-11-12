@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,11 +88,11 @@ func (s *Service) DispatchEmails(ctx context.Context, limit int) (DispatchResult
 			if errors.As(err, &sent) {
 				// The mail server accepted it: never retry (that would send it again).
 				res.Sent++
-				s.log.ErrorContext(ctx, "email sent but its outcome could not be recorded", "email_id", m.ID, "invoice_id", m.InvoiceID, "err", sent.err)
+				s.log.ErrorContext(ctx, "email sent but its outcome could not be recorded", "email_id", m.ID, "invoice_id", m.InvoiceID, "err", redactEmails(sent.err))
 				continue
 			}
 			res.Failed++
-			s.log.WarnContext(ctx, "email delivery failed", "email_id", m.ID, "invoice_id", m.InvoiceID, "attempt", m.Attempts, "err", err)
+			s.log.WarnContext(ctx, "email delivery failed", "email_id", m.ID, "invoice_id", m.InvoiceID, "attempt", m.Attempts, "err", redactEmails(err))
 			if rerr := s.recordEmailFailure(ctx, m.ID, err); rerr != nil {
 				return res, wrap("app.DispatchEmails", rerr)
 			}
@@ -118,7 +120,14 @@ func (s *Service) claimEmail(ctx context.Context) (*domain.EmailMessage, error) 
 	return out, err
 }
 
-func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
+func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) (err error) {
+	// A message whose PDF cannot be made (a renderer bug on odd data) fails like any other
+	// error instead of taking the server down, and down again each time it is retried.
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("could not prepare the e-mail: %v", p)
+		}
+	}()
 	switch m.Kind {
 	case domain.EmailKindStatement:
 		return s.deliverStatement(ctx, m)
@@ -205,7 +214,10 @@ type sentButNotRecorded struct{ err error }
 func (e *sentButNotRecorded) Error() string { return "sent, but recording it failed: " + e.err.Error() }
 func (e *sentButNotRecorded) Unwrap() error { return e.err }
 
-var errVoided = errors.New("invoice was voided")
+var (
+	errVoided        = errors.New("invoice was voided")
+	errQuoteDeclined = errors.New("quote was declined")
+)
 
 func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error) error {
 	ctx, cancel := outcomeContext(ctx)
@@ -218,7 +230,7 @@ func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error
 		if m.Status != domain.EmailSending {
 			return nil // cancelled or recorded meanwhile: nothing to retry
 		}
-		if errors.Is(cause, errVoided) {
+		if errors.Is(cause, errVoided) || errors.Is(cause, errQuoteDeclined) {
 			m.Attempts = domain.MaxEmailAttempts
 		}
 		m.Failed(cause.Error(), s.now())
@@ -240,4 +252,15 @@ func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error
 // again after StaleSendingAfter), but it gives up after 15 seconds.
 func outcomeContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+}
+
+var emailAddress = regexp.MustCompile(`[^\s<>()"',;:]+@[^\s<>()"',;:]+`)
+
+// redactEmails is err's text with e-mail addresses blanked, for the log: mail servers
+// often quote the recipient they rejected, and the log carries no PII.
+func redactEmails(err error) string {
+	if err == nil {
+		return ""
+	}
+	return emailAddress.ReplaceAllString(err.Error(), "<address>")
 }

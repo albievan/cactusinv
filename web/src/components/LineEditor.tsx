@@ -186,9 +186,10 @@ export function ProductCombobox({ currency, value, label, onPick }: { currency: 
           } else if (e.key === 'ArrowUp') {
             e.preventDefault()
             setActive((a) => Math.max(a - 1, 0))
-          } else if (e.key === 'Enter' && open && items[active]) {
+          } else if (e.key === 'Enter') {
+            // Enter picks a product; it never submits the form (results may still be on the way).
             e.preventDefault()
-            choose(items[active]!)
+            if (open && items[active]) choose(items[active]!)
           } else if (e.key === 'Escape') {
             setOpen(false)
             setQ(value)

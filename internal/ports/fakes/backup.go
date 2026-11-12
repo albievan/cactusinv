@@ -56,7 +56,7 @@ func auditFromRow(r []any) domain.AuditEntry {
 
 // rowsOf exports the fake store's state as table rows.
 func rowsOf(st *state) map[string][][]any {
-	out := map[string][][]any{"invoice_sequences": {{"invoice", st.seq}}}
+	out := map[string][][]any{"invoice_sequences": {{"invoice", st.seq}, {"quote", st.quoteSeq}}}
 	ids := slices.Sorted(maps.Keys(st.users))
 	for _, id := range ids {
 		u := st.users[id]
@@ -615,9 +615,14 @@ func (t restoreTx) ReplaceTables(context.Context) error {
 	failure := t.s.FailReplace
 	t.s.mu.Unlock()
 	return t.s.Store.do(func(st *state) error {
-		st.seq = 1
+		st.seq, st.quoteSeq = 1, 0 // a backup from before quotes has no quote sequence
 		for _, r := range rows["invoice_sequences"] {
-			st.seq, _ = r[1].(int64)
+			switch name, _ := r[0].(string); name {
+			case "quote":
+				st.quoteSeq, _ = r[1].(int64)
+			default:
+				st.seq, _ = r[1].(int64)
+			}
 		}
 		st.users = map[string]domain.User{}
 		for _, r := range rows["users"] {

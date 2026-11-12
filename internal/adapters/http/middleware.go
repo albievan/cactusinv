@@ -328,6 +328,7 @@ type loginLimiter struct {
 	max     int
 	clock   ports.Clock
 	buckets map[string]*limitBucket
+	trusted []netip.Prefix // proxies whose X-Forwarded-For is believed
 }
 
 type limitBucket struct {
@@ -388,6 +389,43 @@ func (l *loginLimiter) evict(now time.Time) {
 	if len(l.buckets) >= 10000 && oldestKey != "" {
 		delete(l.buckets, oldestKey)
 	}
+}
+
+// clientAddress is the address of the client: the peer's, or, when the peer is a trusted
+// proxy, the right-most X-Forwarded-For entry that is not itself a trusted proxy (the
+// entries further left are written by the client and can be forged).
+func clientAddress(r *http.Request, trusted []netip.Prefix) string {
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		ip = r.RemoteAddr
+	}
+	isTrusted := func(s string) bool {
+		a, err := netip.ParseAddr(s)
+		if err != nil {
+			return false
+		}
+		a = a.Unmap()
+		for _, p := range trusted {
+			if p.Contains(a) {
+				return true
+			}
+		}
+		return false
+	}
+	if !isTrusted(ip) {
+		return ip
+	}
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		h := strings.TrimSpace(hops[i])
+		if _, err := netip.ParseAddr(h); err != nil {
+			return ip // a malformed entry: stop at the proxy we know
+		}
+		if !isTrusted(h) {
+			return h
+		}
+	}
+	return ip
 }
 
 // addressKey is the rate-limit identity of a client address: the address itself for IPv4,
@@ -455,11 +493,7 @@ func (l *loginLimiter) middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		key := "ip:" + addressKey(ip)
+		key := "ip:" + addressKey(clientAddress(r, l.trusted))
 		if !l.reserve(key) {
 			tooManyAttempts(w)
 			return

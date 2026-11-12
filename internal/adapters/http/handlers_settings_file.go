@@ -70,6 +70,10 @@ func (h *handlers) toAPISettingsFile(f app.SettingsFile, mu minorUnits) Settings
 		e := toAPIEmailSettings(app.SMTPView{Settings: *f.EmailServer, Warnings: domain.EmailSenderWarnings(*f.EmailServer)})
 		out.EmailServer = &e
 	}
+	if q := f.QuoteSettings; q != nil {
+		v := toAPIQuoteSettings(app.QuoteSettingsView{Settings: q.Settings, NextSequence: q.NextSequence})
+		out.QuoteSettings = &v
+	}
 	for i, c := range f.Currencies {
 		out.Currencies[i] = toAPICurrency(c)
 	}
@@ -104,7 +108,7 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 		return 0
 	}
 	inFile := SettingsSectionCounts{
-		Business: one(b.Business != nil), EmailServer: one(b.EmailServer != nil), Currencies: len(b.Currencies),
+		Business: one(b.Business != nil), EmailServer: one(b.EmailServer != nil), QuoteSettings: one(b.QuoteSettings != nil), Currencies: len(b.Currencies),
 		BankAccounts: len(b.BankAccounts), Products: len(b.Products), Customers: len(b.Customers), Schedules: len(b.Schedules),
 	}
 	if req.Params.Inspect {
@@ -140,6 +144,11 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 	}
 	if e := b.EmailServer; e != nil && want(SettingsSectionEmailServer) { // a password in the file is ignored
 		f.EmailServer = &domain.SMTPSettings{Enabled: e.Enabled, Host: e.Host, Port: e.Port, Username: e.Username, From: e.From, TLS: string(e.Tls)}
+	}
+	if q := b.QuoteSettings; q != nil && want(SettingsSectionQuoteSettings) {
+		f.QuoteSettings = &app.QuoteSettingsImport{Settings: domain.QuoteSettings{
+			ValidDays: q.ValidDays, NumberFormat: q.NumberFormat, EmailSubject: q.EmailSubject, EmailBody: q.EmailBody, Terms: q.Terms,
+		}, NextSequence: q.NextSequence}
 	}
 	if want(SettingsSectionCurrencies) {
 		for _, c := range b.Currencies {
@@ -187,7 +196,7 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 		return ImportCounts{Created: c.Created, Updated: c.Updated, Unchanged: c.Unchanged}
 	}
 	return ImportSettings200JSONResponse{
-		Applied: res.Applied, Business: counts(res.Business), EmailServer: counts(res.EmailServer),
+		Applied: res.Applied, Business: counts(res.Business), EmailServer: counts(res.EmailServer), QuoteSettings: counts(res.QuoteSettings),
 		Currencies: counts(res.Currencies), BankAccounts: counts(res.BankAccounts), Products: counts(res.Products),
 		Customers: counts(res.Customers), Schedules: counts(res.Schedules), Warnings: res.Warnings, InFile: inFile,
 	}, nil

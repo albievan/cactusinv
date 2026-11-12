@@ -13,6 +13,7 @@ import { IconBolt, IconEdit, IconPause, IconPlay, IconPlus, IconTrash } from '..
 import type { Icon } from '../../components/icons'
 import { uuid } from '../../lib/uuid'
 import { RichNotesEditor } from '../../components/RichNotesEditor'
+import { allPages } from '../../lib/allPages'
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -91,8 +92,11 @@ function ScheduleActions({ s, busy, act, ask }: { s: Schedule; busy: boolean; ac
 }
 
 export function ScheduleList() {
-  const { data, error, loading, reload } = useAsync(() => unwrap(api.GET('/schedules', { params: { query: { limit: 200 } } })), [])
-  const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200, includeInactive: true } } })).then((r) => r.items), [])
+  const { data, error, loading, reload } = useAsync(
+    () => allPages((offset, limit) => unwrap(api.GET('/schedules', { params: { query: { limit, offset } } }))).then((items) => ({ items, total: items.length })),
+    [],
+  )
+  const customers = useAsync(() => allCustomers(), [])
   const name = (id: string) => customers.data?.find((c) => c.id === id)?.name ?? ''
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -209,14 +213,18 @@ export function ScheduleDetailPage() {
   const { data, error, loading, setData } = useAsync(() => unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })), [id])
   const nav = useNavigate()
   const [actionError, setActionError] = useState<Error | null>(null)
+  // One action at a time: a double tap answered "conflict" though the first one worked.
+  const [acting, setActing] = useState(false)
   const can = useCan()
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Schedule" back="/schedules"><ErrorBanner error={error} /></Page>
   const s = data.schedule
   const path = { params: { path: { id } } }
-  const act = async (p: Promise<{ data?: Schemas['ScheduleDetail']; error?: unknown; response: Response }>) => {
+  const act = async (p: () => Promise<{ data?: Schemas['ScheduleDetail']; error?: unknown; response: Response }>) => {
+    if (acting) return
+    setActing(true)
     setActionError(null)
-    try { setData(await unwrap(p)) } catch (e) { setActionError(e as Error) }
+    try { setData(await unwrap(p())) } catch (e) { setActionError(e as Error) } finally { setActing(false) }
   }
   return (
     <Page title={s.name} back="/schedules">
@@ -228,8 +236,8 @@ export function ScheduleDetailPage() {
       </div>
       <div className="d-grid d-md-flex gap-2 mb-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
         {can('schedules.edit') && <Link to={`/schedules/${id}/edit`} className="btn btn-outline-primary">Edit</Link>}
-        {can('schedules.pause') && s.status === 'active' && <button className="btn btn-outline-primary" onClick={() => act(api.POST('/schedules/{id}/pause', path))}>Pause</button>}
-        {can('schedules.resume') && s.status === 'paused' && <button className="btn btn-primary" onClick={() => act(api.POST('/schedules/{id}/resume', path))}>Resume</button>}
+        {can('schedules.pause') && s.status === 'active' && <button className="btn btn-outline-primary" disabled={acting} onClick={() => act(() => api.POST('/schedules/{id}/pause', path))}>Pause</button>}
+        {can('schedules.resume') && s.status === 'paused' && <button className="btn btn-primary" disabled={acting} onClick={() => act(() => api.POST('/schedules/{id}/resume', path))}>Resume</button>}
         {can('schedules.run') && s.status === 'active' && (
           <ConfirmButton
             label="Run now"
@@ -237,7 +245,7 @@ export function ScheduleDetailPage() {
             title={`Run ${s.name} now?`}
             message="It runs for real within a minute: it raises the invoice or e-mails the customer as it would on its next run."
             confirmLabel="Run now"
-            onConfirm={() => act(api.POST('/schedules/{id}/run-now', path))}
+            onConfirm={() => act(() => api.POST('/schedules/{id}/run-now', path))}
           />
         )}
         {can('schedules.delete') && <ConfirmButton
@@ -297,7 +305,7 @@ export function ScheduleEditor() {
   const nav = useNavigate()
   const { minor } = useCurrencies()
   // Inactive customers too: an existing schedule may belong to one.
-  const customers = useAsync(() => unwrap(api.GET('/customers', { params: { query: { limit: 200, includeInactive: true } } })).then((r) => r.items), [])
+  const customers = useAsync(() => allCustomers(), [])
   const existing = useAsync(() => (id ? unwrap(api.GET('/schedules/{id}', { params: { path: { id } } })) : Promise.resolve(undefined)), [id])
   const [s, setS] = useState<Schedule>({
     customerId: params.get('customer') ?? '', name: '', kind: 'invoice', recurrence: blankRecurrence(), lines: [], header: {}, notes: '',
@@ -327,11 +335,15 @@ export function ScheduleEditor() {
     })))
   }, [existing.data])
   useEffect(() => {
+    // A slower answer for an earlier recurrence must not replace the current one's.
+    let alive = true
     const t = setTimeout(() => {
       // Editing: the runs as saving would set them (billed periods are not run again).
-      api.POST('/schedules/preview', { params: { query: id ? { scheduleId: id } : {} }, body: s.recurrence }).then(({ data }) => setPreview(data ?? null))
+      api.POST('/schedules/preview', { params: { query: id ? { scheduleId: id } : {} }, body: s.recurrence })
+        .then(({ data }) => { if (alive) setPreview(data ?? null) })
+        .catch(() => { if (alive) setPreview(null) })
     }, 300)
-    return () => clearTimeout(t)
+    return () => { alive = false; clearTimeout(t) }
   }, [s.recurrence, id])
   const set = (patch: Partial<Schedule>) => setS({ ...s, ...patch })
   const setR = (patch: Partial<Schemas['Recurrence']>) => setS({ ...s, recurrence: { ...s.recurrence, ...patch } })
@@ -543,3 +555,7 @@ export function ScheduleEditor() {
     </Page>
   )
 }
+
+// Every customer, inactive ones too (an existing schedule may belong to one): a schedule
+// for a customer past the first page could not be shown or saved.
+const allCustomers = () => allPages((offset, limit) => unwrap(api.GET('/customers', { params: { query: { limit, offset, includeInactive: true } } })))

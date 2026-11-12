@@ -271,7 +271,7 @@ function InstallUpdate({ check }: { check: UpdateCheck }) {
     <div role="status" className="vstack gap-2 small">
       <p className="fw-medium text-primary-emphasis mb-0">Version {check.latest} is available (this is {check.current}).</p>
       <ErrorBanner error={err} />
-      {!job && can('settings.system.edit') && (
+      {!job && can('administer') && (
         <>
           <p className="text-body-secondary mb-0">
             cactusInv takes a backup, downloads {check.latest}, checks it, puts it in place of this version and restarts.
@@ -282,7 +282,7 @@ function InstallUpdate({ check }: { check: UpdateCheck }) {
           </button>
         </>
       )}
-      {!job && !can('settings.system.edit') && <p className="text-body-secondary mb-0">An administrator can install it here.</p>}
+      {!job && !can('administer') && <p className="text-body-secondary mb-0">An administrator can install it here.</p>}
       {job && job.state !== 'failed' && (
         <>
           <p className="mb-0">{upgradeSteps[job.state] ?? 'Starting…'}{job.backup ? ` Backup: ${job.backup}.` : ''}</p>

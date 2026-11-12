@@ -25,6 +25,9 @@ data:
   CACTUSINV_LOG_LEVEL: "${CACTUSINV_LOG_LEVEL}"
   CACTUSINV_UPDATE_URL: "${CACTUSINV_UPDATE_URL}"
   CACTUSINV_COOKIE_SECURE: "${CACTUSINV_COOKIE_SECURE}"
+  # The ingress controller's pods (k3s's default pod network): sign-in rate limits go by
+  # the client address it forwards, not by the controller's own address.
+  CACTUSINV_TRUSTED_PROXIES: "10.42.0.0/16"
   CACTUSINV_DEFAULT_ADMIN_USER: "${CACTUSINV_DEFAULT_ADMIN_USER}"
   CACTUSINV_DEFAULT_ADMIN_PASSWORD: "${CACTUSINV_DEFAULT_ADMIN_PASSWORD}"
   CACTUSINV_SMTP_HOST: "${CACTUSINV_SMTP_HOST}"
@@ -222,8 +225,21 @@ metadata:
   namespace: ${K8S_NAMESPACE}
   labels: { app.kubernetes.io/part-of: cactusinv }
 spec:
-  type: NodePort
+  # SMTP stays inside the cluster; only the test mailbox's web page has a node port.
+  type: ClusterIP
   selector: { app.kubernetes.io/name: mailpit }
   ports:
     - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: web, port: 8025, targetPort: web }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailpit-web
+  namespace: ${K8S_NAMESPACE}
+  labels: { app.kubernetes.io/part-of: cactusinv }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: mailpit }
+  ports:
     - { name: web, port: 8025, targetPort: web, nodePort: ${K8S_MAILPIT_NODE_PORT} }

@@ -13,7 +13,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   day and month, sequence, year — the format is yours to set) → send → paid / void.
   Classic business-invoice PDF layout (header band, bill-to/ship-to, line table, bank details,
   totals box), with a DRAFT, PAID or VOID mark on every page. Issuing a draft dated in the past
-  asks whether to keep its date or issue it dated today (the due date follows the date used).
+  asks whether to keep its date or issue it dated today (the due date follows the date used),
+  also when it is issued by sending it.
   Lists page through everything ("Show more"), however many invoices, customers or products.
 - **Automated e-mail** — send now, schedule a send for later, or let a **recurring schedule**
   (weekly, monthly, quarterly, yearly) issue invoices and, if you opt in, e-mail them.
@@ -24,7 +25,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   bank accounts (one default, printed on its invoices); products carry an explicit price per
   currency. No exchange-rate guessing. A customer pinned to a bank account that is later
   deactivated is invoiced with the currency's default account; a customer's currency cannot
-  change while they have unpaid invoices.
+  change while they have drafts, unpaid invoices or a schedule with fixed prices (those are
+  amounts in the old currency).
 - **VAT** — set a default VAT % for the business (0 by default) and override it per invoice or
   schedule. At 0 % nothing about VAT appears on the invoice.
 - **Product look-up** — every invoice line is picked from a searchable product grid (no free
@@ -36,7 +38,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   e-mail them on a schedule.
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
-  Outlook / Microsoft 365 and other servers; the password is stored encrypted. cactusInv
+  Outlook / Microsoft 365 and other servers; the password is stored encrypted, and is only ever
+  sent to the server it was saved for (changing the host or user name asks for it again). cactusInv
   sends From the **Send as** address, but the provider decides the sender it shows: Gmail
   sends as the signed-in account unless Send as is a verified alias (Gmail → Settings →
   Accounts → Send mail as), and Microsoft 365 may refuse unless it is the mailbox's own
@@ -115,12 +118,12 @@ Released into the public domain — see [LICENSE](LICENSE).
   with [age](https://age-encryption.org); download a backup protected by your passphrase; restore
   from Settings → Backup & restore with a preview first. The audit log is never rewritten.
 - **Import/Export Settings** — Settings → Import/Export Settings: export the
-  business details, e-mail server, currencies, bank accounts, products, customers and schedules
-  to one JSON file, protected with a passphrase unless you choose readable JSON, and import such a
+  business details, e-mail server, Quote settings (with the next quote number), currencies,
+  bank accounts, products, customers and schedules to one JSON file, protected with a passphrase unless you choose readable JSON, and import such a
   file into this or another installation. An import is checked first (what is new, changed or
   unchanged, per section you choose), then applied all or nothing. It never deletes, new
-  schedules arrive paused, the next invoice number only moves forward, and the e-mail server
-  password is never in the file.
+  schedules arrive paused, the next invoice and quote numbers only move forward, and the e-mail
+  server password is never in the file.
 - **System Settings** — Settings → System Settings: sign users out after a
   time without activity and end every sign-in after a maximum time (applies at once), and map
   the container's backup and invoice export folders to host folders, e.g. a NAS share. A new
@@ -239,7 +242,7 @@ signed-in user also has a limit of their own.
 Settings → System Settings → **Check for updates** says when a newer version is published.
 
 **A standalone server** (the `cactusinv` binary run on a machine, not in a container) installs
-it itself: press **Install and restart**, then confirm. It takes a backup (when a backup key is
+it itself: an administrator presses **Install and restart**, then confirms. It takes a backup (when a backup key is
 set up), downloads the new binary for its OS and CPU from `dist/` on GitHub, checks it against
 the published SHA-256 and by running it, keeps the old one as `cactusinv.old` beside it, and
 restarts in place (same process, so systemd or a terminal stays attached). The new version
@@ -312,8 +315,8 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 | Setting | Default | What it does |
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
-| `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.18.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `MAILPIT_PORT` | `8025` | Docker: port on this machine (`127.0.0.1` only) for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). It has no sign-in and shows every e-mail with its PDF. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.19.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -321,9 +324,10 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.18.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `https` URL (plain `http` only to `localhost`, since the server installs what it downloads) of a file whose first line is a version like `1.19.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
+| `CACTUSINV_TRUSTED_PROXIES` | empty (k3s/k8s: `10.42.0.0/16`) | Reverse proxies (addresses or CIDRs, comma-separated) whose `X-Forwarded-For` names the client. The sign-in rate limit counts per client address; without this, everyone behind an ingress shares its address, so one person's wrong passwords would lock everyone out. Only list proxies you run: a listed address can name any client. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |
 | `CACTUSINV_DEFAULT_ADMIN_PASSWORD` | `admin` | That user's first password. You are asked to change it at the first sign-in. |
 
@@ -366,7 +370,7 @@ Used only with `--k3s` and `--k8s`.
 |---|---|---|
 | `K8S_NAMESPACE` | `cactusinv` | Namespace everything is installed in (created if missing). |
 | `K8S_NODE_PORT` | `30080` | NodePort the web app answers on (`http://<node>:30080`). It must be free and in the cluster's NodePort range (normally 30000–32767). |
-| `K8S_MAILPIT_NODE_PORT` | `30025` | NodePort for the Mailpit test mailbox's web page. Same rules. |
+| `K8S_MAILPIT_NODE_PORT` | `30025` | NodePort for the Mailpit test mailbox's web page (service `mailpit-web`; Mailpit's SMTP port stays inside the cluster). The page has no sign-in and shows every e-mail sent through it, so use it only while no real mail server is set. Same rules. |
 | `K8S_STORAGE_CLASS` | empty | StorageClass for the three volume claims (database, invoices, backups). See below. |
 | `K8S_VOLUME_DIR` | empty | k3s only: a folder on the node to keep the three volumes in (`mariadb/`, `invoices/`, `backups/`), e.g. `/data/k3s/local.volumes/cactusinv`. `deploy.sh` creates the folders, the class and the volumes. See below. |
 | `K8S_MARIADB_STORAGE` | `10Gi` | Size of the database claim (`Gi` = GiB, `Mi` = MiB). |
@@ -490,8 +494,8 @@ comes from their **groups** (ADR-012):
   edit, delete), Import/Export (export and import separately) and System Settings (view, edit)) and who is in it; change or delete it
   later. Permissions a ticked one needs (e.g. seeing invoices, to e-mail them) are included
   and shown greyed. A change applies at once.
-- **Administrators** is built in: it can do everything, including users, groups, backups and
-  restore. Only its members can change, and you cannot remove yourself from it.
+- **Administrators** is built in: it can do everything, including users, groups, backups,
+  restore and installing updates. Only its members can change, and you cannot remove yourself from it.
 - A user in **no group** can sign in but sees nothing (the Add user form warns). **Access…**
   on a user's row sets their groups.
 - Every group and membership change asks for your own password and is in the audit log.

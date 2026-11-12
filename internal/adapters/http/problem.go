@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 
 	"github.com/albievan/cactusinv/internal/domain"
 )
@@ -137,5 +139,40 @@ func requestErrorHandler(w http.ResponseWriter, _ *http.Request, err error) {
 		writeProblem(w, problemFor(tooLarge))
 		return
 	}
-	writeProblem(w, Problem{Type: problemType("bad-request"), Title: "Malformed request", Status: http.StatusBadRequest, Detail: err.Error()})
+	writeProblem(w, Problem{Type: problemType("bad-request"), Title: "Malformed request", Status: http.StatusBadRequest, Detail: requestErrorDetail(err)})
+}
+
+// requestErrorDetail says what is wrong with a request without the decoder's internals
+// (Go type and struct names).
+func requestErrorDetail(err error) string {
+	var typ *json.UnmarshalTypeError
+	var syn *json.SyntaxError
+	switch {
+	case errors.As(err, &typ) && typ.Field != "":
+		return typ.Field + " has the wrong type (expected " + jsonKind(typ.Type.Kind()) + ")"
+	case errors.As(err, &typ):
+		return "the body has the wrong shape"
+	case errors.As(err, &syn), errors.Is(err, io.ErrUnexpectedEOF), errors.Is(err, io.EOF):
+		return "the body is not valid JSON"
+	}
+	return err.Error()
+}
+
+func jsonKind(k reflect.Kind) string {
+	switch k {
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Slice, reflect.Array:
+		return "a list"
+	case reflect.Struct, reflect.Map:
+		return "an object"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return "a whole number"
+	case reflect.Float32, reflect.Float64:
+		return "a number"
+	default:
+		return "another type"
+	}
 }

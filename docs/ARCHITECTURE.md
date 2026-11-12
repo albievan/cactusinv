@@ -556,7 +556,8 @@ sections?}` move a **settings file** (JSON, `format: cactusinv-settings`, `forma
 between installations: business profile with the next sequence, e-mail server, currencies,
 bank accounts, products, customers and schedules, in the API's own schemas. A schedule is a
 `SettingsSchedule`: its customer by code, its lines' products by SKU, and the currency its unit
-prices are in. `settings.export` / `settings.import` (M24); an import also needs each action's
+prices are in. Since M36 the file also holds `quoteSettings` (Settings → Quotes with its
+`nextSequence`, which only moves forward; importing it needs `settings.quotes`). `settings.export` / `settings.import` (M24); an import also needs each action's
 permission for what it adds or changes. Both routes carry a passphrase, so they skip Idempotency-Key; importing a file twice
 changes nothing more.
 
@@ -634,7 +635,7 @@ the session timeouts and the host folders mapped to the container's folders.
 - **Install in place (M31)**, standalone binary only: `make dist` builds
   `dist/cactusinv-<os>-<arch>[.exe]` (linux, darwin, windows × amd64, arm64) and
   `dist/SHA256SUMS`, committed with `VERSION`, so a push to `main` publishes a release.
-  `POST /settings/system/update` (`settings.system.edit`) starts `app.InstallUpdate`: a backup
+  `POST /settings/system/update` (`administer` since M36; it installs and runs a program) starts `app.InstallUpdate`: a backup
   (skipped when no backup key is set up; any other backup failure stops it), then
   `ports.Upgrader` (`adapters/selfupdate`) downloads the asset from `dist/` beside the VERSION
   URL (256 MiB at most), requires its SHA-256 in `SHA256SUMS`, runs it with `version` (it must
@@ -647,3 +648,34 @@ the session timeouts and the host folders mapped to the container's folders.
   running). A container (`CACTUSINV_CONTAINER=1` in the image, or a deploy target) refuses:
   its image would bring the old version back, so the page shows `./deploy.sh --upgrade`.
 
+## 20. Review rules (M36, v1.19.0)
+
+- **Client address**: `httpapi.clientAddress` is the peer, or behind a proxy listed in
+  `CACTUSINV_TRUSTED_PROXIES` the right-most `X-Forwarded-For` entry that is not a trusted
+  proxy. The password rate limit keys its address bucket on it. The k8s manifest trusts the
+  k3s pod network (`10.42.0.0/16`), where Traefik runs.
+- **Mail server**: a stored password is used only for the host and user it was saved with;
+  `UpdateSMTPSettings` refuses a host or user change without it (as the import does). The
+  SMTP adapter marks a failure before any mail server answered as
+  `ports.ErrMailUnreachable`; the test endpoint shows only that, never the raw error (the host
+  is user-supplied). The outbox log redacts e-mail addresses from mail server errors.
+- **Pictures in notes** are at most `NoteImageMaxSide` (5000) px a side and
+  `NoteImageMaxPixels` (16 MP), checked by `CleanNotes` and again by the PDF adapter before it
+  decodes a stored picture.
+- **Currency of a customer** cannot change while it has drafts, unpaid invoices or a schedule
+  with a fixed price; a schedule with fixed prices cannot move to a customer in another
+  currency; an ad-hoc customer with quotes keeps its currency when it becomes a customer.
+  `ConvertQuote` adopts the customer an ad-hoc customer became (`adoptCustomer`).
+- **Restore** keeps the live quote sequence when ahead, like the invoice sequence;
+  `SetQuoteSequence` is an upsert, so a backup without the row still leaves one.
+- **Outbox**: a queued quote e-mail fails without sending once the quote is declined; a panic
+  while preparing a message is an ordinary delivery error, and a panic in any worker pass is
+  logged and contained (`worker.safely`).
+- **Search** terms are escaped for `LIKE` (`mariadb.likeEscape`).
+- **PDF**: a notes table row taller than a page continues on the next; long words are cut in
+  linear time on whole characters; line-table figures wrap inside their column.
+- **Self-update**: `CACTUSINV_UPDATE_URL` must be https (http only to a loopback host), and
+  redirects may not leave https.
+- **Audit**: a failed sign-in for an unknown login records `unknown login <8 hex>` (SHA-256 of
+  the lower-cased login), not what was typed.
+- **400 problems** name the field and the expected JSON type, not the decoder's Go types.

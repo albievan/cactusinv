@@ -44,8 +44,16 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, ti
 	r := s.tx.Repos()
 	login := strings.TrimSpace(email)
 	failed := func(userID, reason string) error {
-		attempt := WithActor(ctx, Actor{ID: "", Name: truncateRunes(login, 100)})
-		_ = s.auditNow(attempt, "auth.login_failed", "user", userID, "failed sign-in for "+truncateRunes(login, 100)+": "+reason)
+		// The audit trail is permanent, so a login that matches nobody (often a password
+		// typed into the wrong box) is recorded as a fingerprint, not as typed: repeated
+		// guesses at one name still show as one name.
+		name := truncateRunes(login, 100)
+		if userID == "" {
+			sum := sha256.Sum256([]byte(strings.ToLower(login)))
+			name = "unknown login " + hex.EncodeToString(sum[:4])
+		}
+		attempt := WithActor(ctx, Actor{ID: "", Name: name})
+		_ = s.auditNow(attempt, "auth.login_failed", "user", userID, "failed sign-in for "+name+": "+reason)
 		return wrap("app.Login", domain.ErrUnauthenticated)
 	}
 	u, err := r.Users.GetByEmail(ctx, login)

@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/filesecrets"
@@ -43,6 +45,7 @@ type config struct {
 	Workers              bool
 	MigrateOnStart       bool
 	CookieSecure         bool
+	TrustedProxies       []netip.Prefix
 	DefaultAdminUser     string
 	DefaultAdminPassword string
 	// Deployment: set by deploy.sh so System Settings can show the folders mapped now.
@@ -129,8 +132,22 @@ func loadConfig(getenv func(string) string) (config, error) {
 	c.HostInvoicesDir = getenv("CACTUSINV_HOST_INVOICES_DIR")
 	if c.UpdateURL = str("CACTUSINV_UPDATE_URL", release.DefaultURL); c.UpdateURL == "off" {
 		c.UpdateURL = ""
-	} else if u, err := url.Parse(c.UpdateURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return config{}, fmt.Errorf("CACTUSINV_UPDATE_URL must be an http(s) URL or off, not %q", c.UpdateURL)
+	} else if u, err := url.Parse(c.UpdateURL); err != nil || u.Host == "" || (u.Scheme != "https" && (u.Scheme != "http" || !loopback(u.Hostname()))) {
+		// The update is a program the server installs and runs: it comes over HTTPS (plain
+		// http only from this machine), so nobody on the way can swap it.
+		return config{}, fmt.Errorf("CACTUSINV_UPDATE_URL must be an https URL (http only to localhost) or off, not %q", c.UpdateURL)
+	}
+	for _, v := range strings.FieldsFunc(getenv("CACTUSINV_TRUSTED_PROXIES"), func(r rune) bool { return r == ',' || r == ' ' }) {
+		p, err := netip.ParsePrefix(v)
+		if err != nil {
+			a, aerr := netip.ParseAddr(v)
+			if aerr != nil {
+				errs = append(errs, fmt.Errorf("CACTUSINV_TRUSTED_PROXIES: %q is not an address or CIDR", v))
+				continue
+			}
+			p = netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen())
+		}
+		c.TrustedProxies = append(c.TrustedProxies, p.Masked())
 	}
 	c.BackupRetentionDays = integer("CACTUSINV_BACKUP_RETENTION_DAYS", 14)
 	c.BackupMaxUploadMB = integer("CACTUSINV_BACKUP_MAX_UPLOAD_MB", 256)
@@ -198,4 +215,13 @@ func (c *config) optionalSecret(ctx context.Context, key string) (string, error)
 		}
 	}
 	return v, err
+}
+
+// loopback reports whether host is this machine.
+func loopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(host)
+	return err == nil && a.IsLoopback()
 }

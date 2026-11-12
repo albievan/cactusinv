@@ -103,4 +103,5 @@ SELECT next_value FROM invoice_sequences WHERE name = 'quote' FOR UPDATE;
 SELECT next_value FROM invoice_sequences WHERE name = 'quote';
 
 -- name: SetQuoteSequence :exec
-UPDATE invoice_sequences SET next_value = ? WHERE name = 'quote';
+INSERT INTO invoice_sequences (name, next_value) VALUES ('quote', ?)
+ON DUPLICATE KEY UPDATE next_value = VALUES(next_value);

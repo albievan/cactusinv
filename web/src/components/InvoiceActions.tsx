@@ -6,6 +6,7 @@ import { IconBan, IconClockAlert, IconEdit, IconFilePdf, IconPaid, IconSend, Ico
 import type { Icon } from './icons'
 import { Field, Sheet } from './ui'
 import { RichNotesEditor } from './RichNotesEditor'
+import { formatDate, todayISO } from '../lib/format'
 
 export function ActionButton({ icon: I, label, onClick, disabled, tone = 'default', href, showLabel }: {
   icon: Icon; label: string; onClick?: () => void; disabled?: boolean; tone?: 'default' | 'danger'; href?: string; showLabel: boolean
@@ -118,16 +119,27 @@ export function InvoiceActions({ inv, onChanged, onError, showLabels = false, wi
     }
   }
   const can = useCan()
-  const send = () =>
-    run(
-      () => unwrap(api.POST('/invoices/{id}/send', { params: { path: { id: inv.id }, header: { 'Idempotency-Key': idempotencyKey() } }, body: {} })),
-      `${inv.number || 'Invoice'} queued for e-mail`,
-    )
+  const [askDate, setAskDate] = useState(false)
+  // Sending a draft issues it. One dated in the past is asked about first, as Issue does:
+  // otherwise one tap gave it a number, a past date (perhaps already overdue) and e-mailed it.
+  const send = (datedToday = false) =>
+    run(async () => {
+      if (datedToday) await unwrap(api.POST('/invoices/{id}/issue', { ...path, body: { issueDate: todayISO() } }))
+      await unwrap(api.POST('/invoices/{id}/send', { params: { path: { id: inv.id }, header: { 'Idempotency-Key': idempotencyKey() } }, body: {} }))
+    }, `${inv.number || 'Invoice'} queued for e-mail`)
+  const startSend = () => (inv.status === 'draft' && inv.issueDate < todayISO() ? setAskDate(true) : void send())
   return (
     <div className={`d-flex align-items-center gap-1 ${showLabels ? 'flex-wrap' : 'flex-nowrap'}`} role="group" aria-label={`Actions for ${inv.number || 'draft'}`}>
       {can('invoices.send') && (inv.status !== 'draft' || can('invoices.issue')) && (
-        <ActionButton showLabel={showLabels} icon={IconSend} label={inv.status === 'draft' ? 'Issue & send' : 'Send e-mail'} onClick={send} disabled={busy || inv.status === 'void'} />
+        <ActionButton showLabel={showLabels} icon={IconSend} label={inv.status === 'draft' ? 'Issue & send' : 'Send e-mail'} onClick={startSend} disabled={busy || inv.status === 'void'} />
       )}
+      <Sheet title="Issue with which date?" open={askDate} onClose={() => setAskDate(false)}>
+        <p className="small text-body-secondary mb-0">This draft is dated {formatDate(inv.issueDate)}. The due date follows from the date it is issued with.</p>
+        <div className="mt-3 d-flex flex-wrap justify-content-end gap-2">
+          <button className="btn btn-outline-primary" disabled={busy} onClick={() => { setAskDate(false); void send() }}>Keep {formatDate(inv.issueDate)}</button>
+          <button className="btn btn-primary" disabled={busy} onClick={() => { setAskDate(false); void send(true) }}>Issue dated today</button>
+        </div>
+      </Sheet>
       <ActionButton showLabel={showLabels} icon={IconFilePdf} label="View PDF" href={`/api/v1/invoices/${inv.id}/pdf`} />
       {withNotes && inv.status !== 'draft' && <ActionButton showLabel={showLabels} icon={IconStatement} label={can('invoices.edit') && inv.status !== 'void' ? 'Edit notes' : 'View notes'} onClick={() => setNotes(true)} />}
       {notes && <NotesSheet inv={inv} open onClose={() => setNotes(false)} onSaved={onChanged} onError={onError} />}

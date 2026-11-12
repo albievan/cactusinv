@@ -736,7 +736,8 @@ func invoiceColumns(hasDisc bool) []column {
 
 func (p *page) invoiceCells(l domain.Line, cols []column, hasDisc bool) [][]string {
 	p.font("", 9)
-	cells := [][]string{p.wrap(l.Description, cols[0].w-4), {l.Quantity.String()}, {p.money(l.UnitPrice)}}
+	// Figures wrap too: an extreme quantity or amount stays inside its column.
+	cells := [][]string{p.wrap(l.Description, cols[0].w-4), p.wrap(l.Quantity.String(), cols[1].w-2), p.wrap(p.money(l.UnitPrice), cols[2].w-2)}
 	if hasDisc {
 		d := ""
 		if l.Discount > 0 {
@@ -744,7 +745,7 @@ func (p *page) invoiceCells(l domain.Line, cols []column, hasDisc bool) [][]stri
 		}
 		cells = append(cells, []string{d})
 	}
-	return append(cells, []string{p.money(l.Amount())})
+	return append(cells, p.wrap(p.money(l.Amount()), cols[len(cols)-1].w-2))
 }
 
 // rowLinesPerPage is how many text lines of one table row fit on a continuation page.

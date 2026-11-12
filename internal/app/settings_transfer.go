@@ -16,19 +16,28 @@ import (
 )
 
 // SettingsFile is what Settings → Import/Export moves between installations: the business
-// profile, the e-mail server (never its password), currencies, bank accounts, products,
-// customers and schedules. On import a nil or empty section is left alone.
+// profile, the e-mail server (never its password), Settings → Quotes, currencies, bank
+// accounts, products, customers and schedules. On import a nil or empty section is left
+// alone.
 type SettingsFile struct {
-	Business     *BusinessSettings
-	EmailServer  *domain.SMTPSettings
-	Currencies   []domain.Currency
-	BankAccounts []domain.BankAccount
-	Products     []domain.Product
-	Customers    []domain.Customer
-	Schedules    []ScheduleImport
+	Business      *BusinessSettings
+	EmailServer   *domain.SMTPSettings
+	QuoteSettings *QuoteSettingsImport
+	Currencies    []domain.Currency
+	BankAccounts  []domain.BankAccount
+	Products      []domain.Product
+	Customers     []domain.Customer
+	Schedules     []ScheduleImport
 	// BankAccountRefs are all the file's bank accounts, also when that section is not
 	// imported: customers' overrides are matched through them (never saved from here).
 	BankAccountRefs []domain.BankAccount
+}
+
+// QuoteSettingsImport is Settings → Quotes in a settings file, with the next quote
+// sequence (which only moves forward on import, like the invoice one).
+type QuoteSettingsImport struct {
+	Settings     domain.QuoteSettings
+	NextSequence int64
 }
 
 // ScheduleImport is a schedule in a settings file. Ids differ between installations, so
@@ -48,15 +57,16 @@ type ImportCounts struct {
 
 // ImportResult is what ImportSettings did, or would do on a dry run.
 type ImportResult struct {
-	Applied      bool // false: a dry run, nothing was saved
-	Business     ImportCounts
-	EmailServer  ImportCounts
-	Currencies   ImportCounts
-	BankAccounts ImportCounts
-	Products     ImportCounts
-	Customers    ImportCounts
-	Schedules    ImportCounts
-	Warnings     []string // never nil
+	Applied       bool // false: a dry run, nothing was saved
+	Business      ImportCounts
+	EmailServer   ImportCounts
+	QuoteSettings ImportCounts
+	Currencies    ImportCounts
+	BankAccounts  ImportCounts
+	Products      ImportCounts
+	Customers     ImportCounts
+	Schedules     ImportCounts
+	Warnings      []string // never nil
 }
 
 // errDryRun rolls back the transaction of a dry-run import.
@@ -84,6 +94,15 @@ func (s *Service) ExportSettings(ctx context.Context) (SettingsFile, error) {
 		case !errors.Is(err, domain.ErrNotFound):
 			return err
 		}
+		qs, err := s.quoteSettings(ctx, r)
+		if err != nil {
+			return err
+		}
+		nextQuote, err := r.QuoteSequences.Peek(ctx)
+		if err != nil {
+			return err
+		}
+		f.QuoteSettings = &QuoteSettingsImport{Settings: qs, NextSequence: nextQuote}
 		if f.Currencies, err = r.Currencies.List(ctx); err != nil {
 			return err
 		}
@@ -128,6 +147,11 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 				return err
 			}
 		}
+		if f.QuoteSettings != nil && f.QuoteSettings.NextSequence > 0 {
+			if err := r.QuoteSequences.Lock(ctx); err != nil {
+				return err
+			}
+		}
 		if err := s.importCurrencies(ctx, r, f.Currencies, &res); err != nil {
 			return err
 		}
@@ -148,6 +172,9 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 			return err
 		}
 		if err := s.importEmailServer(ctx, r, f.EmailServer, &res); err != nil {
+			return err
+		}
+		if err := s.importQuoteSettings(ctx, r, f.QuoteSettings, &res); err != nil {
 			return err
 		}
 		if err := s.importSchedules(ctx, r, f.Schedules, &res); err != nil {
@@ -171,7 +198,7 @@ func (s *Service) ImportSettings(ctx context.Context, f SettingsFile, apply bool
 }
 
 func (r ImportResult) summary() string {
-	parts := make([]string, 0, 7)
+	parts := make([]string, 0, 8)
 	for _, c := range []struct {
 		name string
 		n    ImportCounts
@@ -182,6 +209,7 @@ func (r ImportResult) summary() string {
 		{"customers", r.Customers},
 		{"business", r.Business},
 		{"e-mail server", r.EmailServer},
+		{"quote settings", r.QuoteSettings},
 		{"schedules", r.Schedules},
 	} {
 		if c.n != (ImportCounts{}) {
@@ -468,6 +496,55 @@ func (s *Service) importBusiness(ctx context.Context, r ports.Repos, in *Busines
 			"The next invoice sequence stays %d: the file has %d, and numbers already used are never given again.", next, in.NextSequence))
 	}
 	res.Business.Updated++
+	return nil
+}
+
+func (s *Service) importQuoteSettings(ctx context.Context, r ports.Repos, in *QuoteSettingsImport, res *ImportResult) error {
+	if in == nil {
+		return nil
+	}
+	qs := in.Settings
+	if err := qs.Validate(); err != nil {
+		return inItem("quoteSettings", "", err)
+	}
+	cur, err := s.quoteSettings(ctx, r)
+	if err != nil {
+		return err
+	}
+	next, err := r.QuoteSequences.Peek(ctx)
+	if err != nil {
+		return err
+	}
+	qs.Version = cur.Version
+	changed, forward := qs != cur, in.NextSequence > next
+	if in.NextSequence > 0 && in.NextSequence < next {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"The next quote sequence stays %d: the file has %d, and numbers already used are never given again.", next, in.NextSequence))
+	}
+	if !changed && !forward {
+		res.QuoteSettings.Unchanged++
+		return nil
+	}
+	if err := allowed(ctx, "quoteSettings", "", domain.PermSettingsQuotes); err != nil {
+		return err
+	}
+	if changed {
+		if err := r.QuoteSettings.Save(ctx, qs); err != nil {
+			return err
+		}
+		if err := s.audit(ctx, r, "settings.quotes_updated", "settings", "quotes", quoteSettingsSummary(qs)); err != nil {
+			return err
+		}
+	}
+	if forward {
+		if err := r.QuoteSequences.Set(ctx, in.NextSequence); err != nil {
+			return err
+		}
+		if err := s.audit(ctx, r, "settings.next_quote_number_set", "settings", "quotes", fmt.Sprintf("next quote sequence %d", in.NextSequence)); err != nil {
+			return err
+		}
+	}
+	res.QuoteSettings.Updated++
 	return nil
 }
 

@@ -5,7 +5,9 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -79,7 +81,7 @@ func (r *Runner) Run(ctx context.Context) {
 			t := time.NewTicker(every)
 			defer t.Stop()
 			for {
-				pass(ctx)
+				r.safely(ctx, name, pass)
 				select {
 				case <-ctx.Done():
 					r.log.Info("worker stopped", "worker", name)
@@ -95,6 +97,17 @@ func (r *Runner) Run(ctx context.Context) {
 	loop("housekeeping", r.every.Housekeeping, r.Housekeeping)
 	loop("backups", r.every.Backups, r.Backups)
 	wg.Wait()
+}
+
+// safely runs one pass; a panic in it is logged and the next pass runs as usual, so one
+// bad record cannot stop the server.
+func (r *Runner) safely(ctx context.Context, name string, pass func(context.Context)) {
+	defer func() {
+		if p := recover(); p != nil {
+			r.log.ErrorContext(ctx, "worker pass panicked", "worker", name, "panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+		}
+	}()
+	pass(ctx)
 }
 
 // Schedules runs one schedule pass.

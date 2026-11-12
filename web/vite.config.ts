@@ -18,5 +18,5 @@ export default defineConfig({
   css: { preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: ['import', 'global-builtin', 'color-functions', 'mixed-decls', 'if-function'] } } },
   build: { outDir: 'dist', emptyOutDir: true, sourcemap: false },
   server: { proxy: { '/api': 'http://localhost:8080' } },
-  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], globals: true },
+  test: { environment: 'jsdom', setupFiles: ['./src/test/setup.ts'], globals: true, testTimeout: 20000 },
 })

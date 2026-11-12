@@ -1723,6 +1723,8 @@ export interface components {
             business?: components["schemas"]["BusinessSettings"];
             /** @description Never holds the password. */
             emailServer?: components["schemas"]["EmailSettings"];
+            /** @description Settings → Quotes; its nextSequence only moves forward on import. */
+            quoteSettings?: components["schemas"]["QuoteSettings"];
             currencies?: components["schemas"]["Currency"][];
             bankAccounts?: components["schemas"]["BankAccount"][];
             products?: components["schemas"]["Product"][];
@@ -1744,7 +1746,7 @@ export interface components {
             schedule: components["schemas"]["Schedule"];
         };
         /** @enum {string} */
-        SettingsSection: "business" | "emailServer" | "currencies" | "bankAccounts" | "products" | "customers" | "schedules";
+        SettingsSection: "business" | "emailServer" | "quoteSettings" | "currencies" | "bankAccounts" | "products" | "customers" | "schedules";
         SettingsExportRequest: {
             /** @description Protect the file (at least 16 characters); omit for plain JSON. */
             passphrase?: string;
@@ -1756,10 +1758,11 @@ export interface components {
             /** @description The sections to import; omitted means all. */
             sections?: components["schemas"]["SettingsSection"][];
         };
-        /** @description How many items each section of the file holds (business and emailServer 0 or 1). */
+        /** @description How many items each section of the file holds (business, emailServer and quoteSettings 0 or 1). */
         SettingsSectionCounts: {
             business: number;
             emailServer: number;
+            quoteSettings: number;
             currencies: number;
             bankAccounts: number;
             products: number;
@@ -1776,6 +1779,7 @@ export interface components {
             applied: boolean;
             business: components["schemas"]["ImportCounts"];
             emailServer: components["schemas"]["ImportCounts"];
+            quoteSettings: components["schemas"]["ImportCounts"];
             currencies: components["schemas"]["ImportCounts"];
             bankAccounts: components["schemas"]["ImportCounts"];
             products: components["schemas"]["ImportCounts"];

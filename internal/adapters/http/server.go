@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"path"
 	"strings"
 	"time"
@@ -37,6 +38,10 @@ type Options struct {
 	Version, Build string
 	// MaxUploadBytes limits a backup upload (default DefaultMaxUploadBytes).
 	MaxUploadBytes int64
+	// TrustedProxies are the reverse proxies (an ingress) whose X-Forwarded-For names the
+	// client. Without them every client behind a proxy shares its address, so one client's
+	// wrong passwords would lock everyone out.
+	TrustedProxies []netip.Prefix
 }
 
 // NewHandler builds the complete HTTP handler.
@@ -68,6 +73,7 @@ func NewHandler(o Options) http.Handler {
 	})
 
 	limiter := newLoginLimiter(o.Clock)
+	limiter.trusted = o.TrustedProxies
 	root := http.NewServeMux()
 	root.Handle("/api/", withSecureSignIn(o.CookieSecure, limiter.middleware(withAPIGuards(o.Service, o.MaxUploadBytes, limiter, withIdempotency(o.Service.Idempotency(), o.Clock, api)))))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

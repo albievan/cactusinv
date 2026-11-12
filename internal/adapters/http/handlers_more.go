@@ -55,6 +55,9 @@ func (h *handlers) SendTestEmail(ctx context.Context, req SendTestEmailRequestOb
 		// Only the mail server's own answer (e.g. Gmail rejecting the password) is shown to
 		// the user; a database or other internal error stays a 500 without details.
 		var me *app.MailError
+		if errors.Is(err, ports.ErrMailUnreachable) {
+			return nil, &domain.ValidationError{Field: "smtp", Reason: ports.ErrMailUnreachable.Error() + ": check the host, port and encryption"}
+		}
 		if errors.As(err, &me) {
 			return nil, &domain.ValidationError{Field: "smtp", Reason: "the mail server refused: " + rootCause(me.Err)}
 		}
