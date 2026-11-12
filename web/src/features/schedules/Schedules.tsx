@@ -462,6 +462,14 @@ export function ScheduleEditor() {
         )}
         {isInvoice && customer && <LineEditor lines={lines} onChange={setLines} currency={customer.currency} minorUnits={minor(customer.currency)} />}
         {isInvoice && (
+          <section className="card card-body vstack gap-2">
+            <Field label="Invoice notes" hint="Free text printed under the lines of the next invoice; change it month by month. {month}, {year} and {period} become the billing month. Each raised invoice keeps its own copy, which you can still edit from Invoices.">
+              {(f) => <textarea id={f} className="form-control" style={{ minHeight: 120 }} value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}
+            </Field>
+            {customer && <DisclaimerNote customer={customer} businessText={business.data?.defaultNotes} />}
+          </section>
+        )}
+        {isInvoice && (
           <section className="card card-body vstack gap-3">
             <h2 className="fs-5 fw-semibold mb-0">Step 2 · E-mail it</h2>
             <div className="row row-cols-1 row-cols-md-3 g-2" role="radiogroup" aria-label="E-mail the raised invoice">
@@ -517,8 +525,6 @@ export function ScheduleEditor() {
           {isInvoice && (
             <>
               <Field label="VAT %" hint="Empty uses the business default VAT. 0 = no VAT.">{(f) => <input id={f} className="form-control" inputMode="decimal" placeholder="Business default" value={s.vatPercent ?? ''} onChange={(e) => set({ vatPercent: e.target.value === '' ? undefined : e.target.value })} />}</Field>
-              <Field label="Invoice notes" hint="Optional. The disclaimer is added automatically.">{(f) => <textarea id={f} className="form-control" value={s.notes} onChange={(e) => set({ notes: e.target.value })} />}</Field>
-              {customer && <DisclaimerNote customer={customer} businessText={business.data?.defaultNotes} />}
             </>
           )}
           <Field label="E-mail subject" hint={`Empty uses the default.${template ? ` Placeholders: ${template.placeholders.join(' ')}` : ''}`}>

@@ -7,6 +7,7 @@ import { useCan } from '../../../components/auth'
 
 type System = Schemas['SystemSettings']
 type UpdateCheck = Schemas['UpdateCheck']
+type UpgradeJob = Schemas['UpgradeJob']
 
 /** SystemSettingsPage is /settings/system: session timeouts and the folder mapping. */
 export function SystemSettingsPage() {
@@ -189,13 +190,15 @@ function VersionCard({ target }: { target: string }) {
       {check && !check.problem && !check.available && (
         <p role="status" className="small text-success mb-0">You have the newest version ({check.current}).</p>
       )}
-      {check?.available && (
+      {check?.available && check.canInstall && <InstallUpdate check={check} />}
+      {check?.available && !check.canInstall && (
         <div role="status" className="vstack gap-2 small">
           <p className="fw-medium text-primary-emphasis mb-0">
             Version {check.latest} is available (this is {check.current}).
           </p>
+          {check.installProblem && <p className="text-body-secondary mb-0">{check.installProblem}</p>}
           <p className="text-body-secondary mb-0">
-            The app cannot replace itself. To upgrade, run this in the cactusInv folder on the machine you deploy from
+            To upgrade, run this in the cactusInv folder on the machine you deploy from
             {target && target !== 'dockerdesktop' ? ' (add --ssh-access user@host if you deploy over SSH)' : ''}:
           </p>
           <code className="d-block text-break rounded bg-body-secondary px-2 py-1">{upgradeCommand(target)}</code>
@@ -206,5 +209,92 @@ function VersionCard({ target }: { target: string }) {
         </div>
       )}
     </section>
+  )
+}
+
+const upgradeSteps: Record<string, string> = {
+  'backing-up': 'Taking a backup…', downloading: 'Downloading…', installing: 'Installing…', restarting: 'Restarting…',
+}
+
+/**
+ * InstallUpdate installs the newest release in place of this standalone server (M31): two
+ * clicks, a progress bar, then it waits for the new version to answer and reloads the page.
+ */
+function InstallUpdate({ check }: { check: UpdateCheck }) {
+  const can = useCan()
+  const [armed, setArmed] = useState(false)
+  const [job, setJob] = useState<UpgradeJob | null>(null)
+  const [err, setErr] = useState<Error | null>(null)
+  const [waiting, setWaiting] = useState('')
+
+  useEffect(() => {
+    if (!job || job.state === 'failed') return
+    let stop = false
+    const timer = window.setInterval(async () => {
+      if (stop) return
+      if (job.state !== 'restarting') {
+        try {
+          const next = await unwrap(api.GET('/settings/system/update/progress'))
+          if (!stop) setJob(next)
+        } catch {
+          if (!stop) setJob({ ...job, state: 'restarting' }) // the server went away: it is restarting
+        }
+        return
+      }
+      try {
+        const v = await unwrap(api.GET('/version'))
+        if (v.version === job.to) window.location.reload()
+      } catch {
+        // still starting
+      }
+    }, 1000)
+    const giveUp = window.setTimeout(() => setWaiting('The server has not come back with version ' + job.to + ' after two minutes. Reload the page; if it shows ' + job.from + ', the new version did not start and the old one was put back.'), 120000)
+    return () => {
+      stop = true
+      window.clearInterval(timer)
+      window.clearTimeout(giveUp)
+    }
+  }, [job])
+
+  const start = async () => {
+    setErr(null)
+    try {
+      setJob(await unwrap(api.POST('/settings/system/update')))
+    } catch (x) {
+      setErr(x as Error)
+      setArmed(false)
+    }
+  }
+
+  const pct = job && job.total > 0 ? Math.round((job.done / job.total) * 100) : null
+  return (
+    <div role="status" className="vstack gap-2 small">
+      <p className="fw-medium text-primary-emphasis mb-0">Version {check.latest} is available (this is {check.current}).</p>
+      <ErrorBanner error={err} />
+      {!job && can('settings.system.edit') && (
+        <>
+          <p className="text-body-secondary mb-0">
+            cactusInv takes a backup, downloads {check.latest}, checks it, puts it in place of this version and restarts.
+            The app is unavailable for a few seconds; nobody is signed out.
+          </p>
+          <button type="button" className={`btn align-self-start ${armed ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => (armed ? void start() : setArmed(true))}>
+            <i className="bi bi-download" aria-hidden="true" /> {armed ? `Yes, install ${check.latest} and restart` : 'Install and restart'}
+          </button>
+        </>
+      )}
+      {!job && !can('settings.system.edit') && <p className="text-body-secondary mb-0">An administrator can install it here.</p>}
+      {job && job.state !== 'failed' && (
+        <>
+          <p className="mb-0">{upgradeSteps[job.state] ?? 'Starting…'}{job.backup ? ` Backup: ${job.backup}.` : ''}</p>
+          <div className="progress" style={{ height: 8 }} role="progressbar" aria-label="Update progress" aria-valuenow={pct ?? undefined} aria-valuemin={0} aria-valuemax={100}>
+            <div className={`progress-bar${job.state === 'restarting' ? ' progress-bar-striped progress-bar-animated' : ''}`} style={{ width: `${job.state === 'restarting' ? 100 : pct ?? 5}%` }} />
+          </div>
+          {waiting && <p className="text-warning-emphasis mb-0">{waiting}</p>}
+        </>
+      )}
+      {job?.state === 'failed' && (
+        <p className="text-danger mb-0">The update failed and {job.from} keeps running: {job.error}</p>
+      )}
+    </div>
   )
 }

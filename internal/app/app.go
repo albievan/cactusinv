@@ -41,6 +41,8 @@ type Deps struct {
 	// Releases tells the newest published version (System Settings → Check for updates);
 	// nil switches the check off.
 	Releases ports.ReleaseSource
+	// Upgrader installs a newer release in place (standalone binary only); nil = never.
+	Upgrader ports.Upgrader
 }
 
 // Deployment describes the running deployment's folder mapping.
@@ -73,6 +75,8 @@ type Service struct {
 	deploy   Deployment
 	version  string
 	releases ports.ReleaseSource
+	upgrader ports.Upgrader
+	upgrade  upgradeState
 	// dummy is the hash checked for unknown logins (dummyHash).
 	dummyOnce sync.Once
 	dummy     string
@@ -95,7 +99,7 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
-		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, version: d.Version, releases: d.Releases, backupSlot: make(chan struct{}, 1),
+		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, version: d.Version, releases: d.Releases, upgrader: d.Upgrader, backupSlot: make(chan struct{}, 1),
 	}
 }
 

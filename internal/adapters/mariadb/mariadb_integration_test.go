@@ -349,6 +349,13 @@ func TestScheduleAndOutboxPersistence(t *testing.T) {
 	if invs[0].Header.SalesPerson != "Albie" || invs[0].ScheduleID != s.ID {
 		t.Fatalf("header = %+v", invs[0])
 	}
+	if _, n := must3(e.svc.ListInvoices(e.ctx, ports.InvoiceFilter{Scheduled: true})); n != 2 {
+		t.Fatalf("scheduled invoices = %d", n)
+	}
+	amended := must(e.svc.UpdateInvoiceNotes(e.ctx, invs[0].ID, invs[0].Version, "Hours for September: 18."))
+	if amended.Notes != "Hours for September: 18." || amended.Version != invs[0].Version+1 || amended.Number != invs[0].Number {
+		t.Fatalf("notes round trip: %+v", amended)
+	}
 	full := must(e.svc.GetInvoice(e.ctx, invs[0].ID))
 	if full.Invoice.Lines[1].Description != "Alchamex integration - monthly subscription" {
 		t.Fatalf("period text: %q", full.Invoice.Lines[1].Description)

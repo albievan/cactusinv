@@ -25,7 +25,7 @@ var operationAccess = map[string][]domain.Permission{
 	"createinvoice": {domain.PermInvoicesCreate}, "updateinvoice": {domain.PermInvoicesEdit},
 	"deleteinvoice": {domain.PermInvoicesDelete}, "issueinvoice": {domain.PermInvoicesIssue},
 	"sendinvoice": {domain.PermInvoicesSend},
-	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay},
+	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay}, "updateinvoicenotes": {domain.PermInvoicesEdit},
 
 	"listcustomers": {domain.PermCustomersView}, "getcustomer": {domain.PermCustomersView},
 	"createcustomer": {domain.PermCustomersCreate}, "updatecustomer": {domain.PermCustomersEdit}, "deletecustomer": {domain.PermCustomersDelete},
@@ -64,7 +64,7 @@ var operationAccess = map[string][]domain.Permission{
 	// and an import changes many things at once: each has its own permission (M24).
 	"exportsettings": {domain.PermSettingsExport}, "importsettings": {domain.PermSettingsImport},
 	"getsystemsettings": {domain.PermSettingsSystemView}, "updatesystemsettings": {domain.PermSettingsSystemEdit},
-	"checkforupdate": {domain.PermSettingsSystemView},
+	"checkforupdate": {domain.PermSettingsSystemView}, "getupdateprogress": {domain.PermSettingsSystemView}, "installupdate": {domain.PermSettingsSystemEdit},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).

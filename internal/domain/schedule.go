@@ -410,14 +410,14 @@ func (s *Schedule) BuildDraft(c Customer, products map[string]Product, defaultVA
 	if s.TaxRate != nil {
 		content.TaxRate = *s.TaxRate
 	}
-	if s.Notes != "" {
-		content.Notes = s.Notes
-	}
 	periodReplacer := strings.NewReplacer(
 		"{month}", period.Month.String(),
 		"{year}", strconv.Itoa(period.Year),
 		"{period}", period.Month.String()+" "+strconv.Itoa(period.Year),
 	)
+	if s.Notes != "" {
+		content.Notes = periodReplacer.Replace(s.Notes)
+	}
 	for _, tl := range s.Lines {
 		l := Line{ProductID: tl.ProductID, Quantity: tl.Quantity, Discount: tl.Discount, Description: tl.Description}
 		if tl.ProductID != "" {

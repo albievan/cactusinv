@@ -336,7 +336,7 @@ func (h *handlers) ListInvoices(ctx context.Context, req ListInvoicesRequestObje
 	}
 	p := req.Params
 	invs, total, err := h.svc.ListInvoices(ctx, ports.InvoiceFilter{
-		Status: domain.InvoiceStatus(p.Status), CustomerID: p.CustomerId, Query: p.Q, Overdue: p.Overdue,
+		Status: domain.InvoiceStatus(p.Status), CustomerID: p.CustomerId, Query: p.Q, Overdue: p.Overdue, Scheduled: p.Scheduled,
 		Page: page(p.Limit, p.Offset),
 	})
 	if err != nil {
@@ -508,6 +508,18 @@ func (h *handlers) MarkInvoicePaid(ctx context.Context, req MarkInvoicePaidReque
 		return nil, err
 	}
 	return MarkInvoicePaid200JSONResponse(toAPIInvoice(inv, mu, today)), nil
+}
+
+func (h *handlers) UpdateInvoiceNotes(ctx context.Context, req UpdateInvoiceNotesRequestObject) (UpdateInvoiceNotesResponseObject, error) {
+	mu, today, err := h.invoiceView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := h.svc.UpdateInvoiceNotes(ctx, req.Id, req.Body.Version, req.Body.Notes)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateInvoiceNotes200JSONResponse(toAPIInvoice(inv, mu, today)), nil
 }
 
 func (h *handlers) SendInvoice(ctx context.Context, req SendInvoiceRequestObject) (SendInvoiceResponseObject, error) {

@@ -7,7 +7,7 @@ import { formatMoney } from '../../lib/money'
 import { usePaged } from '../../lib/usePaged'
 import { Badge, Empty, ErrorBanner, ShowMore, Page, SearchBox, Spinner } from '../../components/ui'
 import { IconPlus } from '../../components/icons'
-import { InvoiceActions } from '../../components/InvoiceActions'
+import { InvoiceActions, ScheduledInvoiceActions } from '../../components/InvoiceActions'
 
 const tnum = { fontVariantNumeric: 'tabular-nums' } as const
 
@@ -19,6 +19,7 @@ const filters = [
   { key: 'overdue', label: 'Overdue' },
   { key: 'paid', label: 'Paid' },
   { key: 'void', label: 'Void' },
+  { key: 'scheduled', label: 'Scheduled' },
 ] as const
 type Filter = (typeof filters)[number]['key']
 
@@ -36,8 +37,9 @@ export function InvoiceList() {
           params: {
             query: {
               q: q || undefined,
-              status: filter === 'all' || filter === 'overdue' ? undefined : filter,
+              status: filter === 'all' || filter === 'overdue' || filter === 'scheduled' ? undefined : filter,
               overdue: filter === 'overdue' ? true : undefined,
+              scheduled: filter === 'scheduled' ? true : undefined,
               limit,
               offset,
             },
@@ -71,6 +73,11 @@ export function InvoiceList() {
   )
 }
 
+/** RowActions: an invoice raised by a schedule gets only Preview, Edit schedule and Notes. */
+function RowActions({ inv, onChanged, onError }: { inv: Invoice; onChanged: (msg: string) => void; onError: (e: Error) => void }) {
+  return inv.scheduleId ? <ScheduledInvoiceActions inv={inv} onChanged={onChanged} onError={onError} /> : <InvoiceActions inv={inv} onChanged={onChanged} onError={onError} />
+}
+
 export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; onChanged?: (msg: string) => void; onError?: (e: Error) => void }) {
   return (
     <>
@@ -90,7 +97,7 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
                 <div className="fs-8 text-body-secondary">{inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : formatDate(inv.issueDate)}</div>
               </div>
             </Link>
-            {onChanged && onError && <div className="mt-1 d-flex justify-content-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>}
+            {onChanged && onError && <div className="mt-1 d-flex justify-content-end"><RowActions inv={inv} onChanged={onChanged} onError={onError} /></div>}
           </li>
         ))}
       </ul>
@@ -121,7 +128,7 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
                 <td className="text-nowrap text-end fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</td>
                 {onChanged && onError && (
                   <td>
-                    <div className="d-flex justify-content-end"><InvoiceActions inv={inv} onChanged={onChanged} onError={onError} /></div>
+                    <div className="d-flex justify-content-end"><RowActions inv={inv} onChanged={onChanged} onError={onError} /></div>
                   </td>
                 )}
               </tr>

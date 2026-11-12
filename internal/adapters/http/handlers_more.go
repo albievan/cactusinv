@@ -256,5 +256,26 @@ func (h *handlers) UpdateSystemSettings(ctx context.Context, req UpdateSystemSet
 
 func (h *handlers) CheckForUpdate(ctx context.Context, _ CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error) {
 	c := h.svc.CheckForUpdate(ctx)
-	return CheckForUpdate200JSONResponse{Current: c.Current, Latest: c.Latest, Available: c.Available, Problem: c.Problem}, nil
+	return CheckForUpdate200JSONResponse{
+		Current: c.Current, Latest: c.Latest, Available: c.Available, Problem: c.Problem,
+		CanInstall: c.CanInstall, InstallProblem: c.InstallProblem,
+	}, nil
+}
+
+func (h *handlers) InstallUpdate(ctx context.Context, _ InstallUpdateRequestObject) (InstallUpdateResponseObject, error) {
+	j, err := h.svc.InstallUpdate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return InstallUpdate202JSONResponse(toAPIUpgradeJob(j)), nil
+}
+
+func (h *handlers) GetUpdateProgress(_ context.Context, _ GetUpdateProgressRequestObject) (GetUpdateProgressResponseObject, error) {
+	return GetUpdateProgress200JSONResponse(toAPIUpgradeJob(h.svc.UpgradeStatus())), nil
+}
+
+func toAPIUpgradeJob(j app.UpgradeJob) UpgradeJob {
+	return UpgradeJob{
+		State: UpgradeJobState(j.State), From: j.From, To: j.To, Done: j.Done, Total: j.Total, Error: j.Error, Backup: j.Backup,
+	}
 }

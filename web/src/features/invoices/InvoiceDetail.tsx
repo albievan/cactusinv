@@ -65,7 +65,7 @@ export function InvoiceDetail() {
       </div>
 
       <div className="mb-3 d-flex flex-wrap align-items-center gap-2">
-        <InvoiceActions inv={inv} showLabels onChanged={(m) => { setActionError(null); setNotice(m); reload() }} onError={setActionError} />
+        <InvoiceActions inv={inv} showLabels withNotes onChanged={(m) => { setActionError(null); setNotice(m); reload() }} onError={setActionError} />
         {inv.status === 'draft' && (
           <>
             <Can need="invoices.edit"><Link to={`/invoices/${id}/edit`} className="btn btn-sm btn-outline-primary"><IconEdit width={15} /> Edit</Link></Can>
@@ -217,7 +217,7 @@ const actionLabels: Record<string, string> = {
   'invoice.created': 'Created', 'invoice.updated': 'Edited', 'invoice.issued': 'Issued', 'invoice.email_queued': 'E-mail queued',
   'invoice.email_sent': 'E-mailed', 'invoice.email_failed': 'E-mail failed', 'invoice.email_cancelled': 'E-mail cancelled',
   'invoice.email_retried': 'E-mail retried', 'invoice.overdue': 'Marked overdue', 'invoice.paid': 'Marked paid',
-  'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed',
+  'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed', 'invoice.notes_updated': 'Notes edited',
 }
 
 export function actionLabel(a: string): string {

@@ -79,3 +79,41 @@ test('says when this is the newest version, and why a check could not be made', 
   await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText('The newest version could not be read.')).toBeInTheDocument()
 })
+
+test('a standalone server installs the newest version itself after a second click, and reports a failure', async () => {
+  let posts = 0
+  mockFetch({
+    'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'admin@example.com', automationPaused: false }),
+    'GET /api/v1/version': json({ version: '1.15.0', build: '37' }),
+    'GET /api/v1/settings/system': json({ ...saved, deployment: { ...deployment, target: '' } }),
+    'GET /api/v1/settings/system/update': json({ current: '1.15.0', latest: '1.16.0', available: true, problem: '', canInstall: true, installProblem: '' }),
+    'POST /api/v1/settings/system/update': () => {
+      posts++
+      return json({ state: 'downloading', from: '1.15.0', to: '1.16.0', done: 0, total: 100, error: '', backup: 'cactusinv-x-manual.age' }, 202)()
+    },
+    'GET /api/v1/settings/system/update/progress': json({ state: 'failed', from: '1.15.0', to: '1.16.0', done: 100, total: 100, error: 'installing: SHA-256 does not match', backup: '' }),
+  })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Install and restart' }))
+  expect(posts).toBe(0)
+  await userEvent.click(screen.getByRole('button', { name: 'Yes, install 1.16.0 and restart' }))
+  expect(await screen.findByText(/Downloading… Backup: cactusinv-x-manual.age./)).toBeInTheDocument()
+  expect(posts).toBe(1)
+  expect(screen.queryByText(/deploy.sh --upgrade/)).not.toBeInTheDocument()
+  expect(await screen.findByText('The update failed and 1.15.0 keeps running: installing: SHA-256 does not match', {}, { timeout: 3000 })).toBeInTheDocument()
+})
+
+test('a container explains why it cannot install itself and gives the upgrade command', async () => {
+  routes({ ...saved, deployment: { ...deployment, target: 'k3s' } }, undefined, {
+    current: '1.15.0', latest: '1.16.0', available: true, problem: '', canInstall: false,
+    installProblem: 'This cactusInv runs in a container: a new version would only last until the container restarts.',
+  })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
+  expect(await screen.findByText(/runs in a container/)).toBeInTheDocument()
+  expect(screen.getByText('./deploy.sh --upgrade --k3s')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Install and restart' })).not.toBeInTheDocument()
+})

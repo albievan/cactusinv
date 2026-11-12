@@ -41,6 +41,7 @@ Invoices are financial documents. A wrong cent is a bug of the highest severity.
   exact.
 - **Issued invoices are immutable.** After `issue`, lines, totals, number, currency and
   bank details are frozen. Corrections are a `void` plus a new invoice, never an edit.
+  Only the free-text notes stay editable (M31), audited, because they carry no money.
 - **Snapshots, not references, for anything printed.** The invoice stores the bill-to
   address, the bank details and each line's description and price as they were on the
   day. Editing a customer or product later never rewrites history.

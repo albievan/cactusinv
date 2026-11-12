@@ -161,8 +161,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Compares the running version with the newest published one (CACTUSINV_UPDATE_URL), only when asked. The app cannot replace itself: an upgrade is ./deploy.sh --upgrade. A check that cannot be made is not an error: `problem` says why. */
+        /** @description Compares the running version with the newest published one (CACTUSINV_UPDATE_URL), only when asked. A standalone binary can install it (POST); a container is updated with ./deploy.sh --upgrade (`installProblem` says so). A check that cannot be made is not an error: `problem` says why. */
         get: operations["checkForUpdate"];
+        put?: never;
+        /** @description Installs the newest release in place of this standalone binary, then restarts it (M31): a backup first (when backups are set up), the download from dist/ beside the VERSION file, checked against SHA256SUMS and by running it, then the swap. Returns at once; follow it with GET /settings/system/update/progress. 422 when it cannot start (newest already, a container, no write access), 409 while one is running. */
+        post: operations["installUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/system/update/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getUpdateProgress"];
         put?: never;
         post?: never;
         delete?: never;
@@ -532,6 +549,25 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["markInvoicePaid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Replaces the notes of an invoice in any status but void (free text, e.g. this month's remarks on a scheduled invoice). The next PDF and every later e-mail of the invoice, a resend included, carry them. Audited as invoice.notes_updated. */
+        put: operations["updateInvoiceNotes"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1177,6 +1213,32 @@ export interface components {
             available: boolean;
             /** @description Why the check could not be made ("" when it was). */
             problem: string;
+            /** @description This installation can install the newest version itself (POST). */
+            canInstall?: boolean;
+            /** @description Why it cannot (a container: ./deploy.sh --upgrade); "" when it can. */
+            installProblem?: string;
+        };
+        UpgradeJob: {
+            /** @enum {string} */
+            state: "" | "backing-up" | "downloading" | "installing" | "restarting" | "failed";
+            /** @description The version being replaced. */
+            from: string;
+            /** @description The version being installed. */
+            to: string;
+            /**
+             * Format: int64
+             * @description Bytes downloaded.
+             */
+            done: number;
+            /**
+             * Format: int64
+             * @description Bytes to download (-1 when unknown).
+             */
+            total: number;
+            /** @description Why it failed ("" unless state is failed). */
+            error: string;
+            /** @description The backup taken first ("" when backups are not set up). */
+            backup: string;
         };
         Version: {
             /** @example 1.2.0 */
@@ -1725,6 +1787,11 @@ export interface components {
         IssueRequest: {
             /** Format: date */
             issueDate?: string;
+        };
+        InvoiceNotesRequest: {
+            notes: string;
+            /** @description The invoice version you edited (optimistic locking). */
+            version: number;
         };
         VoidRequest: {
             reason: string;
@@ -2374,6 +2441,48 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    installUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeJob"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getUpdateProgress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The running (or last) install; state "" when none since the server started. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpgradeJob"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     exportSettings: {
         parameters: {
             query?: never;
@@ -3000,6 +3109,8 @@ export interface operations {
                 status?: components["schemas"]["InvoiceStatus"];
                 customerId?: string;
                 overdue?: boolean;
+                /** @description Only invoices raised by a schedule. */
+                scheduled?: boolean;
                 q?: components["parameters"]["Query"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
@@ -3207,6 +3318,33 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Marked paid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateInvoiceNotes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceNotesRequest"];
+            };
+        };
+        responses: {
+            /** @description Notes saved. */
             200: {
                 headers: {
                     [name: string]: unknown;

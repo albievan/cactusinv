@@ -9,7 +9,7 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
-FROM golang:1.26.10-alpine AS build
+FROM golang:1.26.11-alpine AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
 COPY go.mod go.sum ./
@@ -25,7 +25,7 @@ FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/cactusinv /cactusinv
 COPY --from=build --chown=65532:65532 /out/data /data
 USER 65532:65532
-ENV CACTUSINV_INVOICES_DIR=/data/invoices CACTUSINV_BACKUP_DIR=/data/backups
+ENV CACTUSINV_INVOICES_DIR=/data/invoices CACTUSINV_BACKUP_DIR=/data/backups CACTUSINV_CONTAINER=1
 EXPOSE 8080
 VOLUME ["/data/invoices", "/data/backups"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD ["/cactusinv", "healthcheck"]

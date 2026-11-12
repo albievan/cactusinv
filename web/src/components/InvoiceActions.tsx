@@ -1,10 +1,10 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCan } from './auth'
 import { api, idempotencyKey, unwrap, type Invoice } from '../lib/api/client'
-import { IconBan, IconClockAlert, IconFilePdf, IconPaid, IconSend } from './icons'
+import { IconBan, IconClockAlert, IconEdit, IconFilePdf, IconPaid, IconSend, IconStatement } from './icons'
 import type { Icon } from './icons'
 import { Field, Sheet } from './ui'
-
 
 function ActionButton({ icon: I, label, onClick, disabled, tone = 'default', href, showLabel }: {
   icon: Icon; label: string; onClick?: () => void; disabled?: boolean; tone?: 'default' | 'danger'; href?: string; showLabel: boolean
@@ -25,14 +25,82 @@ function ActionButton({ icon: I, label, onClick, disabled, tone = 'default', hre
   )
 }
 
+/**
+ * NotesSheet shows an invoice's own notes and, with invoices.edit and unless it is void,
+ * saves changes: the next PDF and every later e-mail of the invoice (a resend too) carry them.
+ */
+export function NotesSheet({ inv, open, onClose, onSaved, onError }: {
+  inv: Invoice
+  open: boolean
+  onClose: () => void
+  onSaved: (msg: string) => void
+  onError: (e: Error) => void
+}) {
+  const can = useCan()
+  const [notes, setNotes] = useState(inv.notes)
+  const [busy, setBusy] = useState(false)
+  const editable = can('invoices.edit') && inv.status !== 'void'
+  const save = async () => {
+    setBusy(true)
+    try {
+      await unwrap(api.PUT('/invoices/{id}/notes', { params: { path: { id: inv.id } }, body: { notes, version: inv.version } }))
+      onClose()
+      onSaved(`Notes saved for ${inv.number || 'the draft'}`)
+    } catch (e) {
+      onError(e as Error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet title={`Notes · ${inv.number || 'Draft'}`} open={open} onClose={onClose}>
+      <div className="vstack gap-3">
+        <Field label="Invoice notes" hint={editable ? 'Printed under the lines. Resending the invoice uses these notes.' : undefined}>
+          {(f) => <textarea id={f} className="form-control" style={{ minHeight: 160 }} value={notes} readOnly={!editable} onChange={(e) => setNotes(e.target.value)} autoFocus={editable} />}
+        </Field>
+        {editable && (
+          <button className="btn btn-primary w-100" disabled={busy || notes.trim() === inv.notes.trim()} onClick={() => void save()}>
+            {busy ? 'Saving…' : 'Save notes'}
+          </button>
+        )}
+      </div>
+    </Sheet>
+  )
+}
+
+/**
+ * ScheduledInvoiceActions is the bar for an invoice raised by a schedule: preview it, open
+ * its schedule's edit screen, view or edit its own notes.
+ */
+export function ScheduledInvoiceActions({ inv, onChanged, onError }: {
+  inv: Invoice
+  onChanged: (msg: string) => void
+  onError: (e: Error) => void
+}) {
+  const can = useCan()
+  const nav = useNavigate()
+  const [notes, setNotes] = useState(false)
+  return (
+    <div className="d-flex align-items-center gap-1 flex-nowrap" role="group" aria-label={`Actions for ${inv.number || 'draft'}`}>
+      <ActionButton showLabel={false} icon={IconFilePdf} label="Preview invoice" href={`/api/v1/invoices/${inv.id}/pdf`} />
+      {can('schedules.edit') && <ActionButton showLabel={false} icon={IconEdit} label="Edit schedule" onClick={() => nav(`/schedules/${inv.scheduleId}/edit`)} />}
+      <ActionButton showLabel={false} icon={IconStatement} label={can('invoices.edit') && inv.status !== 'void' ? 'Edit notes' : 'View notes'} onClick={() => setNotes(true)} />
+      {notes && <NotesSheet inv={inv} open onClose={() => setNotes(false)} onSaved={onChanged} onError={onError} />}
+    </div>
+  )
+}
+
 /** InvoiceActions is the compact Send / PDF / Paid / Overdue / Void bar for one invoice. */
-export function InvoiceActions({ inv, onChanged, onError, showLabels = false }: {
+export function InvoiceActions({ inv, onChanged, onError, showLabels = false, withNotes = false }: {
   inv: Invoice
   onChanged: (msg: string) => void
   onError: (e: Error) => void
   showLabels?: boolean
+  /** withNotes adds a Notes button for an issued invoice (a draft's notes are edited with the draft). */
+  withNotes?: boolean
 }) {
   const [busy, setBusy] = useState(false)
+  const [notes, setNotes] = useState(false)
   const [voiding, setVoiding] = useState(false)
   const [reason, setReason] = useState('')
   const path = { params: { path: { id: inv.id } } }
@@ -60,6 +128,8 @@ export function InvoiceActions({ inv, onChanged, onError, showLabels = false }: 
         <ActionButton showLabel={showLabels} icon={IconSend} label={inv.status === 'draft' ? 'Issue & send' : 'Send e-mail'} onClick={send} disabled={busy || inv.status === 'void'} />
       )}
       <ActionButton showLabel={showLabels} icon={IconFilePdf} label="View PDF" href={`/api/v1/invoices/${inv.id}/pdf`} />
+      {withNotes && inv.status !== 'draft' && <ActionButton showLabel={showLabels} icon={IconStatement} label={can('invoices.edit') && inv.status !== 'void' ? 'Edit notes' : 'View notes'} onClick={() => setNotes(true)} />}
+      {notes && <NotesSheet inv={inv} open onClose={() => setNotes(false)} onSaved={onChanged} onError={onError} />}
       {can('invoices.pay') && <ActionButton showLabel={showLabels} icon={IconPaid} label="Mark paid" disabled={busy || !open} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)), `${inv.number} marked paid`)} />}
       {can('invoices.overdue') && <ActionButton showLabel={showLabels} icon={IconClockAlert} label="Mark overdue" disabled={busy || !(inv.status === 'issued' || inv.status === 'sent')} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)), `${inv.number} marked overdue`)} />}
       {can('invoices.void') && <ActionButton showLabel={showLabels} icon={IconBan} label="Void" tone="danger" disabled={busy || !open} onClick={() => setVoiding(true)} />}

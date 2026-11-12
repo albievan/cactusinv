@@ -623,10 +623,25 @@ migrations runs the new version's down migrations first.
 | 30.2 | `deploy.sh`: `K8S_HTTPS=true` adds Ingress `cactusinv` (Traefik `websecure` on k3s, port 443), optional `K8S_HTTPS_HOST`, `K8S_TLS_CERT`/`K8S_TLS_KEY` into secret `cactusinv-tls` (sent on stdin; kubectl may run on the node), else the controller's certificate; `false` removes it; `--uninstall` removes it | done | server dry-run on 10.101.18.101; shellcheck clean |
 | 30.3 | Docs (README `.env` k3s rows and "HTTPS on k3s/k8s", ARCHITECTURE §6/§10), `.env` `K8S_HTTPS=true`, VERSION 1.15.0, deploy to 10.101.18.101 and sign in over https | done | see the report |
 
+### M31 — Notes per scheduled invoice, a Scheduled filter, and install-in-place updates (Albie, 2026-11-12) — v1.16.0
+
+> "when in the schedule invoce page i want to have a notes field below the line items … as free text. the note field will change month by month so you need to save the notes in the database per generated invoice so when i want to resend the invoice it will use the notes for that invoice. on the invoice page … add a filter for the scheduled invoices and the only actions for scheduled invoices must be a invoice priview button, edit button that will take you to the scheduled invoce edit screen, then a button to view/edit the notes for that specific invoice. the add the same mechanism as the cactusdb to update the latest release of the invoice system - this can be for a standalone app or container that will need updating."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 31.1 | Schedule editor: "Invoice notes" moved directly under the lines (Step 1); `{month}`/`{year}`/`{period}` replaced in notes as in line descriptions; each run's invoice already stores its own `invoices.notes` (no migration) | done | `TestScheduleBuildDraft` ("Hours for August 2026."); seen in Chrome at 1400 and 390 px |
+| 31.2 | `Invoice.AmendNotes` (any status but void; 4000 characters), `app.UpdateInvoiceNotes` (version check, audited `invoice.notes_updated`), `PUT /invoices/{id}/notes` (`invoices.edit`); PDFs render at delivery, so a resend carries the notes | done | `TestInvoiceAmendNotes`, HTTP flow test (200, 409 stale), integration `TestScheduleAndOutboxPersistence` (MariaDB 11) |
+| 31.3 | `GET /invoices?scheduled=true` (SQL, fake, port); Invoices → **Scheduled** tab; a row raised by a schedule shows only Preview (PDF), Edit schedule (`/schedules/{id}/edit`, `schedules.edit`) and Notes (sheet: view, or edit with `invoices.edit` unless void); the invoice page gains Edit notes | done | `InvoiceList.test.tsx` (2 tests); Chrome: three buttons, no sideways scroll |
+| 31.4 | Install in place, cactusDB's mechanism (read from cactusDB's `update.go`/`upgrade.go`): `make dist` publishes `dist/cactusinv-<os>-<arch>` + `SHA256SUMS` on `main`; `ports.Upgrader` / `adapters/selfupdate` (SHA-256 required, `version` run, rename swap, `.old` kept, exec restart with rollback); `app.InstallUpdate` (backup first, job status, audit); `POST /settings/system/update`, `GET …/update/progress`; System Settings: Install and restart (two clicks, progress, reload on the new version). Containers (`CACTUSINV_CONTAINER=1` in the image, or a deploy target) refuse and show `./deploy.sh --upgrade` | done | `TestInstallUpdate`, `selfupdate` tests (swap, bad checksum, wrong version, not a program), web tests; end to end: a standalone 1.15.0 on a throwaway MariaDB installed 1.16.0 from a local release folder: same PID, `cactusinv.old` kept, session kept, migrations applied |
+| 31.5 | Found on the way: a server with backups but no `backup_key` stopped the update at the backup; it now goes on without one (logged), as an upgrade by hand would | done | caught by the end-to-end run |
+| 31.6 | Docs (README Features, Upgrading, Publishing a release; ARCHITECTURE §3.3, §3.7, §6, §19; ENGINEERING_PRINCIPLES; CLAUDE.md), VERSION 1.16.0, `make dist` | done | see the report |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-12 | An issued invoice's notes may change (audited); nothing else on it may | The owner's monthly remarks live in the notes and must reach a resend; they carry no money, number or tax |
+| 2026-11-12 | Releases are binaries committed in `dist/` on `main` with SHA256SUMS, as in cactusDB | The owner asked for cactusDB's mechanism; no CI exists. Cost: about 100 MB of history per release |
 | 2026-10-15 | Modular monolith, one binary (ADR-001) | "Simple invoice system"; hexagonal layers without microservice overhead |
 | 2026-10-15 | MariaDB 11 + goose + sqlc(mysql engine) + go-sql-driver/mysql (ADR-002) | MariaDB mandated; versioned migrations and type-checked queries |
 | 2026-10-15 | Explicit price per currency, no FX (ADR-003) | Albie asked to "charge in multi currency"; FX on invoices is a source of disputes and stale rates |

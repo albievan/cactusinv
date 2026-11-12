@@ -375,6 +375,24 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	c.ok(c.do("POST", "/api/v1/schedules/"+id+"/pause", nil, &sched), 200, "pause")
 	c.ok(c.do("POST", "/api/v1/schedules/"+id+"/resume", nil, &sched), 200, "resume")
 	c.ok(c.do("POST", "/api/v1/schedules/"+id+"/run-now", nil, &sched), 200, "run now")
+	// The run raises an invoice from the schedule: ?scheduled=true lists only those, and the
+	// raised invoice's notes stay editable after issue (its next PDF and e-mail carry them).
+	if _, err := svc.RunDueSchedules(context.Background(), 10); err != nil {
+		t.Fatal(err)
+	}
+	var raised, all httpapi.InvoiceList
+	c.ok(c.do("GET", "/api/v1/invoices?scheduled=true", nil, &raised), 200, "scheduled invoices")
+	c.ok(c.do("GET", "/api/v1/invoices", nil, &all), 200, "all invoices")
+	if raised.Total != 1 || raised.Items[0].ScheduleId != id || raised.Items[0].Status == "draft" || all.Total <= raised.Total {
+		t.Fatalf("scheduled = %+v of %d", raised, all.Total)
+	}
+	si := raised.Items[0]
+	c.ok(c.do("PUT", "/api/v1/invoices/"+si.Id+"/notes", obj{"notes": " Hours for August: 20. ", "version": si.Version}, &si), 200, "notes")
+	if si.Notes != "Hours for August: 20." || si.Version != raised.Items[0].Version+1 || si.Totals != raised.Items[0].Totals {
+		t.Fatalf("after notes = %+v", si)
+	}
+	c.ok(c.do("PUT", "/api/v1/invoices/"+si.Id+"/notes", obj{"notes": "x", "version": raised.Items[0].Version}, &p), 409, "stale notes")
+	c.ok(c.do("GET", "/api/v1/schedules/"+id, nil, &sched), 200, "schedule after its run")
 	s := sched.Schedule
 	s.Name = "Renamed"
 	c.ok(c.do("PUT", "/api/v1/schedules/"+id, s, &sched), 200, "update schedule")

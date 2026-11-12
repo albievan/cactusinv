@@ -67,6 +67,11 @@ Released into the public domain — see [LICENSE](LICENSE).
   schedule's day, frequency or start date it continues in the next period not yet billed (the
   editor's run list already shows this). Resuming a schedule whose last run had failed runs that
   period now; a schedule that was running fine and was paused skips the periods missed.
+  **Invoice notes** sit right under a schedule's lines: free text you change month by month
+  (`{month}`, `{year}` and `{period}` become the billing month). Each raised invoice keeps its
+  own copy. Invoices → **Scheduled** lists the invoices schedules raised, each with only
+  **Preview**, **Edit schedule** and **Notes**; changing an invoice's notes there (or on the
+  invoice) is audited, and the next PDF and every resend carry them.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
@@ -194,10 +199,21 @@ signed-in user also has a limit of their own.
 
 ## Upgrading
 
-The app runs without rights over Docker or the cluster, so it cannot replace itself; Settings →
-System Settings → **Check for updates** says when a newer version is published and which command
-installs it. Run it in this folder (the git checkout you install from), for the same target and
-`--ssh-access` you installed with:
+Settings → System Settings → **Check for updates** says when a newer version is published.
+
+**A standalone server** (the `cactusinv` binary run on a machine, not in a container) installs
+it itself: press **Install and restart**, then confirm. It takes a backup (when a backup key is
+set up), downloads the new binary for its OS and CPU from `dist/` on GitHub, checks it against
+the published SHA-256 and by running it, keeps the old one as `cactusinv.old` beside it, and
+restarts in place (same process, so systemd or a terminal stays attached). The new version
+updates the database as it starts; nobody is signed out. If the download or the check fails,
+nothing changes; if the new binary does not start, the old one is put back and started. The
+user it runs as needs write access to its folder.
+
+**In a container** (Docker Desktop, k3s, k8s) the app has no rights over Docker or the cluster,
+and a replaced binary would be gone at the next start, so the page shows the command that
+upgrades the image instead. Run it in this folder (the git checkout you install from), for the
+same target and `--ssh-access` you installed with:
 
 ```
 ./deploy.sh --upgrade --dockerdesktop
@@ -222,6 +238,13 @@ installs it. Run it in this folder (the git checkout you install from), for the 
 An older version refuses to start on a database a newer version has changed (it says which
 version to run, or which `migrate down-to` to run with the newer one), rather than running on
 tables it does not know.
+
+### Publishing a release
+
+Bump `VERSION`, run `make dist` (it builds `dist/cactusinv-<os>-<arch>` for Linux, macOS and
+Windows on amd64 and arm64, and `dist/SHA256SUMS`, numbered as the next commit), then commit
+and push to `main`. Standalone servers offer it from then on; containers get it with
+`./deploy.sh --upgrade`. Each release adds about 100 MB of binaries to the repository.
 
 ## Configuration — `.env`
 
@@ -253,7 +276,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
 | `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.15.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.16.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -261,7 +284,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.15.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.16.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |

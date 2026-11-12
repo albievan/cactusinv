@@ -128,3 +128,27 @@ func (r *Releases) LatestVersion(context.Context) (string, error) {
 	r.Calls++
 	return r.Version, r.Err
 }
+
+// Upgrader is a ports.Upgrader that records the versions it installed.
+type Upgrader struct {
+	mu        sync.Mutex
+	Problem   string // what CanInstall answers
+	Err       error  // what Install fails with
+	Installed []string
+}
+
+// CanInstall implements ports.Upgrader.
+func (u *Upgrader) CanInstall() string { return u.Problem }
+
+// Install implements ports.Upgrader.
+func (u *Upgrader) Install(_ context.Context, version string, progress func(done, total int64)) error {
+	progress(5, 10)
+	progress(10, 10)
+	if u.Err != nil {
+		return u.Err
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.Installed = append(u.Installed, version)
+	return nil
+}

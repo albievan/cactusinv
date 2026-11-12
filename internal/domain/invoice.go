@@ -303,6 +303,21 @@ func (inv *Invoice) MarkOverdue(now time.Time) error {
 	return nil
 }
 
+// AmendNotes replaces the notes of any invoice that is not void: they are free text
+// (this month's remarks on a scheduled invoice), not money, so they stay editable after
+// issue; the next PDF and e-mail carry them, and the change is audited.
+func (inv *Invoice) AmendNotes(notes string, now time.Time) error {
+	if inv.Status == InvoiceVoid {
+		return ErrInvalidTransition
+	}
+	if len(notes) > 4000 {
+		return invalid("notes", "max 4000 characters")
+	}
+	inv.Notes = strings.TrimSpace(notes)
+	inv.UpdatedAt = now
+	return nil
+}
+
 // MarkPaid records payment.
 func (inv *Invoice) MarkPaid(now time.Time) error {
 	if !inv.IsOpen() {

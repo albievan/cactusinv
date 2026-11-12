@@ -478,6 +478,36 @@ func (e SettingsSection) Valid() bool {
 	}
 }
 
+// Defines values for UpgradeJobState.
+const (
+	UpgradeJobStateBackingUp   UpgradeJobState = "backing-up"
+	UpgradeJobStateDownloading UpgradeJobState = "downloading"
+	UpgradeJobStateEmpty       UpgradeJobState = ""
+	UpgradeJobStateFailed      UpgradeJobState = "failed"
+	UpgradeJobStateInstalling  UpgradeJobState = "installing"
+	UpgradeJobStateRestarting  UpgradeJobState = "restarting"
+)
+
+// Valid indicates whether the value is a known member of the UpgradeJobState enum.
+func (e UpgradeJobState) Valid() bool {
+	switch e {
+	case UpgradeJobStateBackingUp:
+		return true
+	case UpgradeJobStateDownloading:
+		return true
+	case UpgradeJobStateEmpty:
+		return true
+	case UpgradeJobStateFailed:
+		return true
+	case UpgradeJobStateInstalling:
+		return true
+	case UpgradeJobStateRestarting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Aging defines model for Aging.
 type Aging struct {
 	// Current Example: 2701.16
@@ -989,6 +1019,14 @@ type InvoiceInput struct {
 type InvoiceList struct {
 	Items []Invoice `json:"items"`
 	Total int       `json:"total"`
+}
+
+// InvoiceNotesRequest defines model for InvoiceNotesRequest.
+type InvoiceNotesRequest struct {
+	Notes string `json:"notes"`
+
+	// Version The invoice version you edited (optimistic locking).
+	Version int `json:"version"`
 }
 
 // InvoiceStage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
@@ -1579,10 +1617,16 @@ type UpdateCheck struct {
 	// Available The newest published version is newer than the running one.
 	Available bool `json:"available"`
 
+	// CanInstall This installation can install the newest version itself (POST).
+	CanInstall bool `json:"canInstall,omitempty"`
+
 	// Current The running version.
 	//
 	// Example: 1.12.1
 	Current string `json:"current"`
+
+	// InstallProblem Why it cannot (a container: ./deploy.sh --upgrade); "" when it can.
+	InstallProblem string `json:"installProblem,omitempty"`
 
 	// Latest The newest published version ("" when it could not be read).
 	//
@@ -1592,6 +1636,31 @@ type UpdateCheck struct {
 	// Problem Why the check could not be made ("" when it was).
 	Problem string `json:"problem"`
 }
+
+// UpgradeJob defines model for UpgradeJob.
+type UpgradeJob struct {
+	// Backup The backup taken first ("" when backups are not set up).
+	Backup string `json:"backup"`
+
+	// Done Bytes downloaded.
+	Done int64 `json:"done"`
+
+	// Error Why it failed ("" unless state is failed).
+	Error string `json:"error"`
+
+	// From The version being replaced.
+	From  string          `json:"from"`
+	State UpgradeJobState `json:"state"`
+
+	// To The version being installed.
+	To string `json:"to"`
+
+	// Total Bytes to download (-1 when unknown).
+	Total int64 `json:"total"`
+}
+
+// UpgradeJobState defines model for UpgradeJob.State.
+type UpgradeJobState string
 
 // User defines model for User.
 type User struct {
@@ -1702,9 +1771,12 @@ type ListInvoicesParams struct {
 	Status     InvoiceStatus `form:"status,omitempty" json:"status,omitempty"`
 	CustomerId string        `form:"customerId,omitempty" json:"customerId,omitempty"`
 	Overdue    bool          `form:"overdue,omitempty" json:"overdue,omitempty"`
-	Q          Query         `form:"q,omitempty" json:"q,omitempty"`
-	Limit      Limit         `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset     Offset        `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Scheduled Only invoices raised by a schedule.
+	Scheduled bool   `form:"scheduled,omitempty" json:"scheduled,omitempty"`
+	Q         Query  `form:"q,omitempty" json:"q,omitempty"`
+	Limit     Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset    Offset `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // SendInvoiceParams defines parameters for SendInvoice.
@@ -1798,6 +1870,9 @@ type UpdateInvoiceJSONRequestBody = InvoiceInput
 
 // IssueInvoiceJSONRequestBody defines body for IssueInvoice for application/json ContentType.
 type IssueInvoiceJSONRequestBody = IssueRequest
+
+// UpdateInvoiceNotesJSONRequestBody defines body for UpdateInvoiceNotes for application/json ContentType.
+type UpdateInvoiceNotesJSONRequestBody = InvoiceNotesRequest
 
 // SendInvoiceJSONRequestBody defines body for SendInvoice for application/json ContentType.
 type SendInvoiceJSONRequestBody = SendRequest
@@ -1994,6 +2069,9 @@ type ServerInterface interface {
 	// (POST /invoices/{id}/mark-paid)
 	MarkInvoicePaid(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (PUT /invoices/{id}/notes)
+	UpdateInvoiceNotes(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /invoices/{id}/pdf)
 	GetInvoicePdf(w http.ResponseWriter, r *http.Request, id Id)
 
@@ -2089,6 +2167,12 @@ type ServerInterface interface {
 
 	// (GET /settings/system/update)
 	CheckForUpdate(w http.ResponseWriter, r *http.Request)
+
+	// (POST /settings/system/update)
+	InstallUpdate(w http.ResponseWriter, r *http.Request)
+
+	// (GET /settings/system/update/progress)
+	GetUpdateProgress(w http.ResponseWriter, r *http.Request)
 
 	// (GET /statements)
 	ListStatements(w http.ResponseWriter, r *http.Request)
@@ -3116,6 +3200,19 @@ func (siw *ServerInterfaceWrapper) ListInvoices(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "scheduled" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scheduled", r.URL.Query(), &params.Scheduled, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scheduled"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scheduled", Err: err})
+		}
+		return
+	}
+
 	// ------------- Optional query parameter "q" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
@@ -3327,6 +3424,32 @@ func (siw *ServerInterfaceWrapper) MarkInvoicePaid(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MarkInvoicePaid(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateInvoiceNotes operation middleware
+func (siw *ServerInterfaceWrapper) UpdateInvoiceNotes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateInvoiceNotes(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4156,6 +4279,34 @@ func (siw *ServerInterfaceWrapper) CheckForUpdate(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// InstallUpdate operation middleware
+func (siw *ServerInterfaceWrapper) InstallUpdate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.InstallUpdate(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUpdateProgress operation middleware
+func (siw *ServerInterfaceWrapper) GetUpdateProgress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUpdateProgress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListStatements operation middleware
 func (siw *ServerInterfaceWrapper) ListStatements(w http.ResponseWriter, r *http.Request) {
 
@@ -4463,6 +4614,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system", wrapper.GetSystemSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/system", wrapper.UpdateSystemSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system/update", wrapper.CheckForUpdate)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/system/update", wrapper.InstallUpdate)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system/update/progress", wrapper.GetUpdateProgress)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/export", wrapper.ExportSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/import", wrapper.ImportSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/currencies", wrapper.ListCurrencies)
@@ -4497,6 +4650,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/void", wrapper.VoidInvoice)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/mark-overdue", wrapper.MarkInvoiceOverdue)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/mark-paid", wrapper.MarkInvoicePaid)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/invoices/{id}/notes", wrapper.UpdateInvoiceNotes)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/send", wrapper.SendInvoice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invoices/{id}/pdf", wrapper.GetInvoicePdf)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules", wrapper.ListSchedules)
@@ -6412,6 +6566,46 @@ func (response MarkInvoicePaiddefaultApplicationProblemPlusJSONResponse) VisitMa
 	return err
 }
 
+type UpdateInvoiceNotesRequestObject struct {
+	Id   Id `json:"id"`
+	Body *UpdateInvoiceNotesJSONRequestBody
+}
+
+type UpdateInvoiceNotesResponseObject interface {
+	VisitUpdateInvoiceNotesResponse(w http.ResponseWriter) error
+}
+
+type UpdateInvoiceNotes200JSONResponse Invoice
+
+func (response UpdateInvoiceNotes200JSONResponse) VisitUpdateInvoiceNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateInvoiceNotesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateInvoiceNotesdefaultApplicationProblemPlusJSONResponse) VisitUpdateInvoiceNotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetInvoicePdfRequestObject struct {
 	Id Id `json:"id"`
 }
@@ -7672,6 +7866,82 @@ func (response CheckForUpdatedefaultApplicationProblemPlusJSONResponse) VisitChe
 	return err
 }
 
+type InstallUpdateRequestObject struct {
+}
+
+type InstallUpdateResponseObject interface {
+	VisitInstallUpdateResponse(w http.ResponseWriter) error
+}
+
+type InstallUpdate202JSONResponse UpgradeJob
+
+func (response InstallUpdate202JSONResponse) VisitInstallUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type InstallUpdatedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response InstallUpdatedefaultApplicationProblemPlusJSONResponse) VisitInstallUpdateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateProgressRequestObject struct {
+}
+
+type GetUpdateProgressResponseObject interface {
+	VisitGetUpdateProgressResponse(w http.ResponseWriter) error
+}
+
+type GetUpdateProgress200JSONResponse UpgradeJob
+
+func (response GetUpdateProgress200JSONResponse) VisitGetUpdateProgressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetUpdateProgressdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetUpdateProgressdefaultApplicationProblemPlusJSONResponse) VisitGetUpdateProgressResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListStatementsRequestObject struct {
 }
 
@@ -8376,6 +8646,9 @@ type StrictServerInterface interface {
 	// (POST /invoices/{id}/mark-paid)
 	MarkInvoicePaid(ctx context.Context, request MarkInvoicePaidRequestObject) (MarkInvoicePaidResponseObject, error)
 
+	// (PUT /invoices/{id}/notes)
+	UpdateInvoiceNotes(ctx context.Context, request UpdateInvoiceNotesRequestObject) (UpdateInvoiceNotesResponseObject, error)
+
 	// (GET /invoices/{id}/pdf)
 	GetInvoicePdf(ctx context.Context, request GetInvoicePdfRequestObject) (GetInvoicePdfResponseObject, error)
 
@@ -8471,6 +8744,12 @@ type StrictServerInterface interface {
 
 	// (GET /settings/system/update)
 	CheckForUpdate(ctx context.Context, request CheckForUpdateRequestObject) (CheckForUpdateResponseObject, error)
+
+	// (POST /settings/system/update)
+	InstallUpdate(ctx context.Context, request InstallUpdateRequestObject) (InstallUpdateResponseObject, error)
+
+	// (GET /settings/system/update/progress)
+	GetUpdateProgress(ctx context.Context, request GetUpdateProgressRequestObject) (GetUpdateProgressResponseObject, error)
 
 	// (GET /statements)
 	ListStatements(ctx context.Context, request ListStatementsRequestObject) (ListStatementsResponseObject, error)
@@ -9744,6 +10023,39 @@ func (sh *strictHandler) MarkInvoicePaid(w http.ResponseWriter, r *http.Request,
 	}
 }
 
+// UpdateInvoiceNotes operation middleware
+func (sh *strictHandler) UpdateInvoiceNotes(w http.ResponseWriter, r *http.Request, id Id) {
+	var request UpdateInvoiceNotesRequestObject
+
+	request.Id = id
+
+	var body UpdateInvoiceNotesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateInvoiceNotes(ctx, request.(UpdateInvoiceNotesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateInvoiceNotes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateInvoiceNotesResponseObject); ok {
+		if err := validResponse.VisitUpdateInvoiceNotesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetInvoicePdf operation middleware
 func (sh *strictHandler) GetInvoicePdf(w http.ResponseWriter, r *http.Request, id Id) {
 	var request GetInvoicePdfRequestObject
@@ -10650,6 +10962,54 @@ func (sh *strictHandler) CheckForUpdate(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CheckForUpdateResponseObject); ok {
 		if err := validResponse.VisitCheckForUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// InstallUpdate operation middleware
+func (sh *strictHandler) InstallUpdate(w http.ResponseWriter, r *http.Request) {
+	var request InstallUpdateRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.InstallUpdate(ctx, request.(InstallUpdateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "InstallUpdate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(InstallUpdateResponseObject); ok {
+		if err := validResponse.VisitInstallUpdateResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetUpdateProgress operation middleware
+func (sh *strictHandler) GetUpdateProgress(w http.ResponseWriter, r *http.Request) {
+	var request GetUpdateProgressRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetUpdateProgress(ctx, request.(GetUpdateProgressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetUpdateProgress")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetUpdateProgressResponseObject); ok {
+		if err := validResponse.VisitGetUpdateProgressResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

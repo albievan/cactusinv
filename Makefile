@@ -7,7 +7,7 @@ COVER_MIN := 80
 VERSION := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo dev)
 BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 
-.PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build image check \
+.PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build dist image check \
         install uninstall status backup
 
 help: ## list targets
@@ -54,7 +54,7 @@ test-int: ## integration tests against MariaDB 11 (Docker); migrations up/down/u
 REMOTE      ?=
 REMOTE_DIR  ?= /data/cactusinv/src
 REMOTE_GOCACHE ?= /data/cactusinv/gocache
-GO_IMAGE    ?= golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473
+GO_IMAGE    ?= golang:1.26.11-bookworm@sha256:dc40a13b61304647ed7e5d581d246b86413dfc29d63c6d018310feb93cd98fc0
 
 remote-test-int: ## integration tests on REMOTE=user@host (required) via ssh + Docker (working tree incl. uncommitted changes)
 	@[ -n "$(REMOTE)" ] || { echo "set REMOTE=user@host (a Docker host for the integration tests)"; exit 1; }
@@ -92,6 +92,22 @@ web-check: web-install ## web lint, typecheck, tests, build
 
 build: web-check ## build the binary with the web app embedded
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.build=$(BUILD)" -o bin/cactusinv ./cmd/cactusinv
+
+# dist/ is the published release a standalone server installs itself from (System Settings
+# → Install and restart; M31, cactusDB's mechanism): one binary per OS and CPU and their
+# SHA256SUMS, committed with VERSION. Their build number is that of the commit they go in
+# (the next one), so run this last, then commit.
+DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+dist: web-check ## build the published binaries in dist/ (commit them with VERSION)
+	rm -rf dist && mkdir -p dist
+	next=$$(( $(BUILD) + 1 )); for t in $(DIST_TARGETS); do \
+	  os=$${t%/*}; arch=$${t#*/}; ext=; [[ $$os == windows ]] && ext=.exe; \
+	  echo "dist/cactusinv-$$os-$$arch$$ext"; \
+	  GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.build=$$next" \
+	    -o "dist/cactusinv-$$os-$$arch$$ext" ./cmd/cactusinv; \
+	done
+	cd dist && if command -v sha256sum >/dev/null; then sha256sum cactusinv-*; else shasum -a 256 cactusinv-*; fi > SHA256SUMS
+	cat dist/SHA256SUMS
 
 image: ## build the container image
 	docker build --build-arg VERSION=$(VERSION) --build-arg BUILD=$(BUILD) -t cactusinv:latest .

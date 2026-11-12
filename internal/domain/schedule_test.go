@@ -215,7 +215,7 @@ func TestScheduleValidate(t *testing.T) {
 
 func TestScheduleBuildDraft(t *testing.T) {
 	s := cityDeepSchedule()
-	s.Notes = "Disclaimer: third party software."
+	s.Notes = "Hours for {period}."
 	s.Activate(time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC))
 	products := map[string]Product{"p-users": {ID: "p-users", SKU: "U", Name: "Users", Description: "Stock system usage for 14 concurrent users.", Prices: map[CurrencyCode]int64{"ZAR": 19294}, Active: true}}
 	content, err := s.BuildDraft(cityDeep(), products, 0, s.RunDate())
@@ -234,7 +234,7 @@ func TestScheduleBuildDraft(t *testing.T) {
 		t.Fatal("schedule's own VAT (0) overrides the default")
 	}
 	s.TaxRate = nil
-	if content.IssueDate != NewDate(2026, 8, 21) || content.Notes != s.Notes {
+	if content.IssueDate != NewDate(2026, 8, 21) || content.Notes != "Hours for August 2026." {
 		t.Fatalf("content = %+v", content)
 	}
 	if content.Lines[0].UnitPrice != 19294 || content.Lines[0].Description != "Stock system usage for 14 concurrent users." {

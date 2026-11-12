@@ -313,6 +313,17 @@ func (s *Service) MarkInvoicePaid(ctx context.Context, id string) (*domain.Invoi
 	}, nil)
 }
 
+// UpdateInvoiceNotes replaces the notes of an invoice (any status but void). The next PDF
+// and every later e-mail of it, a resend included, carry the new notes.
+func (s *Service) UpdateInvoiceNotes(ctx context.Context, id string, version int, notes string) (*domain.Invoice, error) {
+	return s.transition(ctx, "app.UpdateInvoiceNotes", id, "notes_updated", "", func(inv *domain.Invoice) error {
+		if inv.Version != version {
+			return domain.ErrConflict
+		}
+		return inv.AmendNotes(notes, s.now())
+	}, nil)
+}
+
 func (s *Service) transition(ctx context.Context, op, id, event, detail string, apply func(*domain.Invoice) error, after func(context.Context, ports.Repos) error) (*domain.Invoice, error) {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		inv, err := r.Invoices.Get(ctx, id)

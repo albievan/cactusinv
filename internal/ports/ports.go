@@ -119,6 +119,17 @@ type ReleaseSource interface {
 	LatestVersion(ctx context.Context) (string, error)
 }
 
+// Upgrader replaces a standalone cactusInv binary with a published release (M31). A
+// container cannot: its image is updated with ./deploy.sh --upgrade instead.
+type Upgrader interface {
+	// CanInstall says why this installation cannot replace itself ("" when it can).
+	CanInstall() string
+	// Install downloads version's binary for this OS and CPU, checks it against the
+	// published SHA-256 and by running it, and puts it in place of the running binary
+	// (the old one is kept beside it). The caller then restarts. progress reports bytes.
+	Install(ctx context.Context, version string, progress func(done, total int64)) error
+}
+
 // Cipher encrypts small secrets at rest (AES-256-GCM).
 type Cipher interface {
 	Encrypt(plaintext []byte) ([]byte, error)
@@ -214,6 +225,7 @@ type InvoiceFilter struct {
 	CustomerID string
 	Query      string
 	Overdue    bool
+	Scheduled  bool // only invoices raised by a schedule
 	Today      domain.Date
 	Page       Page
 }

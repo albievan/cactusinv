@@ -17,6 +17,7 @@ WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
   AND (? = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < ?))
+  AND (? = FALSE OR schedule_id IS NOT NULL)
 `
 
 type CountInvoicesParams struct {
@@ -25,6 +26,7 @@ type CountInvoicesParams struct {
 	Query      interface{}
 	Overdue    interface{}
 	Today      sql.NullTime
+	Scheduled  interface{}
 }
 
 func (q *Queries) CountInvoices(ctx context.Context, arg CountInvoicesParams) (int64, error) {
@@ -38,6 +40,7 @@ func (q *Queries) CountInvoices(ctx context.Context, arg CountInvoicesParams) (i
 		arg.Query,
 		arg.Overdue,
 		arg.Today,
+		arg.Scheduled,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -379,6 +382,7 @@ WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
   AND (? = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < ?))
+  AND (? = FALSE OR schedule_id IS NOT NULL)
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?
 `
@@ -389,6 +393,7 @@ type ListInvoicesParams struct {
 	Query      interface{}
 	Overdue    interface{}
 	Today      sql.NullTime
+	Scheduled  interface{}
 	Limit      int32
 	Offset     int32
 }
@@ -404,6 +409,7 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 		arg.Query,
 		arg.Overdue,
 		arg.Today,
+		arg.Scheduled,
 		arg.Limit,
 		arg.Offset,
 	)

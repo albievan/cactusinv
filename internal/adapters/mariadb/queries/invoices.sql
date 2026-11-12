@@ -4,6 +4,7 @@ WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
   AND (sqlc.arg(overdue) = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)))
+  AND (sqlc.arg(scheduled) = FALSE OR schedule_id IS NOT NULL)
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?;
 
@@ -12,7 +13,8 @@ SELECT COUNT(*) FROM invoices
 WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
-  AND (sqlc.arg(overdue) = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)));
+  AND (sqlc.arg(overdue) = FALSE OR status = 'overdue' OR (status IN ('issued', 'sent') AND due_date < sqlc.arg(today)))
+  AND (sqlc.arg(scheduled) = FALSE OR schedule_id IS NOT NULL);
 
 -- name: GetInvoice :one
 SELECT * FROM invoices WHERE id = ?;

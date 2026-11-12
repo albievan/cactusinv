@@ -31,7 +31,8 @@ Details: `docs/ENGINEERING_PRINCIPLES.md` (why), `docs/ARCHITECTURE.md` (how),
   file), `internal/ports` (interfaces + `fakes/`), `internal/adapters/*`,
   `cmd/cactusinv` (only composition root). Imports point inward only (depguard).
 - Money is `int64` minor units + currency; never floats; never mix currencies; no FX.
-- Issued invoices are immutable; printed data is snapshotted; numbers are gap-free.
+- Issued invoices are immutable (only the free-text notes may change, audited); printed data
+  is snapshotted; numbers are gap-free.
 - E-mail only through the `email_outbox` (transactional outbox). Workers claim with
   `FOR UPDATE SKIP LOCKED`.
 - No business logic in handlers, SQL or React.

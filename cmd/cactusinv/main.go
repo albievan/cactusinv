@@ -41,6 +41,7 @@ import (
 	"github.com/albievan/cactusinv/internal/adapters/mariadb"
 	"github.com/albievan/cactusinv/internal/adapters/pdf"
 	"github.com/albievan/cactusinv/internal/adapters/release"
+	"github.com/albievan/cactusinv/internal/adapters/selfupdate"
 	"github.com/albievan/cactusinv/internal/adapters/smtp"
 	"github.com/albievan/cactusinv/internal/adapters/worker"
 	"github.com/albievan/cactusinv/internal/app"
@@ -56,7 +57,14 @@ var (
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	// The binary's path is read now: once an update has moved it aside, the OS would name
+	// the old file.
+	exe := selfupdate.New("", false).Executable()
+	err := run(os.Args[1:])
+	if errors.Is(err, errRestart) {
+		err = selfupdate.Restart(exe) // returns only if neither the new nor the old binary starts
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "cactusinv:", err)
 		os.Exit(1)
 	}
@@ -179,6 +187,7 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 	}
 	if cfg.UpdateURL != "" {
 		deps.Releases = release.New(cfg.UpdateURL)
+		deps.Upgrader = selfupdate.New(selfupdate.DistURL(cfg.UpdateURL), cfg.Container)
 	}
 	dc, err := dbConfig(ctx, cfg)
 	if err != nil {
@@ -262,6 +271,15 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	}
 	defer closeSvc()
 	svc.WarmUp()
+	// An installed update (System Settings, M31) restarts the server: shut down as for a
+	// signal, then the new binary takes this process's place.
+	restartReq := make(chan struct{}, 1)
+	svc.SetRestart(func() {
+		select {
+		case restartReq <- struct{}{}:
+		default:
+		}
+	})
 	if cfg.DefaultAdminUser != "" {
 		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, cfg.DefaultAdminPassword)
 		if err != nil {
@@ -297,6 +315,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		close(workersDone)
 	}
 
+	restarting := false
 	errc := make(chan error, 1)
 	go func() {
 		log.Info("listening", "addr", cfg.HTTPAddr, "version", version, "build", build, "workers", cfg.Workers)
@@ -308,8 +327,10 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		<-workersDone
 		return err
 	case <-ctx.Done():
+	case <-restartReq:
+		restarting = true
 	}
-	log.Info("shutting down")
+	log.Info("shutting down", "restart", restarting)
 	// The workers stop claiming new work at once, while the HTTP server drains: both well
 	// inside the container's stop grace period (docker-compose stop_grace_period 30s, the
 	// Kubernetes default 30s), so an e-mail being sent is recorded before the process ends.
@@ -322,8 +343,14 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	case <-shutdownCtx.Done():
 		log.Warn("workers did not stop in time")
 	}
+	if err == nil && restarting {
+		return errRestart
+	}
 	return err
 }
+
+// errRestart: serve stopped for an installed update; main starts the new binary.
+var errRestart = errors.New("restart for the installed update")
 
 func adminCommand(ctx context.Context, cfg config, args []string) error {
 	if len(args) != 2 || (args[0] != "create" && args[0] != "set-password") {

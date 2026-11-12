@@ -389,3 +389,33 @@ func TestOverdueStageAndDisclaimer(t *testing.T) {
 		}
 	}
 }
+
+func TestInvoiceAmendNotes(t *testing.T) {
+	c := cityDeep()
+	d := DefaultDraftContent(c, NewDate(2026, 8, 21))
+	d.Lines = referenceLines()
+	inv, err := NewDraftInvoice("i", c, d, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := inv.Issue("CD/1/26", NewDate(2026, 8, 21), BankDetails{}, t0); err != nil {
+		t.Fatal(err)
+	}
+	total := inv.Totals
+	later := t0.Add(time.Hour)
+	if err := inv.AmendNotes("  Hours for August: 20.  ", later); err != nil {
+		t.Fatal(err)
+	}
+	if inv.Notes != "Hours for August: 20." || !inv.UpdatedAt.Equal(later) || inv.Totals != total || inv.Status != InvoiceIssued {
+		t.Fatalf("after amend: %+v", inv)
+	}
+	if err := inv.AmendNotes(strings.Repeat("x", 4001), later); !errors.Is(err, ErrValidation) {
+		t.Fatalf("too long: %v", err)
+	}
+	if err := inv.Void("wrong customer", later); err != nil {
+		t.Fatal(err)
+	}
+	if err := inv.AmendNotes("x", later); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("void: %v", err)
+	}
+}

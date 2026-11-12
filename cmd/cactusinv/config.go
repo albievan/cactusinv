@@ -53,6 +53,8 @@ type config struct {
 	// UpdateURL is the published VERSION file (System Settings → Check for updates);
 	// "" when CACTUSINV_UPDATE_URL=off.
 	UpdateURL string
+	// Container: the image sets CACTUSINV_CONTAINER=1; it never replaces its own binary.
+	Container bool
 	// Backups (ADR-010).
 	BackupDir           string
 	BackupTimes         []domain.TimeOfDay
@@ -121,6 +123,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 	c.BackupDir = str("CACTUSINV_BACKUP_DIR", "/data/backups")
 	c.DeployTarget = getenv("CACTUSINV_DEPLOY_TARGET")
+	c.Container = boolean("CACTUSINV_CONTAINER", false) || c.DeployTarget != ""
 	c.HostProjectDir = getenv("CACTUSINV_HOST_PROJECT_DIR")
 	c.HostBackupDir = getenv("CACTUSINV_HOST_BACKUP_DIR")
 	c.HostInvoicesDir = getenv("CACTUSINV_HOST_INVOICES_DIR")

@@ -995,7 +995,7 @@ remote_docker() {
   info "copying cactusInv to ${SSH_HOST}:${REMOTE_DIR}"
   ssh_run "mkdir -p '$REMOTE_DIR'"
   tar -C "$ROOT" --exclude=./data --exclude=./secrets --exclude=./.git --exclude=./web/node_modules \
-    --exclude=./web/dist --exclude=./.deploy -czf - . | ssh_run "tar -C '$REMOTE_DIR' -xzf -"
+    --exclude=./web/dist --exclude=./dist --exclude=./.deploy -czf - . | ssh_run "tar -C '$REMOTE_DIR' -xzf -"
   local args=("--$ACTION" --dockerdesktop) pre="CACTUSINV_BUILD=${CACTUSINV_BUILD}; export CACTUSINV_BUILD; "
   [[ "$ACTION" == migrate-down-to ]] && args=(--migrate-down-to "$DOWN_TO" --dockerdesktop)
   if [[ "$ACTION" == restore ]]; then

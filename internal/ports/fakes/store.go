@@ -601,6 +601,9 @@ func (r invoices) List(_ context.Context, f ports.InvoiceFilter) ([]domain.Invoi
 			if f.Overdue && !inv.IsOverdue(f.Today) {
 				continue
 			}
+			if f.Scheduled && inv.ScheduleID == "" {
+				continue
+			}
 			inv.Lines = nil
 			all = append(all, inv)
 		}

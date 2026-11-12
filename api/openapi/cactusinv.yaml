@@ -211,14 +211,42 @@ paths:
       operationId: checkForUpdate
       description: >-
         Compares the running version with the newest published one (CACTUSINV_UPDATE_URL), only
-        when asked. The app cannot replace itself: an upgrade is ./deploy.sh --upgrade. A check that
-        cannot be made is not an error: `problem` says why.
+        when asked. A standalone binary can install it (POST); a container is updated with
+        ./deploy.sh --upgrade (`installProblem` says so). A check that cannot be made is not an
+        error: `problem` says why.
       responses:
         '200':
           description: The running and the newest published version.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/UpdateCheck' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [settings]
+      operationId: installUpdate
+      description: >-
+        Installs the newest release in place of this standalone binary, then restarts it
+        (M31): a backup first (when backups are set up), the download from dist/ beside the
+        VERSION file, checked against SHA256SUMS and by running it, then the swap. Returns at
+        once; follow it with GET /settings/system/update/progress. 422 when it cannot start
+        (newest already, a container, no write access), 409 while one is running.
+      responses:
+        '202':
+          description: Started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpgradeJob' }
+        default: { $ref: '#/components/responses/Problem' }
+  /settings/system/update/progress:
+    get:
+      tags: [settings]
+      operationId: getUpdateProgress
+      responses:
+        '200':
+          description: The running (or last) install; state "" when none since the server started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpgradeJob' }
         default: { $ref: '#/components/responses/Problem' }
   /settings/export:
     post:
@@ -609,6 +637,7 @@ paths:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/InvoiceStatus' } }
         - { name: customerId, in: query, schema: { type: string } }
         - { name: overdue, in: query, schema: { type: boolean } }
+        - { name: scheduled, in: query, description: Only invoices raised by a schedule., schema: { type: boolean } }
         - { $ref: '#/components/parameters/Query' }
         - { $ref: '#/components/parameters/Limit' }
         - { $ref: '#/components/parameters/Offset' }
@@ -727,6 +756,28 @@ paths:
       responses:
         '200':
           description: Marked paid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/notes:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [invoices]
+      operationId: updateInvoiceNotes
+      description: >-
+        Replaces the notes of an invoice in any status but void (free text, e.g. this month's
+        remarks on a scheduled invoice). The next PDF and every later e-mail of the invoice,
+        a resend included, carry them. Audited as invoice.notes_updated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InvoiceNotesRequest' }
+      responses:
+        '200':
+          description: Notes saved.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
@@ -1426,6 +1477,19 @@ components:
         latest: { type: string, example: 1.13.0, description: 'The newest published version ("" when it could not be read).' }
         available: { type: boolean, description: The newest published version is newer than the running one. }
         problem: { type: string, description: 'Why the check could not be made ("" when it was).' }
+        canInstall: { type: boolean, description: This installation can install the newest version itself (POST). }
+        installProblem: { type: string, description: 'Why it cannot (a container: ./deploy.sh --upgrade); "" when it can.' }
+    UpgradeJob:
+      type: object
+      required: [state, from, to, done, total, error, backup]
+      properties:
+        state: { type: string, enum: ['', backing-up, downloading, installing, restarting, failed] }
+        from: { type: string, description: The version being replaced. }
+        to: { type: string, description: The version being installed. }
+        done: { type: integer, format: int64, description: Bytes downloaded. }
+        total: { type: integer, format: int64, description: 'Bytes to download (-1 when unknown).' }
+        error: { type: string, description: 'Why it failed ("" unless state is failed).' }
+        backup: { type: string, description: 'The backup taken first ("" when backups are not set up).' }
     Version:
       type: object
       required: [version, build]
@@ -2060,6 +2124,12 @@ components:
       type: object
       properties:
         issueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+    InvoiceNotesRequest:
+      type: object
+      required: [notes, version]
+      properties:
+        notes: { type: string, maxLength: 4000 }
+        version: { type: integer, description: The invoice version you edited (optimistic locking). }
     VoidRequest:
       type: object
       required: [reason]

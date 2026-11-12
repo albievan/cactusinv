@@ -33,4 +33,16 @@ func TestSystemSettingsOverHTTP(t *testing.T) {
 	cc.ok(cc.loginAs("carol@example.com", "chosen by albie"), 204, "carol signs in")
 	cc.ok(cc.do("POST", "/api/v1/auth/password", obj{"currentPassword": "chosen by albie", "newPassword": "carol's own password"}, nil), 204, "carol's password")
 	cc.ok(cc.do("GET", "/api/v1/settings/system", nil, &p), 403, "not an administrator")
+	cc.ok(cc.do("POST", "/api/v1/settings/system/update", nil, &p), 403, "only an administrator installs")
+
+	// M31: nothing to install from here (no release source), and nothing running yet.
+	var job httpapi.UpgradeJob
+	albie.ok(albie.do("GET", "/api/v1/settings/system/update/progress", nil, &job), 200, "progress")
+	if job.State != httpapi.UpgradeJobStateEmpty {
+		t.Fatalf("job = %+v", job)
+	}
+	albie.ok(albie.do("POST", "/api/v1/settings/system/update", nil, &p), 422, "install refused")
+	if p.Detail == "" {
+		t.Fatalf("problem = %+v", p)
+	}
 }

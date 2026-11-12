@@ -113,6 +113,9 @@ EmailMessage (outbox) ── invoice, recipients, send-at, attempts, status
 
 - `draft`: editable, no number.
 - `issued`: number allocated from the gap-free sequence; content frozen; PDF renderable.
+  The one exception is the **notes** (M31): free text, not money, so `PUT /invoices/{id}/notes`
+  (`invoices.edit`, optimistic `version`) replaces them on any invoice but a void one, audited
+  as `invoice.notes_updated`. The PDF is rendered at delivery, so a resend carries them.
 - `sent`: at least one e-mail delivered (`sent_at` set by the dispatcher).
   Re-sending is allowed and recorded.
 - `paid` / `void`: terminal. Void keeps the number (gap-free) and the PDF watermarks VOID.
@@ -180,6 +183,11 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
   Monday of the start week, the day itself for a once schedule. Editing or resuming a
   schedule never starts inside billed time (`ActivateFrom`'s floor, the end of the latest
   billed period); a period that failed is kept and retried, also after a pause.
+- The schedule's **notes** are the template for the next run (M31): `{month}`, `{year}` and
+  `{period}` become the billing month, as in line descriptions, and each raised invoice keeps
+  its own copy (`invoices.notes`), editable afterwards from Invoices. `GET /invoices?scheduled=true`
+  lists the invoices a schedule raised (`schedule_id IS NOT NULL`); in the Invoices list such a
+  row offers only Preview, Edit schedule (`/schedules/{id}/edit`) and Notes.
 - A failed run keeps the schedule on the failing period with backoff
   (`RecordFailure`); after `MaxScheduleFailures` it is paused, and it surfaces in the UI.
 
@@ -259,7 +267,8 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 | `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag; while `true`, `POST /auth/login` over plain http (no TLS, no `X-Forwarded-Proto: https`, not localhost) answers 403 `https-required` | `true` |
 | `CACTUSINV_BACKUP_DIR` / `_BACKUP_TIMES` / `_BACKUP_RETENTION_DAYS` / `_BACKUP_MAX_UPLOAD_MB` | backups (§12) | `/data/backups` / `02:00` / `14` / `256` |
 | `CACTUSINV_RESTORE_DB_NAME` | restore staging database | `<db>_restore` |
-| `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never), §19 | GitHub `main` `VERSION` |
+| `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never); a standalone server installs from `dist/` beside it, §19 | GitHub `main` `VERSION` |
+| `CACTUSINV_CONTAINER` | `1` in the image: never replace its own binary (also when `CACTUSINV_DEPLOY_TARGET` is set) | – |
 | `CACTUSINV_DEPLOY_TARGET` / `_HOST_PROJECT_DIR` / `_HOST_BACKUP_DIR` / `_HOST_INVOICES_DIR` | set by `deploy.sh` for System Settings (folder mapping) | – |
 
 The deployment-level `.env` (what each value does, `K8S_STORAGE_CLASS`) is documented in the
@@ -558,4 +567,19 @@ the session timeouts and the host folders mapped to the container's folders.
   could not be made (switched off, a development build, unreachable, unreadable). Versions
   compare as MAJOR.MINOR.PATCH (`domain.ParseVersion`); a newer build of the same version is
   not offered.
+- **Install in place (M31, cactusDB's mechanism)**, standalone binary only: `make dist` builds
+  `dist/cactusinv-<os>-<arch>[.exe]` (linux, darwin, windows × amd64, arm64) and
+  `dist/SHA256SUMS`, committed with `VERSION`, so a push to `main` publishes a release.
+  `POST /settings/system/update` (`settings.system.edit`) starts `app.InstallUpdate`: a backup
+  (skipped when no backup key is set up; any other backup failure stops it), then
+  `ports.Upgrader` (`adapters/selfupdate`) downloads the asset from `dist/` beside the VERSION
+  URL (256 MiB at most), requires its SHA-256 in `SHA256SUMS`, runs it with `version` (it must
+  report the published version), renames the running binary to `<exe>.old` and the download
+  into place; audited `system.update_installed` / `system.update_failed`. `serve` then shuts
+  down as for SIGTERM and `main` execs the new binary (same PID, arguments and environment;
+  Windows: a child process); if that fails, the old binary is put back and started. The new
+  version migrates on start; sessions survive. `GET /settings/system/update/progress` reports
+  `backing-up → downloading → installing → restarting` or `failed` (the old version keeps
+  running). A container (`CACTUSINV_CONTAINER=1` in the image, or a deploy target) refuses:
+  its image would bring the old version back, so the page shows `./deploy.sh --upgrade`.
 
