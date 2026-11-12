@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg" // pictures in notes are PNG or JPEG: DecodeConfig needs both decoders
 	_ "image/png"
 	"math"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,8 +21,9 @@ import (
 // the web app's notes editor. Formatted notes are read into a small model under an
 // allowlist (ParseNotes) and stored only in the canonical form CleanNotes writes back, so
 // what is stored, shown and printed is the same: paragraphs and list items of styled text,
-// tables and pictures. Scripts, event handlers, links, classes and outside images never
-// survive; a picture is a PNG or JPEG data: URI.
+// tables, pictures and web links. Scripts, event handlers, classes and outside images never
+// survive; a picture is a PNG or JPEG data: URI, and a link goes to an http, https or
+// mailto address (SafeLink) and is clickable in the PDF.
 
 // Notes limits.
 const (
@@ -53,6 +55,9 @@ type NoteStyle struct {
 	Color                           *RGB
 	Size                            float64 // points; 0 = the default size
 	Font                            NoteFont
+	// Link is the address the text links to (http, https or mailto; see SafeLink); "" for
+	// text that is not a link.
+	Link string
 }
 
 // NoteRun is styled text, or a line break.
@@ -405,6 +410,11 @@ func styleOf(n *html.Node, st NoteStyle) (NoteStyle, string) {
 		st.Underline = true
 	case atom.S, atom.Strike, atom.Del:
 		st.Strike = true
+	case atom.A:
+		// A link to anything but a web or e-mail address keeps its text, not the link.
+		if u, ok := SafeLink(attr(n, "href")); ok {
+			st.Link = u
+		}
 	case atom.Font:
 		if c, ok := parseColor(attr(n, "color")); ok {
 			st.Color = &c
@@ -742,6 +752,45 @@ func writeRuns(b *strings.Builder, rs []NoteRun) {
 				closing = "</" + t.tag + ">" + closing
 			}
 		}
+		if st.Link != "" {
+			open, closing = `<a href="`+html.EscapeString(st.Link)+`">`+open, closing+"</a>"
+		}
 		b.WriteString(open + html.EscapeString(r.Text) + closing)
 	}
+}
+
+// MaxLinkLength is the longest link address kept in notes.
+const MaxLinkLength = 2000
+
+// SafeLink checks a link address for notes and returns it in canonical form: an absolute
+// http or https address with a host, or a mailto address; "www.example.com" means https.
+// Anything else (javascript:, data:, file:, relative paths, addresses with spaces or
+// control characters) is refused, so a link in the notes, the app or the PDF can only open
+// a web page or a new e-mail.
+func SafeLink(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" || len(s) > MaxLinkLength || strings.ContainsFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
+		return "", false
+	}
+	if strings.HasPrefix(strings.ToLower(s), "www.") {
+		s = "https://" + s
+	}
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		if u.Host == "" || u.User != nil || strings.HasPrefix(u.Host, ".") {
+			return "", false
+		}
+	case "mailto":
+		if u.Opaque == "" || strings.ContainsAny(u.Opaque, "/\\") {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	return u.String(), true
 }

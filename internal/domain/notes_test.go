@@ -143,3 +143,71 @@ func TestNotesStyleParsing(t *testing.T) {
 		}
 	}
 }
+
+func TestNotesLinks(t *testing.T) {
+	in := `<p>See <a href="https://example.com/terms?a=1&amp;b=2" target="_blank" onclick="x()"><b>our terms</b></a>, ` +
+		`<a href="www.cactus.example">the site</a>, <a href="MAILTO:ann@example.com">mail Ann</a> and ` +
+		`<a href="javascript:alert(1)">this</a> <a href="/relative">that</a> <a href="https://user:pw@evil.example">creds</a>.</p>`
+	out, err := CleanNotes("notes", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`<a href="https://example.com/terms?a=1&amp;b=2"><b>our terms</b></a>`,
+		`<a href="https://www.cactus.example">the site</a>`,
+		`<a href="mailto:ann@example.com">mail Ann</a>`,
+		` this that creds.`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("clean notes lack %q:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"javascript", "relative", "evil", "onclick", "target"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("clean notes keep %q:\n%s", bad, out)
+		}
+	}
+	// The canonical form reads back the same.
+	again, err := CleanNotes("notes", out)
+	if err != nil || again != out {
+		t.Fatalf("not stable:\n%s\n%s (%v)", out, again, err)
+	}
+	n, _ := ParseNotes(out)
+	if r := n.Blocks[0].Runs[1]; r.Text != "our terms" || !r.Style.Bold || r.Style.Link != "https://example.com/terms?a=1&b=2" {
+		t.Fatalf("run = %+v", r)
+	}
+	// A link inside a table cell is kept too.
+	cell, err := CleanNotes("notes", `<table><tr><td><a href="https://a.example">a</a></td></tr></table>`)
+	if err != nil || !strings.Contains(cell, `<td><a href="https://a.example">a</a></td>`) {
+		t.Fatalf("cell = %s (%v)", cell, err)
+	}
+}
+
+func TestSafeLink(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://example.com":          "https://example.com",
+		"HTTP://Example.com/a b":       "",
+		"http://example.com/a%20b":     "http://example.com/a%20b",
+		"www.example.com/x":            "https://www.example.com/x",
+		"mailto:a@example.com?subject": "mailto:a@example.com?subject",
+		"javascript:alert(1)":          "",
+		"data:text/html,x":             "",
+		"file:///etc/passwd":           "",
+		"//example.com":                "",
+		"/path":                        "",
+		"https://":                     "",
+		"https://u:p@example.com":      "",
+		"mailto:":                      "",
+		"https://exa\nmple.com":        "",
+		"ftp://example.com":            "",
+		"":                             "",
+	} {
+		got, ok := SafeLink(in)
+		if got != want || ok != (want != "") {
+			t.Errorf("SafeLink(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+	if _, ok := SafeLink("https://example.com/" + strings.Repeat("a", MaxLinkLength)); ok {
+		t.Error("an over-long link was accepted")
+	}
+}

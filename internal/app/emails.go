@@ -49,6 +49,9 @@ func (s *Service) emailTransition(ctx context.Context, op, id, event string, app
 			return err
 		}
 		out = m
+		if m.QuoteID != "" {
+			return s.quoteEvent(ctx, r, m.QuoteID, event, m.Subject)
+		}
 		if m.InvoiceID == "" {
 			return s.audit(ctx, r, "customer.statement_"+strings.TrimPrefix(event, "email_"), "customer", m.CustomerID, m.Subject)
 		}
@@ -116,8 +119,11 @@ func (s *Service) claimEmail(ctx context.Context) (*domain.EmailMessage, error) 
 }
 
 func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) error {
-	if m.Kind == domain.EmailKindStatement {
+	switch m.Kind {
+	case domain.EmailKindStatement:
 		return s.deliverStatement(ctx, m)
+	case domain.EmailKindQuote:
+		return s.deliverQuote(ctx, m)
 	}
 	r := s.tx.Repos()
 	doc, err := s.document(ctx, r, m.InvoiceID)
@@ -221,6 +227,9 @@ func (s *Service) recordEmailFailure(ctx context.Context, id string, cause error
 		}
 		if m.Status == domain.EmailFailed && m.InvoiceID != "" {
 			return s.event(ctx, r, m.InvoiceID, "email_failed", m.LastError)
+		}
+		if m.Status == domain.EmailFailed && m.QuoteID != "" {
+			return s.quoteEvent(ctx, r, m.QuoteID, "email_failed", m.LastError)
 		}
 		return nil
 	})

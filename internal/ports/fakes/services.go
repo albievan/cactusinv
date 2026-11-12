@@ -76,6 +76,14 @@ func (r Renderer) RenderStatement(_ context.Context, doc ports.StatementDocument
 	return []byte("%PDF-statement " + doc.Statement.Customer.Code), nil
 }
 
+// RenderQuote implements ports.InvoiceRenderer.
+func (r Renderer) RenderQuote(_ context.Context, doc ports.QuoteDocument) ([]byte, error) {
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	return []byte("%PDF-quote " + doc.Quote.Number), nil
+}
+
 // Hasher is a reversible fake password hasher ("hash:" + password).
 type Hasher struct{}
 

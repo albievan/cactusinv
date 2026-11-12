@@ -28,6 +28,7 @@ tags:
   - name: customers
   - name: products
   - name: invoices
+  - name: quotes
   - name: schedules
   - name: emails
   - name: dashboard
@@ -130,6 +131,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/BusinessSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /settings/quotes:
+    get:
+      tags: [settings]
+      operationId: getQuoteSettings
+      responses:
+        '200':
+          description: Settings → Quotes (the defaults until first saved).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteSettings' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [settings]
+      operationId: updateQuoteSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteSettings' }
         default: { $ref: '#/components/responses/Problem' }
 
   /settings/email:
@@ -819,6 +847,253 @@ paths:
           content:
             application/pdf:
               schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /quotes:
+    get:
+      tags: [quotes]
+      operationId: listQuotes
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/QuoteStatus' } }
+        - { name: expired, in: query, description: Only draft and sent quotes past their validity., schema: { type: boolean } }
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: adhocCustomerId, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Query' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of quotes (without lines), newest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [quotes]
+      operationId: createQuote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteInput' }
+      responses:
+        '201':
+          description: Draft quote created and numbered, in the customer's (or ad-hoc customer's) currency.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [quotes]
+      operationId: getQuote
+      responses:
+        '200':
+          description: Quote with audit trail and e-mails.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteDetail' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [quotes]
+      operationId: updateQuote
+      description: Draft and sent quotes only (a sent quote becomes a draft again). `version` is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuoteInput' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [quotes]
+      operationId: deleteQuote
+      description: Drafts that were never sent; others are declined instead.
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/accept:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: acceptQuote
+      responses:
+        '200':
+          description: Marked accepted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/decline:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: declineQuote
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeclineRequest' }
+      responses:
+        '200':
+          description: Marked declined.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/convert:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: convertQuote
+      description: >-
+        Makes a draft invoice from the quote: its lines at the quoted prices, VAT, notes, sales
+        person and reference. The quote must be for a customer (convert an ad-hoc customer
+        first) and not declined or converted. Needs invoices.create as well.
+      responses:
+        '201':
+          description: The draft invoice.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/send:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: sendQuote
+      description: |
+        Queue the quote e-mail now or at `sendAt`, through the same outbox as invoices. Empty
+        fields use the customer's (or ad-hoc customer's) address and the Quote settings'
+        e-mail template. A draft becomes sent.
+      parameters:
+        - { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 200 } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendRequest' }
+      responses:
+        '202':
+          description: Queued in the outbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmailMessage' }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [quotes]
+      operationId: getQuotePdf
+      responses:
+        '200':
+          description: The quote as a PDF that a reader lets you print but not change, fill, annotate or copy from.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+
+  /adhoc-customers:
+    get:
+      tags: [quotes]
+      operationId: listAdhocCustomers
+      parameters:
+        - { $ref: '#/components/parameters/Query' }
+        - { name: includeConverted, in: query, description: Also those already made customers., schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200':
+          description: A page of ad-hoc customers, by name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdhocCustomerList' }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [quotes]
+      operationId: createAdhocCustomer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdhocCustomer' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdhocCustomer' }
+        default: { $ref: '#/components/responses/Problem' }
+  /adhoc-customers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [quotes]
+      operationId: getAdhocCustomer
+      responses:
+        '200':
+          description: Ad-hoc customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdhocCustomer' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [quotes]
+      operationId: updateAdhocCustomer
+      description: Not once made a customer. The currency is fixed once they have a quote.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdhocCustomer' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdhocCustomer' }
+        default: { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [quotes]
+      operationId: deleteAdhocCustomer
+      description: Only an ad-hoc customer no quote was made out to.
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
+  /adhoc-customers/{id}/convert:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: convertAdhocCustomer
+      description: >-
+        Makes a customer of the ad-hoc customer (their details plus an invoice code, e-mail
+        address, payment terms and currency); their quotes then belong to the customer and can
+        be converted into invoices. Needs customers.create.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConvertAdhocRequest' }
+      responses:
+        '201':
+          description: The new customer.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
         default: { $ref: '#/components/responses/Problem' }
 
   /schedules:
@@ -2166,6 +2441,142 @@ components:
       properties:
         notes: { type: string, maxLength: 800000, description: 'Plain text (at most 4000 characters), or formatted notes: HTML from the notes editor, cleaned to an allowlist when saved (paragraphs, lists, tables, bold, italic, underline, strike, colour, size, font, alignment, PNG/JPEG pictures as data: URIs of at most 500 kB; at most 800 kB in all).' }
         version: { type: integer, description: The invoice version you edited (optimistic locking). }
+    QuoteStatus:
+      type: string
+      enum: [draft, sent, accepted, declined, converted]
+    QuoteStage:
+      type: string
+      enum: [draft, sent, accepted, declined, converted, expired]
+      description: The status, or expired for a draft or sent quote past its validity.
+    QuoteSettings:
+      type: object
+      required: [validDays, numberFormat, emailSubject, emailBody, terms, nextSequence, version]
+      properties:
+        validDays: { type: integer, minimum: 1, maximum: 366, description: A new quote is valid for this many days. }
+        numberFormat:
+          type: string
+          maxLength: 64
+          example: 'Q-{seq}/{yy}'
+          description: Quote number template. Must contain {seq}; may contain {dd}, {mm}, {yy}, {yyyy} and literal text (no {code}).
+        emailSubject: { type: string, maxLength: 300, description: 'Placeholders: {{quote_number}}, {{customer_name}}, {{attention}}, {{total}}, {{valid_until}}, {{date}}, {{business_name}}.' }
+        emailBody: { type: string, maxLength: 10000 }
+        terms: { type: string, maxLength: 4000, description: Printed on every new quote (each quote keeps its own copy). }
+        nextSequence: { type: integer, format: int64, description: Next quote sequence value; may only increase. }
+        version: { type: integer }
+    QuoteInput:
+      type: object
+      required: [lines]
+      properties:
+        customerId: { type: string, description: A customer, or adhocCustomerId; required on create, cannot change. }
+        adhocCustomerId: { type: string }
+        issueDate: { type: string, format: date, x-go-type-skip-optional-pointer: false }
+        validUntil: { type: string, format: date, description: Omit for the date plus the Quote settings' valid days., x-go-type-skip-optional-pointer: false }
+        salesPerson: { type: string, maxLength: 120 }
+        reference: { type: string, maxLength: 120 }
+        billTo:
+          allOf: [{ $ref: '#/components/schemas/Party' }]
+          x-go-type-skip-optional-pointer: false
+        notes:
+          type: string
+          maxLength: 800000
+          description: Plain text or formatted notes, as on invoices.
+          x-go-type-skip-optional-pointer: false
+        terms:
+          type: string
+          maxLength: 4000
+          description: Omit to use the Quote settings' terms.
+          x-go-type-skip-optional-pointer: false
+        vatPercent:
+          type: string
+          pattern: '^-?[0-9]{0,15}(\.[0-9]{1,3})?$'
+          description: Omit to use the business default VAT.
+          x-go-type-skip-optional-pointer: false
+        lines: { type: array, items: { $ref: '#/components/schemas/LineInput' }, maxItems: 200 }
+        version: { type: integer, description: Required on update. }
+    Quote:
+      type: object
+      required: [id, number, status, stage, currency, issueDate, validUntil, salesPerson, reference, billTo, notes, terms, vatPercent, lines, totals, fingerprint, createdAt, updatedAt, version]
+      properties:
+        id: { type: string }
+        number: { type: string }
+        status: { $ref: '#/components/schemas/QuoteStatus' }
+        stage: { $ref: '#/components/schemas/QuoteStage' }
+        customerId: { type: string }
+        adhocCustomerId: { type: string }
+        currency: { type: string }
+        issueDate: { type: string, format: date }
+        validUntil: { type: string, format: date }
+        salesPerson: { type: string }
+        reference: { type: string }
+        billTo: { $ref: '#/components/schemas/Party' }
+        notes: { type: string }
+        terms: { type: string }
+        vatPercent: { $ref: '#/components/schemas/Decimal' }
+        lines: { type: array, items: { $ref: '#/components/schemas/Line' } }
+        totals: { $ref: '#/components/schemas/Totals' }
+        fingerprint: { type: string, description: The verification code printed on the PDF; changes with any printed content. }
+        invoiceId: { type: string }
+        sentAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        acceptedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        declinedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        declineReason: { type: string }
+        convertedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer }
+    QuoteDetail:
+      type: object
+      required: [quote, events, emails]
+      properties:
+        quote: { $ref: '#/components/schemas/Quote' }
+        events: { type: array, items: { $ref: '#/components/schemas/InvoiceEvent' } }
+        emails: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }
+        adhocCustomer:
+          allOf: [{ $ref: '#/components/schemas/AdhocCustomer' }]
+          x-go-type-skip-optional-pointer: false
+        invoiceNumber: { type: string, description: The number of the invoice made from the quote, once issued. }
+    QuoteList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Quote' } }
+        total: { type: integer }
+    DeclineRequest:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500 }
+    AdhocCustomer:
+      type: object
+      required: [name, email, attention, address, phone, taxNumber, currency, version]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, maxLength: 200 }
+        email: { type: string, maxLength: 254, description: Optional until they are made a customer. }
+        attention: { type: string, maxLength: 200 }
+        address: { type: string, maxLength: 1000 }
+        phone: { type: string, maxLength: 100 }
+        taxNumber: { type: string, maxLength: 64 }
+        currency: { type: string }
+        customerId: { type: string, readOnly: true, description: The customer made from them, once converted. }
+        convertedAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }
+        createdAt: { type: string, format: date-time, readOnly: true, x-go-type-skip-optional-pointer: false }
+        version: { type: integer }
+    AdhocCustomerList:
+      type: object
+      required: [items, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdhocCustomer' } }
+        total: { type: integer }
+    ConvertAdhocRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, maxLength: 10, description: The new customer's invoice number code. }
+        email: { type: string, maxLength: 254, description: Omit to keep the ad-hoc customer's. }
+        currency: { type: string, description: Omit to keep the ad-hoc customer's. }
+        paymentTerms:
+          allOf: [{ $ref: '#/components/schemas/PaymentTerms' }]
+          x-go-type-skip-optional-pointer: false
     VoidRequest:
       type: object
       required: [reason]
@@ -2188,9 +2599,10 @@ components:
       required: [id, kind, to, cc, subject, body, status, attempts, sendAt, nextAttemptAt, lastError, createdAt]
       properties:
         id: { type: string }
-        kind: { type: string, enum: [invoice, statement] }
+        kind: { type: string, enum: [invoice, statement, quote] }
         invoiceId: { type: string }
         customerId: { type: string }
+        quoteId: { type: string }
         to: { type: array, items: { type: string } }
         cc: { type: array, items: { type: string } }
         subject: { type: string }

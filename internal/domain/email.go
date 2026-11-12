@@ -45,14 +45,16 @@ type EmailKind string
 const (
 	EmailKindInvoice   EmailKind = "invoice"   // one invoice PDF
 	EmailKindStatement EmailKind = "statement" // a customer's statement of account PDF
+	EmailKindQuote     EmailKind = "quote"     // one quote PDF
 )
 
-// EmailMessage is an invoice or statement e-mail in the transactional outbox.
+// EmailMessage is an invoice, statement or quote e-mail in the transactional outbox.
 type EmailMessage struct {
 	ID             string
 	Kind           EmailKind
 	InvoiceID      string // invoice e-mails
 	CustomerID     string // statement e-mails
+	QuoteID        string // quote e-mails
 	To             []string
 	CC             []string
 	Subject        string
@@ -195,6 +197,8 @@ func (m *EmailMessage) Retry(now time.Time) error {
 // TemplateData is what e-mail subject/body placeholders can refer to.
 type TemplateData struct {
 	InvoiceNumber string
+	QuoteNumber   string
+	ValidUntil    string
 	CustomerName  string
 	Attention     string
 	Total         string
@@ -203,13 +207,15 @@ type TemplateData struct {
 	BusinessName  string
 }
 
-// RenderTemplate substitutes {{invoice_number}}, {{customer_name}}, {{attention}},
-// {{total}}, {{due_date}}, {{issue_date}}, {{date}} (the same as {{issue_date}}: the
-// invoice's issue date or the statement's as-at date) and {{business_name}}. Unknown
-// placeholders are left as written.
+// RenderTemplate substitutes {{invoice_number}}, {{quote_number}}, {{customer_name}},
+// {{attention}}, {{total}}, {{due_date}}, {{valid_until}} (a quote's), {{issue_date}},
+// {{date}} (the same as {{issue_date}}: the invoice's or quote's date or the statement's
+// as-at date) and {{business_name}}. Unknown placeholders are left as written.
 func RenderTemplate(tmpl string, d TemplateData) string {
 	return strings.NewReplacer(
 		"{{invoice_number}}", d.InvoiceNumber,
+		"{{quote_number}}", d.QuoteNumber,
+		"{{valid_until}}", d.ValidUntil,
 		"{{customer_name}}", d.CustomerName,
 		"{{attention}}", d.Attention,
 		"{{total}}", d.Total,

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 /**
  * RichNotesEditor is the invoice notes' basic word processor (M33): font, size, bold,
- * italic, underline, strike, colour, alignment, lists, tables and pictures. Its value is
+ * italic, underline, strike, colour, alignment, lists, tables, pictures and web links
+ * (clickable in the PDF). Its value is
  * HTML; the server keeps only what its allowlist knows (domain.CleanNotes), and that is
  * what the PDF prints. Plain notes saved before open as text. Nothing here decides what is
  * allowed; pasted content is cleaned only so a paste cannot run anything in the page.
@@ -44,7 +45,28 @@ export function fromEditorHTML(el: HTMLElement): string {
   return html.startsWith('<') ? html : `<div>${html}</div>`
 }
 
-const allowedTags = new Set(['P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI',
+/**
+ * safeHref is a link address the notes may hold, in the form the server keeps
+ * (domain.SafeLink): an http or https address with a host, or mailto:. "www.…" means
+ * https and a bare e-mail address means mailto:. Anything else is null.
+ */
+export function safeHref(raw: string): string | null {
+  let s = raw.trim()
+  if (!s || s.length > 2000 || [...s].some((c) => c.charCodeAt(0) <= 32 || c.charCodeAt(0) === 127)) return null
+  if (/^www\./i.test(s)) s = `https://${s}`
+  else if (/^[^\s@/:]+@[^\s@/]+\.[^\s@/]+$/.test(s)) s = `mailto:${s}`
+  let u: URL
+  try {
+    u = new URL(s)
+  } catch {
+    return null
+  }
+  if (u.protocol === 'http:' || u.protocol === 'https:') return u.hostname && !u.username && !u.password ? s.replace(/^[a-z]+:/i, (m) => m.toLowerCase()) : null
+  if (u.protocol === 'mailto:') return u.pathname && !/[\\/]/.test(u.pathname) ? s.replace(/^mailto:/i, 'mailto:') : null
+  return null
+}
+
+const allowedTags = new Set(['A', 'P', 'DIV', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL', 'SPAN', 'FONT', 'UL', 'OL', 'LI',
   'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'IMG', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE'])
 const droppedTags = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'SVG', 'MATH', 'TEMPLATE', 'NOSCRIPT', 'META', 'LINK', 'TITLE', 'FORM', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'VIDEO', 'AUDIO'])
 const allowedCSS = ['color', 'font-size', 'font-family', 'font-weight', 'font-style', 'text-decoration', 'text-decoration-line', 'text-align']
@@ -66,7 +88,13 @@ export function cleanPasted(html: string): string {
       for (const a of [...c.attributes]) {
         const keep = (a.name === 'style') || (c.tagName === 'IMG' && (a.name === 'width' || (a.name === 'src' && /^data:image\/(png|jpe?g);base64,/i.test(a.value))))
           || (c.tagName === 'FONT' && ['face', 'size', 'color'].includes(a.name))
+          || (c.tagName === 'A' && a.name === 'href' && safeHref(a.value) !== null)
         if (!keep) c.removeAttribute(a.name)
+      }
+      // A link to anything but a web page or an e-mail address keeps its text only.
+      if (c.tagName === 'A' && !c.getAttribute('href')) {
+        c.replaceWith(...c.childNodes)
+        continue
       }
       if (c.tagName === 'IMG' && !c.getAttribute('src')) {
         c.remove()
@@ -97,6 +125,25 @@ function insertHTML(editor: HTMLElement, html: string) {
   }
   range.deleteContents()
   range.insertNode(range.createContextualFragment(html))
+}
+
+/**
+ * linkSelection makes the selected text a link to href, or inserts href as a link when
+ * nothing is selected (also where execCommand is missing, as in tests).
+ */
+function linkSelection(editor: HTMLElement, href: string) {
+  const sel = window.getSelection()
+  const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null
+  const inside = range && editor.contains(range.commonAncestorContainer)
+  if (!range || !inside || range.collapsed) {
+    insertHTML(editor, `<a href="${escapeHTML(href)}">${escapeHTML(href.replace(/^mailto:/, ''))}</a>&nbsp;`)
+    return
+  }
+  if (typeof document.execCommand === 'function' && document.execCommand('createLink', false, href)) return
+  const a = document.createElement('a')
+  a.setAttribute('href', href)
+  a.appendChild(range.extractContents())
+  range.insertNode(a)
 }
 
 /** format applies an editing command (document.execCommand) to the selection. */
@@ -149,6 +196,8 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
   const emitted = useRef<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [tableOpen, setTableOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [linkTo, setLinkTo] = useState('')
   const [rows, setRows] = useState('3')
   const [cols, setCols] = useState('3')
   const [error, setError] = useState('')
@@ -211,6 +260,20 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
     setTableOpen(false)
     emit()
   }
+  const addLink = () => {
+    if (!ref.current) return
+    const href = safeHref(linkTo)
+    if (!href) {
+      setError('Enter a web address (https://…, www.…) or an e-mail address.')
+      return
+    }
+    setError('')
+    backToCaret()
+    linkSelection(ref.current, href)
+    setLinkOpen(false)
+    setLinkTo('')
+    emit()
+  }
   const addPicture = async (file: File | undefined) => {
     if (!file || !ref.current) return
     setError('')
@@ -256,7 +319,9 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
           {btn('Align right', 'text-right', () => run('justifyRight'))}
           {btn('Bulleted list', 'list-ul', () => run('insertUnorderedList'))}
           {btn('Numbered list', 'list-ol', () => run('insertOrderedList'))}
-          {btn('Insert table', 'table', () => { keepCaret(); setTableOpen((o) => !o) })}
+          {btn('Insert link', 'link-45deg', () => { keepCaret(); setTableOpen(false); setLinkOpen((o) => !o) })}
+          {btn('Remove link', 'link', () => run('unlink'))}
+          {btn('Insert table', 'table', () => { keepCaret(); setLinkOpen(false); setTableOpen((o) => !o) })}
           {btn('Insert picture', 'image', () => { keepCaret(); fileRef.current?.click() })}
           {btn('Clear formatting', 'eraser', () => run('removeFormat'))}
           <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="d-none" aria-label="Picture file"
@@ -268,6 +333,15 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
           <label>Rows <input type="number" className="form-control form-control-sm" min={1} max={50} value={rows} onChange={(e) => setRows(e.target.value)} /></label>
           <label>Columns <input type="number" className="form-control form-control-sm" min={1} max={10} value={cols} onChange={(e) => setCols(e.target.value)} /></label>
           <button type="button" className="btn btn-sm btn-primary" onMouseDown={(e) => e.preventDefault()} onClick={insertTable}>Add table</button>
+        </div>
+      )}
+      {linkOpen && (
+        <div className="d-flex align-items-end gap-2 mb-2 small" role="group" aria-label="New link">
+          <label className="flex-grow-1">Link address
+            <input type="url" inputMode="url" className="form-control form-control-sm" placeholder="https://… or name@example.com" value={linkTo}
+              onChange={(e) => setLinkTo(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }} />
+          </label>
+          <button type="button" className="btn btn-sm btn-primary" onMouseDown={(e) => e.preventDefault()} onClick={addLink}>Add link</button>
         </div>
       )}
       {error && <div role="alert" className="small text-danger mb-1">{error}</div>}
@@ -284,6 +358,16 @@ export function RichNotesEditor({ id, value, onChange, readOnly = false, minHeig
         aria-readonly={readOnly || undefined}
         onInput={emit}
         onBlur={emit}
+        onClick={(e) => {
+          // Shown read-only (the Notes sheet), a link opens in a new tab; while editing a
+          // click places the caret in it.
+          const a = (e.target as HTMLElement).closest('a')
+          const href = a && safeHref(a.getAttribute('href') ?? '')
+          if (readOnly && href) {
+            e.preventDefault()
+            window.open(href, '_blank', 'noopener,noreferrer')
+          }
+        }}
         onPaste={(e) => {
           const html = e.clipboardData.getData('text/html')
           const file = [...e.clipboardData.files].find((f) => /^image\/(png|jpeg)$/.test(f.type))

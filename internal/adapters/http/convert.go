@@ -275,7 +275,7 @@ func toAPIEmail(m domain.EmailMessage) EmailMessage {
 		cc = []string{}
 	}
 	return EmailMessage{
-		Id: m.ID, Kind: EmailMessageKind(emailKindOf(m.Kind)), InvoiceId: m.InvoiceID, CustomerId: m.CustomerID, To: to, Cc: cc, Subject: m.Subject, Body: m.Body,
+		Id: m.ID, Kind: EmailMessageKind(emailKindOf(m.Kind)), InvoiceId: m.InvoiceID, CustomerId: m.CustomerID, QuoteId: m.QuoteID, To: to, Cc: cc, Subject: m.Subject, Body: m.Body,
 		Status: EmailStatus(m.Status), Attempts: m.Attempts, SendAt: m.SendAt.UTC(), NextAttemptAt: m.NextAttemptAt.UTC(),
 		LastError: m.LastError, SentAt: timePtr(m.SentAt), CreatedAt: m.CreatedAt.UTC(),
 	}

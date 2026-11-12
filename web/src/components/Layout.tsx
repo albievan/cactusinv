@@ -6,13 +6,14 @@ import { useVersion } from '../lib/version'
 import { useAuth, useCan } from './auth'
 import { CactusMark } from './Logo'
 import {
-  IconBox, IconCalendar, IconShield, IconStatement, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
+  IconBox, IconCalendar, IconShield, IconStatement, IconFold, IconHome, IconInvoice, IconLogout, IconMail, IconMenu, IconQuote, IconSearch, IconSettings, IconUnfold, IconUser, IconUsers,
 } from './icons'
 
 /** The main menu; `need` is the permission that shows an entry (ADR-012). */
 export const nav = [
   { to: '/', label: 'Dashboard', icon: IconHome, end: true, need: 'dashboard.view' },
   { to: '/invoices', label: 'Invoices', icon: IconInvoice, need: 'invoices.view' },
+  { to: '/quotes', label: 'Quotes', icon: IconQuote, need: 'quotes.view' },
   { to: '/customers', label: 'Customers', icon: IconUsers, need: 'customers.view' },
   { to: '/statements', label: 'Statements', icon: IconStatement, need: 'statements.view' },
   { to: '/schedules', label: 'Schedules', icon: IconCalendar, need: 'schedules.view' },

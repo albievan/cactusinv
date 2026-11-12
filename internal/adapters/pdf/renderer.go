@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,7 @@ var (
 	warn       = rgb{180, 83, 9}
 	danger     = rgb{185, 28, 28}
 	good       = rgb{21, 128, 61}
+	linkBlue   = rgb{29, 78, 216}
 )
 
 // Page geometry (A4, millimetres).
@@ -521,9 +523,32 @@ func (p *page) notes(top float64, notes, disclaimer string) float64 {
 		p.font(l.style, 7.8)
 		p.color(muted)
 		p.put(margin, y, l.text)
+		p.linkAddresses(margin, y, l.text)
 		y += 3.6
 	}
 	return y
+}
+
+// webAddress finds web addresses typed in plain notes, a disclaimer or quote terms.
+var webAddress = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s<>"]+`)
+
+// linkAddresses makes the web addresses in a line of plain text drawn at (x, y) in the
+// current font clickable, and underlines them.
+func (p *page) linkAddresses(x, y float64, line string) {
+	for _, m := range webAddress.FindAllStringIndex(line, -1) {
+		addr := strings.TrimRight(line[m[0]:m[1]], ".,;:!?)]}'")
+		target, ok := domain.SafeLink(addr)
+		if !ok {
+			continue
+		}
+		left := x + p.pdf.GetStringWidth(p.tr(line[:m[0]]))
+		w := p.pdf.GetStringWidth(p.tr(addr))
+		_, h := p.pdf.GetFontSize()
+		p.pdf.LinkString(left, y-h, w, h*1.25, target)
+		p.draw(muted)
+		p.pdf.SetLineWidth(0.15)
+		p.pdf.Line(left, y+0.6, left+w, y+0.6)
+	}
 }
 
 func (p *page) newPage() {
@@ -615,27 +640,59 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 	}
 	cols := invoiceColumns(hasDisc)
 
-	lines := inv.Lines
+	y := p.lineTable(inv.Lines, cols, hasDisc, "Invoice "+number+" (continued)", func() float64 {
+		y := p.header(facts, status, statusColor)
+		y = p.parties(y, partyBlock{"Bill to", inv.BillTo}, partyBlock{"Ship to", inv.ShipTo})
+		return p.infoStrip(y, [][2]string{
+			{"Payment terms", terms},
+			{"Sales person", inv.Header.SalesPerson},
+			{"Job", inv.Header.Job},
+			{"Shipping method", inv.Header.ShippingMethod},
+			{"Shipping terms", inv.Header.ShippingTerms},
+			{"Delivery date", delivery},
+		})
+	})
+	t := inv.Totals
+	rows := [][2]string{{"Subtotal", p.money(t.Subtotal)}}
+	if t.Discount != 0 {
+		rows = append(rows, [2]string{"Discount", "-" + p.money(t.Discount)})
+	}
+	// VAT appears only when charged: a 0 % invoice shows nothing about VAT.
+	if inv.TaxRate > 0 {
+		rows = append(rows, [2]string{"VAT " + inv.TaxRate.String() + "%", p.money(t.Tax)})
+	}
+	if y+float64(len(rows))*5.5+66 > bodyBottom {
+		p.newPage()
+		y = 20
+	}
+	totalsBottom := p.totals(y+2, rows, "Total "+string(inv.Currency), p.money(t.Total))
+	payBottom := p.payment(y+4, margin, contentW-90, inv.Bank, inv.Number)
+	p.notes(max(totalsBottom, payBottom)+5, inv.Notes, doc.Disclaimer)
+	if inv.Status == domain.InvoiceVoid && inv.VoidReason != "" {
+		p.font("I", 8)
+		p.color(danger)
+		if reason := p.wrap("Voided: "+inv.VoidReason, contentW); len(reason) > 0 {
+			p.put(margin, bodyBottom+3, reason[0]) // one line above the footer rule
+		}
+	}
+	return p.output()
+}
+
+// lineTable draws the lines of an invoice or quote, page after page: first draws the
+// first page's heading and returns where the table starts; continued pages are headed
+// by cont. It returns where the table ends on the last page.
+func (p *page) lineTable(lines []domain.Line, cols []column, hasDisc bool, cont string, first func() float64) float64 {
 	var carry [][]string // the rest of a line too tall for the space left on the last page
-	for first := true; first || len(lines) > 0; first = false {
-		var y float64
-		if first {
+	var y float64
+	for isFirst := true; isFirst || len(lines) > 0; isFirst = false {
+		if isFirst {
 			p.pdf.AddPage()
-			y = p.header(facts, status, statusColor)
-			y = p.parties(y, partyBlock{"Bill to", inv.BillTo}, partyBlock{"Ship to", inv.ShipTo})
-			y = p.infoStrip(y, [][2]string{
-				{"Payment terms", terms},
-				{"Sales person", inv.Header.SalesPerson},
-				{"Job", inv.Header.Job},
-				{"Shipping method", inv.Header.ShippingMethod},
-				{"Shipping terms", inv.Header.ShippingTerms},
-				{"Delivery date", delivery},
-			})
+			y = first()
 		} else {
 			p.newPage()
 			p.font("B", 9)
 			p.color(muted)
-			p.text(margin, 14, "Invoice "+number+" (continued)")
+			p.text(margin, 14, cont)
 			y = 20
 		}
 		y = p.tableHeader(y, cols)
@@ -661,37 +718,13 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 			y += p.row(y, cols, cells)
 		}
 		lines = lines[i:]
-		if len(lines) > 0 {
+		if len(lines) > 0 || carry != nil {
 			p.font("I", 8)
 			p.color(muted)
 			p.textRight(pageW-margin, bodyBottom, "Continued on next page")
-			continue
-		}
-		t := inv.Totals
-		rows := [][2]string{{"Subtotal", p.money(t.Subtotal)}}
-		if t.Discount != 0 {
-			rows = append(rows, [2]string{"Discount", "-" + p.money(t.Discount)})
-		}
-		// VAT appears only when charged: a 0 % invoice shows nothing about VAT.
-		if inv.TaxRate > 0 {
-			rows = append(rows, [2]string{"VAT " + inv.TaxRate.String() + "%", p.money(t.Tax)})
-		}
-		if y+float64(len(rows))*5.5+66 > bodyBottom {
-			p.newPage()
-			y = 20
-		}
-		totalsBottom := p.totals(y+2, rows, "Total "+string(inv.Currency), p.money(t.Total))
-		payBottom := p.payment(y+4, margin, contentW-90, inv.Bank, inv.Number)
-		p.notes(max(totalsBottom, payBottom)+5, inv.Notes, doc.Disclaimer)
-		if inv.Status == domain.InvoiceVoid && inv.VoidReason != "" {
-			p.font("I", 8)
-			p.color(danger)
-			if reason := p.wrap("Voided: "+inv.VoidReason, contentW); len(reason) > 0 {
-				p.put(margin, bodyBottom+3, reason[0]) // one line above the footer rule
-			}
 		}
 	}
-	return p.output()
+	return y
 }
 
 func invoiceColumns(hasDisc bool) []column {

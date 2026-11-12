@@ -363,26 +363,33 @@ func invoiceInput(b InvoiceInput, currency domain.CurrencyCode, mu minorUnits) (
 		t := fromAPITerms(*b.PaymentTerms)
 		in.Terms = &t
 	}
-	for _, l := range b.Lines {
+	in.Lines, err = lineInputs(b.Lines, currency, mu)
+	return in, err
+}
+
+// lineInputs parses submitted invoice or quote lines; prices are in currency.
+func lineInputs(lines []LineInput, currency domain.CurrencyCode, mu minorUnits) ([]app.LineInput, error) {
+	var out []app.LineInput
+	for _, l := range lines {
 		q, err := quantity("lines.quantity", l.Quantity)
 		if err != nil {
-			return app.InvoiceInput{}, err
+			return nil, err
 		}
 		disc, err := percent("lines.discountPercent", l.DiscountPercent)
 		if err != nil {
-			return app.InvoiceInput{}, err
+			return nil, err
 		}
 		li := app.LineInput{ProductID: l.ProductId, Quantity: q, Discount: disc}
 		if l.UnitPrice != nil {
 			v, err := mu.parse("lines.unitPrice", *l.UnitPrice, currency)
 			if err != nil {
-				return app.InvoiceInput{}, err
+				return nil, err
 			}
 			li.UnitPrice = &v
 		}
-		in.Lines = append(in.Lines, li)
+		out = append(out, li)
 	}
-	return in, nil
+	return out, nil
 }
 
 func (h *handlers) CreateInvoice(ctx context.Context, req CreateInvoiceRequestObject) (CreateInvoiceResponseObject, error) {

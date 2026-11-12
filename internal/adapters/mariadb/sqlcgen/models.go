@@ -28,6 +28,22 @@ type AccessGroupPermission struct {
 	Permission string
 }
 
+type AdhocCustomer struct {
+	ID           string
+	Name         string
+	Email        string
+	Attention    string
+	Address      string
+	Phone        string
+	TaxNumber    string
+	CurrencyCode string
+	CustomerID   sql.NullString
+	ConvertedAt  sql.NullTime
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Version      int32
+}
+
 type AuditHead struct {
 	ID       int8
 	LastHash string
@@ -138,6 +154,7 @@ type EmailOutbox struct {
 	Kind           string
 	CustomerID     sql.NullString
 	InvoiceID      sql.NullString
+	QuoteID        sql.NullString
 }
 
 type IdempotencyKey struct {
@@ -227,6 +244,60 @@ type ProductPrice struct {
 	ProductID      string
 	CurrencyCode   string
 	UnitPriceMinor int64
+}
+
+type Quote struct {
+	ID              string
+	Number          string
+	Status          string
+	CustomerID      sql.NullString
+	AdhocCustomerID sql.NullString
+	CurrencyCode    string
+	IssueDate       time.Time
+	ValidUntil      time.Time
+	SalesPerson     string
+	Reference       string
+	BillToName      string
+	BillToAddress   string
+	BillToAttention string
+	Notes           string
+	Terms           string
+	TaxRateBp       int32
+	SubtotalMinor   int64
+	DiscountMinor   int64
+	TaxMinor        int64
+	TotalMinor      int64
+	InvoiceID       sql.NullString
+	SentAt          sql.NullTime
+	AcceptedAt      sql.NullTime
+	DeclinedAt      sql.NullTime
+	DeclineReason   string
+	ConvertedAt     sql.NullTime
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	Version         int32
+}
+
+type QuoteLine struct {
+	QuoteID        string
+	Position       int32
+	ProductID      sql.NullString
+	Description    string
+	QuantityMilli  int64
+	UnitPriceMinor int64
+	DiscountBp     int32
+	AmountMinor    int64
+}
+
+type QuoteSetting struct {
+	ID           int8
+	ValidDays    int32
+	NumberFormat string
+	EmailSubject string
+	EmailBody    string
+	Terms        string
+	Version      int32
+	UpdatedAt    time.Time
 }
 
 type Schedule struct {

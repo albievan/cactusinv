@@ -19,6 +19,7 @@ export function More() {
   const settingsNav = useSettingsNav().filter((s) => s.path !== 'account')
   const version = useVersion()
   const links = [
+    { to: '/quotes', label: 'Quotes', hint: 'Quotes from the products, e-mailed and turned into invoices; ad-hoc customers', need: 'quotes.view' },
     { to: '/statements', label: 'Statements', hint: "Every customer's balance and aging; e-mail statements in bulk", need: 'statements.view' },
     { to: '/products', label: 'Products', hint: 'Look-up list with a unit cost per currency', need: 'products.view' },
     { to: '/emails', label: 'Outbox', hint: 'Scheduled, sent and failed e-mails', need: 'emails.view' },

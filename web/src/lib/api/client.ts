@@ -15,6 +15,10 @@ export type EmailMessage = Schemas['EmailMessage']
 export type BusinessSettings = Schemas['BusinessSettings']
 export type Dashboard = Schemas['Dashboard']
 export type Problem = Schemas['Problem']
+export type Quote = Schemas['Quote']
+export type QuoteDetail = Schemas['QuoteDetail']
+export type AdhocCustomer = Schemas['AdhocCustomer']
+export type QuoteSettings = Schemas['QuoteSettings']
 
 /** Raised for every non-2xx response, carrying the RFC 9457 problem. */
 export class ApiError extends Error {

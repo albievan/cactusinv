@@ -1,5 +1,5 @@
 import { useCan } from '../../components/auth'
-import { IconArchive, IconBank, IconBuilding, IconServer, IconSettings, IconShield, IconTransfer, IconUser } from '../../components/icons'
+import { IconArchive, IconBank, IconBuilding, IconQuote, IconServer, IconSettings, IconShield, IconTransfer, IconUser } from '../../components/icons'
 import type { Icon } from '../../components/icons'
 
 /** A Settings sub-page: its route, its label in the sidebar and on More, and what it holds. */
@@ -20,6 +20,7 @@ export type SettingsItem = {
  */
 export const settingsNav: SettingsItem[] = [
   { path: 'business', label: 'Business', hint: 'Name, address, VAT, invoice numbers, disclaimer and e-mail text', icon: IconBuilding, need: 'settings.business.view' },
+  { path: 'quotes', label: 'Quotes', hint: 'How long quotes are valid, quote numbers, the quote e-mail and terms', icon: IconQuote, need: 'settings.quotes.view' },
   { path: 'email', label: 'E-mail server', hint: 'The SMTP server invoices and statements are sent through', icon: IconServer, need: 'settings.email.view' },
   { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.currencies.view' },
   { path: 'import-export', label: 'Import/Export Settings', hint: 'Customers, products, schedules and the settings as one file', icon: IconTransfer, need: ['settings.export', 'settings.import'] },

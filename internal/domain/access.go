@@ -25,6 +25,14 @@ const (
 	PermInvoicesOverdue Permission = "invoices.overdue"
 	PermInvoicesVoid    Permission = "invoices.void"
 
+	PermQuotesView    Permission = "quotes.view"
+	PermQuotesCreate  Permission = "quotes.create"
+	PermQuotesEdit    Permission = "quotes.edit"
+	PermQuotesDelete  Permission = "quotes.delete"
+	PermQuotesSend    Permission = "quotes.send"
+	PermQuotesOutcome Permission = "quotes.outcome"
+	PermQuotesConvert Permission = "quotes.convert"
+
 	PermCustomersView   Permission = "customers.view"
 	PermCustomersCreate Permission = "customers.create"
 	PermCustomersEdit   Permission = "customers.edit"
@@ -67,6 +75,8 @@ const (
 	PermSettingsBanksDelete      Permission = "settings.banks.delete"
 	PermSettingsExport           Permission = "settings.export"
 	PermSettingsImport           Permission = "settings.import"
+	PermSettingsQuotesView       Permission = "settings.quotes.view"
+	PermSettingsQuotes           Permission = "settings.quotes"
 	PermSettingsSystemView       Permission = "settings.system.view"
 	PermSettingsSystemEdit       Permission = "settings.system.edit"
 
@@ -103,6 +113,14 @@ var Permissions = []PermissionInfo{
 	{PermInvoicesPay, "Invoices", "Mark invoices paid", []Permission{PermInvoicesView}},
 	{PermInvoicesOverdue, "Invoices", "Mark invoices overdue", []Permission{PermInvoicesView}},
 	{PermInvoicesVoid, "Invoices", "Void invoices", []Permission{PermInvoicesView}},
+
+	{PermQuotesView, "Quotes", "See quotes, their PDFs and ad-hoc customers", nil},
+	{PermQuotesCreate, "Quotes", "Create quotes and add ad-hoc customers", quotePick},
+	{PermQuotesEdit, "Quotes", "Edit quotes and ad-hoc customers", quotePick},
+	{PermQuotesDelete, "Quotes", "Delete draft quotes and unused ad-hoc customers", []Permission{PermQuotesView}},
+	{PermQuotesSend, "Quotes", "E-mail quotes", []Permission{PermQuotesView}},
+	{PermQuotesOutcome, "Quotes", "Mark quotes accepted or declined", []Permission{PermQuotesView}},
+	{PermQuotesConvert, "Quotes", "Convert quotes into draft invoices (also needs Create draft invoices)", []Permission{PermQuotesView, PermInvoicesView}},
 
 	{PermCustomersView, "Customers", "See customers", nil},
 	{PermCustomersCreate, "Customers", "Add customers", []Permission{PermCustomersView}},
@@ -150,9 +168,16 @@ var Permissions = []PermissionInfo{
 	{PermSettingsExport, "Settings: Import/Export Settings", "Export settings files (every customer's details and the bank accounts)", nil},
 	{PermSettingsImport, "Settings: Import/Export Settings", "Import settings files (adds and changes customers, products, schedules and settings)", nil},
 
+	{PermSettingsQuotesView, "Settings: Quotes", "See the quote settings", nil},
+	{PermSettingsQuotes, "Settings: Quotes", "Change the quote settings (validity, numbers, e-mail template, terms)", []Permission{PermSettingsQuotesView}},
+
 	{PermSettingsSystemView, "Settings: System Settings", "See System Settings", nil},
 	{PermSettingsSystemEdit, "Settings: System Settings", "Change session timeouts and folder mappings", []Permission{PermSettingsSystemView}},
 }
+
+// quotePick is what writing a quote needs: to see quotes, and to pick customers and
+// products.
+var quotePick = []Permission{PermQuotesView, PermCustomersView, PermProductsView}
 
 // pick is what writing an invoice needs: to see invoices, and to pick customers and
 // products.

@@ -274,6 +274,7 @@ func repos(db sqlcgen.DBTX) ports.Repos {
 		Sequences: sequenceRepo{q}, Schedules: scheduleRepo{q}, Emails: emailRepo{q},
 		Users: userRepo{q}, Groups: groupRepo{q}, Sessions: sessionRepo{q}, Idempotency: idempotencyRepo{q}, SMTP: smtpRepo{q}, Audit: auditRepo{q},
 		System: systemRepo{q}, BackupRuns: backupRunRepo{q}, SystemSettings: systemSettingsRepo{q},
+		Quotes: quoteRepo{q}, AdhocCustomers: adhocCustomerRepo{q}, QuoteSettings: quoteSettingsRepo{q}, QuoteSequences: quoteSequenceRepo{q},
 	}
 }
 

@@ -183,15 +183,23 @@ func (p *page) drawLine(l noteLine, x, y float64) {
 	for _, s := range l.segs {
 		tr := p.setNoteFont(s.st)
 		c := muted
+		if s.st.Link != "" {
+			c = linkBlue
+		}
 		if s.st.Color != nil {
 			c = rgb{int(s.st.Color.R), int(s.st.Color.G), int(s.st.Color.B)}
 		}
 		p.color(c)
 		p.put(x, y, tr(s.text))
-		if s.st.Underline || s.st.Strike {
+		if s.st.Link != "" {
+			// Clickable in a PDF reader: the area over the text opens the address.
+			h := sizeOf(s.st) * 0.353
+			p.pdf.LinkString(x, y-h, s.w, h*1.25, s.st.Link)
+		}
+		if s.st.Underline || s.st.Strike || s.st.Link != "" {
 			p.draw(c)
 			p.pdf.SetLineWidth(max(0.15, sizeOf(s.st)*0.025))
-			if s.st.Underline {
+			if s.st.Underline || s.st.Link != "" {
 				p.pdf.Line(x, y+0.7, x+s.w, y+0.7)
 			}
 			if s.st.Strike {

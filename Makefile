@@ -94,7 +94,7 @@ build: web-check ## build the binary with the web app embedded
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.build=$(BUILD)" -o bin/cactusinv ./cmd/cactusinv
 
 # dist/ is the published release a standalone server installs itself from (System Settings
-# → Install and restart; M31, cactusDB's mechanism): one binary per OS and CPU and their
+# → Install and restart; M31): one binary per OS and CPU and their
 # SHA256SUMS, committed with VERSION. Their build number is that of the commit they go in
 # (the next one), so run this last, then commit.
 DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64

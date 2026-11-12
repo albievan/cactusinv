@@ -111,7 +111,7 @@ func errUpgrade(reason string) error {
 }
 
 // InstallUpdate replaces this standalone installation with the newest release and restarts
-// it (cactusDB's mechanism, M31): a backup first (when backups are set up), then the
+// it (M31): a backup first (when backups are set up), then the
 // download, checked against the published SHA-256 and by running it, then the swap; the
 // new version migrates the database as it starts. It returns at once; UpgradeStatus follows
 // the work, and a failure leaves this version running.

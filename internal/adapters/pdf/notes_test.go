@@ -7,6 +7,8 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,5 +67,51 @@ func TestRichNotes(t *testing.T) {
 	}
 	if len(pages) < 2 || len(marked) != len(pages) {
 		t.Fatalf("%d pages, %d watermarked", len(pages), len(marked))
+	}
+}
+
+// uriTarget is a link annotation's address in an uncompressed, unencrypted PDF.
+var uriTarget = regexp.MustCompile(`/URI \(([^)]*)\)`)
+
+// Links in formatted notes, and web addresses typed in plain notes and the disclaimer, are
+// clickable in the PDF; anything SafeLink refuses is not.
+func TestNotesLinksAreClickable(t *testing.T) {
+	notes, err := domain.CleanNotes("notes", `<p>Read <a href="https://example.com/terms">our terms</a> or <a href="mailto:ann@example.com">mail Ann</a>.</p>`+
+		`<table><tr><td><a href="https://cell.example">cell link</a></td></tr></table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := reference(t)
+	inv := *doc.Invoice
+	inv.Notes = notes
+	doc.Invoice = &inv
+	doc.Disclaimer = "Support: see www.cactus.example/help. Never javascript:alert(1)"
+	out, txt := render(t, doc)
+	save(t, "links.pdf", out)
+	var got []string
+	for _, m := range uriTarget.FindAllSubmatch(out, -1) {
+		got = append(got, string(m[1]))
+	}
+	want := []string{"https://example.com/terms", "mailto:ann@example.com", "https://cell.example", "https://www.cactus.example/help"}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("no clickable link to %s (links: %v)", w, got)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("links = %v, want %v", got, want)
+	}
+	if !strings.Contains(txt, "our terms") || !strings.Contains(txt, "cell link") {
+		t.Fatal("the link text is not printed")
+	}
+
+	// Plain notes: a typed address is clickable without the editor.
+	plain := reference(t)
+	pi := *plain.Invoice
+	pi.Notes = "Track the delivery at https://track.example/abc123."
+	plain.Invoice = &pi
+	out, _ = render(t, plain)
+	if m := uriTarget.FindAllSubmatch(out, -1); len(m) < 1 || string(m[0][1]) != "https://track.example/abc123" {
+		t.Fatalf("plain notes link = %q", m)
 	}
 }

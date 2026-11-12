@@ -105,6 +105,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getQuoteSettings"];
+        put: operations["updateQuoteSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/email": {
         parameters: {
             query?: never;
@@ -608,6 +624,193 @@ export interface paths {
         get: operations["getInvoicePdf"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listQuotes"];
+        put?: never;
+        post: operations["createQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getQuote"];
+        /** @description Draft and sent quotes only (a sent quote becomes a draft again). `version` is required. */
+        put: operations["updateQuote"];
+        post?: never;
+        /** @description Drafts that were never sent; others are declined instead. */
+        delete: operations["deleteQuote"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acceptQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["declineQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Makes a draft invoice from the quote: its lines at the quoted prices, VAT, notes, sales person and reference. The quote must be for a customer (convert an ad-hoc customer first) and not declined or converted. Needs invoices.create as well. */
+        post: operations["convertQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Queue the quote e-mail now or at `sendAt`, through the same outbox as invoices. Empty
+         *     fields use the customer's (or ad-hoc customer's) address and the Quote settings'
+         *     e-mail template. A draft becomes sent.
+         */
+        post: operations["sendQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/quotes/{id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getQuotePdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adhoc-customers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAdhocCustomers"];
+        put?: never;
+        post: operations["createAdhocCustomer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adhoc-customers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getAdhocCustomer"];
+        /** @description Not once made a customer. The currency is fixed once they have a quote. */
+        put: operations["updateAdhocCustomer"];
+        post?: never;
+        /** @description Only an ad-hoc customer no quote was made out to. */
+        delete: operations["deleteAdhocCustomer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/adhoc-customers/{id}/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Makes a customer of the ad-hoc customer (their details plus an invoice code, e-mail address, payment terms and currency); their quotes then belong to the customer and can be converted into invoices. Needs customers.create. */
+        post: operations["convertAdhocCustomer"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1831,6 +2034,141 @@ export interface components {
             /** @description The invoice version you edited (optimistic locking). */
             version: number;
         };
+        /** @enum {string} */
+        QuoteStatus: "draft" | "sent" | "accepted" | "declined" | "converted";
+        /**
+         * @description The status, or expired for a draft or sent quote past its validity.
+         * @enum {string}
+         */
+        QuoteStage: "draft" | "sent" | "accepted" | "declined" | "converted" | "expired";
+        QuoteSettings: {
+            /** @description A new quote is valid for this many days. */
+            validDays: number;
+            /**
+             * @description Quote number template. Must contain {seq}; may contain {dd}, {mm}, {yy}, {yyyy} and literal text (no {code}).
+             * @example Q-{seq}/{yy}
+             */
+            numberFormat: string;
+            /** @description Placeholders: {{quote_number}}, {{customer_name}}, {{attention}}, {{total}}, {{valid_until}}, {{date}}, {{business_name}}. */
+            emailSubject: string;
+            emailBody: string;
+            /** @description Printed on every new quote (each quote keeps its own copy). */
+            terms: string;
+            /**
+             * Format: int64
+             * @description Next quote sequence value; may only increase.
+             */
+            nextSequence: number;
+            version: number;
+        };
+        QuoteInput: {
+            /** @description A customer */
+            customerId?: string;
+            adhocCustomerId?: string;
+            /** Format: date */
+            issueDate?: string;
+            /**
+             * Format: date
+             * @description Omit for the date plus the Quote settings' valid days.
+             */
+            validUntil?: string;
+            salesPerson?: string;
+            reference?: string;
+            billTo?: components["schemas"]["Party"];
+            /** @description Plain text or formatted notes, as on invoices. */
+            notes?: string;
+            /** @description Omit to use the Quote settings' terms. */
+            terms?: string;
+            /** @description Omit to use the business default VAT. */
+            vatPercent?: string;
+            lines: components["schemas"]["LineInput"][];
+            /** @description Required on update. */
+            version?: number;
+        };
+        Quote: {
+            id: string;
+            number: string;
+            status: components["schemas"]["QuoteStatus"];
+            stage: components["schemas"]["QuoteStage"];
+            customerId?: string;
+            adhocCustomerId?: string;
+            currency: string;
+            /** Format: date */
+            issueDate: string;
+            /** Format: date */
+            validUntil: string;
+            salesPerson: string;
+            reference: string;
+            billTo: components["schemas"]["Party"];
+            notes: string;
+            terms: string;
+            vatPercent: components["schemas"]["Decimal"];
+            lines: components["schemas"]["Line"][];
+            totals: components["schemas"]["Totals"];
+            /** @description The verification code printed on the PDF; changes with any printed content. */
+            fingerprint: string;
+            invoiceId?: string;
+            /** Format: date-time */
+            sentAt?: string;
+            /** Format: date-time */
+            acceptedAt?: string;
+            /** Format: date-time */
+            declinedAt?: string;
+            declineReason?: string;
+            /** Format: date-time */
+            convertedAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            version: number;
+        };
+        QuoteDetail: {
+            quote: components["schemas"]["Quote"];
+            events: components["schemas"]["InvoiceEvent"][];
+            emails: components["schemas"]["EmailMessage"][];
+            adhocCustomer?: components["schemas"]["AdhocCustomer"];
+            /** @description The number of the invoice made from the quote */
+            invoiceNumber?: string;
+        };
+        QuoteList: {
+            items: components["schemas"]["Quote"][];
+            total: number;
+        };
+        DeclineRequest: {
+            reason?: string;
+        };
+        AdhocCustomer: {
+            readonly id?: string;
+            name: string;
+            /** @description Optional until they are made a customer. */
+            email: string;
+            attention: string;
+            address: string;
+            phone: string;
+            taxNumber: string;
+            currency: string;
+            /** @description The customer made from them */
+            readonly customerId?: string;
+            /** Format: date-time */
+            readonly convertedAt?: string;
+            /** Format: date-time */
+            readonly createdAt?: string;
+            version: number;
+        };
+        AdhocCustomerList: {
+            items: components["schemas"]["AdhocCustomer"][];
+            total: number;
+        };
+        ConvertAdhocRequest: {
+            /** @description The new customer's invoice number code. */
+            code: string;
+            /** @description Omit to keep the ad-hoc customer's. */
+            email?: string;
+            /** @description Omit to keep the ad-hoc customer's. */
+            currency?: string;
+            paymentTerms?: components["schemas"]["PaymentTerms"];
+        };
         VoidRequest: {
             reason: string;
         };
@@ -1850,9 +2188,10 @@ export interface components {
         EmailMessage: {
             id: string;
             /** @enum {string} */
-            kind: "invoice" | "statement";
+            kind: "invoice" | "statement" | "quote";
             invoiceId?: string;
             customerId?: string;
+            quoteId?: string;
             to: string[];
             cc: string[];
             subject: string;
@@ -2367,6 +2706,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BusinessSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getQuoteSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings → Quotes (the defaults until first saved). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteSettings"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateQuoteSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteSettings"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteSettings"];
                 };
             };
             default: components["responses"]["Problem"];
@@ -3480,6 +3865,408 @@ export interface operations {
                 };
                 content: {
                     "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listQuotes: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["QuoteStatus"];
+                /** @description Only draft and sent quotes past their validity. */
+                expired?: boolean;
+                customerId?: string;
+                adhocCustomerId?: string;
+                q?: components["parameters"]["Query"];
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of quotes (without lines), newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteInput"];
+            };
+        };
+        responses: {
+            /** @description Draft quote created and numbered, in the customer's (or ad-hoc customer's) currency. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Quote with audit trail and e-mails. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteDetail"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteInput"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    acceptQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked accepted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    declineQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeclineRequest"];
+            };
+        };
+        responses: {
+            /** @description Marked declined. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    convertQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The draft invoice. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendQuote: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string;
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SendRequest"];
+            };
+        };
+        responses: {
+            /** @description Queued in the outbox. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailMessage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getQuotePdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quote as a PDF that a reader lets you print but not change, fill, annotate or copy from. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listAdhocCustomers: {
+        parameters: {
+            query?: {
+                q?: components["parameters"]["Query"];
+                /** @description Also those already made customers. */
+                includeConverted?: boolean;
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of ad-hoc customers, by name. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdhocCustomerList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createAdhocCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdhocCustomer"];
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdhocCustomer"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAdhocCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ad-hoc customer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdhocCustomer"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateAdhocCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdhocCustomer"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdhocCustomer"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteAdhocCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    convertAdhocCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConvertAdhocRequest"];
+            };
+        };
+        responses: {
+            /** @description The new customer. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
                 };
             };
             default: components["responses"]["Problem"];

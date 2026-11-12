@@ -356,6 +356,8 @@ body {
   table { border-collapse: collapse; width: 100%; margin: 0.3em 0; }
   td, th { border: 1px solid $border-color; padding: 0.25em 0.4em; vertical-align: top; min-width: 2em; }
   th { background-color: $light; }
+  // Links (M35) look as they print: blue and underlined.
+  a { color: #1d4ed8; text-decoration: underline; }
 }
 .rich-notes-toolbar .form-select { min-width: 5.5rem; }
 .rich-notes-colour {

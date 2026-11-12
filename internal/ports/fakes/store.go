@@ -75,6 +75,10 @@ type state struct {
 	smtpPass    []byte
 	system      domain.SystemState
 	backupRuns  []domain.BackupRun
+	quotes      map[string]domain.Quote
+	adhoc       map[string]domain.AdhocCustomer
+	quoteSet    *domain.QuoteSettings
+	quoteSeq    int64
 }
 
 func newState() *state {
@@ -85,7 +89,7 @@ func newState() *state {
 		emails: map[string]domain.EmailMessage{}, users: map[string]domain.User{},
 		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
-		exported: map[string]int{},
+		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
 	}
 }
 
@@ -111,6 +115,12 @@ func (s *state) clone() *state {
 	c.exported = maps.Clone(s.exported)
 	c.smtpPass = slices.Clone(s.smtpPass)
 	c.backupRuns = slices.Clone(s.backupRuns)
+	c.quotes = maps.Clone(s.quotes) // stored quotes are cloned on the way in and out
+	c.adhoc = maps.Clone(s.adhoc)
+	if s.quoteSet != nil {
+		q := *s.quoteSet
+		c.quoteSet = &q
+	}
 	return &c
 }
 
@@ -147,6 +157,7 @@ func (s *Store) Repos() ports.Repos {
 		Products: products{s}, Invoices: invoices{s}, Sequences: sequences{s}, Schedules: schedules{s},
 		Emails: emails{s}, Users: users{s}, Groups: groups{s}, Sessions: sessions{s}, Idempotency: idempotency{s}, SMTP: smtpStore{s}, Audit: auditStore{s},
 		System: systemStore{s}, BackupRuns: backupRuns{s}, SystemSettings: systemSettingsStore{s},
+		Quotes: quotes{s}, AdhocCustomers: adhocCustomers{s}, QuoteSettings: quoteSettings{s}, QuoteSequences: quoteSequences{s},
 	}
 }
 
@@ -462,6 +473,11 @@ func (r customers) Delete(_ context.Context, id string) error {
 				return domain.ErrConflict
 			}
 		}
+		for _, q := range st.quotes {
+			if q.CustomerID == id {
+				return domain.ErrConflict
+			}
+		}
 		delete(st.customers, id)
 		return nil
 	})
@@ -668,6 +684,12 @@ func (r invoices) Delete(_ context.Context, id string) error {
 			return domain.ErrNotFound
 		}
 		delete(st.invoices, id)
+		for qid, q := range st.quotes { // quotes.invoice_id ON DELETE SET NULL
+			if q.InvoiceID == id {
+				q.InvoiceID = ""
+				st.quotes[qid] = q
+			}
+		}
 		return nil
 	})
 }
@@ -1077,7 +1099,7 @@ func (r emails) List(_ context.Context, f ports.EmailFilter) ([]domain.EmailMess
 		var all []domain.EmailMessage
 		for _, m := range st.emails {
 			if (f.Status == "" || m.Status == f.Status) && (f.InvoiceID == "" || m.InvoiceID == f.InvoiceID) &&
-				(f.CustomerID == "" || m.CustomerID == f.CustomerID) {
+				(f.CustomerID == "" || m.CustomerID == f.CustomerID) && (f.QuoteID == "" || m.QuoteID == f.QuoteID) {
 				all = append(all, *cloneEmail(m))
 			}
 		}

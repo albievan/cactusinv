@@ -1,7 +1,7 @@
 -- name: InsertEmail :exec
-INSERT INTO email_outbox (id, kind, invoice_id, customer_id, to_addrs, cc_addrs, subject, body, status, attempts,
+INSERT INTO email_outbox (id, kind, invoice_id, customer_id, quote_id, to_addrs, cc_addrs, subject, body, status, attempts,
     send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetEmail :one
 SELECT * FROM email_outbox WHERE id = ?;
@@ -24,6 +24,7 @@ SELECT * FROM email_outbox
 WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(invoice_id) = '' OR invoice_id = sqlc.arg(invoice_id))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
+  AND (sqlc.arg(quote_id) = '' OR quote_id = sqlc.arg(quote_id))
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?;
 
@@ -31,7 +32,8 @@ LIMIT ? OFFSET ?;
 SELECT COUNT(*) FROM email_outbox
 WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(invoice_id) = '' OR invoice_id = sqlc.arg(invoice_id))
-  AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id));
+  AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
+  AND (sqlc.arg(quote_id) = '' OR quote_id = sqlc.arg(quote_id));
 
 -- name: ClaimDueEmails :many
 SELECT * FROM email_outbox

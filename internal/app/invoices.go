@@ -171,40 +171,50 @@ func (s *Service) draftContent(ctx context.Context, r ports.Repos, c domain.Cust
 	if in.Terms != nil {
 		content.Terms = *in.Terms
 	}
+	lines, err := s.priceLines(ctx, r, c.Currency, in.Lines)
+	if err != nil {
+		return domain.DraftContent{}, err
+	}
+	content.Lines = lines
+	return content, nil
+}
+
+// priceLines turns submitted lines into invoice or quote lines in currency cur.
+// Every line comes from the product look-up: no free-text lines. The description is the
+// product's; the unit price is the product's price in cur unless explicitly overridden.
+func (s *Service) priceLines(ctx context.Context, r ports.Repos, cur domain.CurrencyCode, in []LineInput) ([]domain.Line, error) {
 	var ids []string
-	for _, l := range in.Lines {
+	for _, l := range in {
 		if l.ProductID != "" {
 			ids = append(ids, l.ProductID)
 		}
 	}
 	products, err := r.Products.GetMany(ctx, ids)
 	if err != nil {
-		return domain.DraftContent{}, err
+		return nil, err
 	}
-	// Every line comes from the product look-up: no free-text lines. The description is
-	// the product's; the unit price is the product's price in the invoice currency unless
-	// explicitly overridden.
-	for _, l := range in.Lines {
+	out := make([]domain.Line, 0, len(in))
+	for _, l := range in {
 		if l.ProductID == "" {
-			return domain.DraftContent{}, &domain.ValidationError{Field: "lines.productId", Reason: "choose a product for every line"}
+			return nil, &domain.ValidationError{Field: "lines.productId", Reason: "choose a product for every line"}
 		}
 		p, ok := products[l.ProductID]
 		if !ok {
-			return domain.DraftContent{}, &domain.ValidationError{Field: "lines.productId", Reason: "unknown product"}
+			return nil, &domain.ValidationError{Field: "lines.productId", Reason: "unknown product"}
 		}
 		line := domain.Line{ProductID: p.ID, Description: p.LineDescription(), Quantity: l.Quantity, Discount: l.Discount}
 		if l.UnitPrice != nil {
 			line.UnitPrice = *l.UnitPrice
 		} else {
-			price, err := p.PriceIn(c.Currency)
+			price, err := p.PriceIn(cur)
 			if err != nil {
-				return domain.DraftContent{}, err
+				return nil, err
 			}
 			line.UnitPrice = price.Amount
 		}
-		content.Lines = append(content.Lines, line)
+		out = append(out, line)
 	}
-	return content, nil
+	return out, nil
 }
 
 // IssueInvoice freezes a draft and gives it the next invoice number. A zero issueDate
@@ -359,6 +369,10 @@ func (s *Service) DeleteInvoice(ctx context.Context, id string) error {
 		}
 		if !inv.CanDelete() {
 			return domain.ErrInvalidTransition
+		}
+		// A draft made from a quote: the quote can be converted again.
+		if err := s.quoteInvoiceDeleted(ctx, r, id); err != nil {
+			return err
 		}
 		if err := r.Invoices.Delete(ctx, id); err != nil {
 			return err

@@ -43,7 +43,9 @@ export function Outbox() {
           {data?.items.map((m) => (
             <li key={m.id} className="card card-body small">
               <div className="d-flex align-items-center justify-content-between gap-2">
-                {m.kind === 'statement' ? (
+                {m.kind === 'quote' ? (
+                  <MaybeLink need="quotes.view" to={`/quotes/${m.quoteId}`} className="text-truncate min-w-0 fw-semibold">{m.subject} <span className="badge rounded-pill ms-1 bg-body-secondary text-primary-emphasis border">quote</span></MaybeLink>
+                ) : m.kind === 'statement' ? (
                   <MaybeLink need="customers.view" to={`/customers/${m.customerId}`} className="text-truncate min-w-0 fw-semibold">{m.subject} <span className="badge rounded-pill ms-1 bg-body-secondary text-primary-emphasis border">statement</span></MaybeLink>
                 ) : (
                   <MaybeLink need="invoices.view" to={`/invoices/${m.invoiceId}`} className="text-truncate min-w-0 fw-semibold">{m.subject}</MaybeLink>

@@ -943,6 +943,10 @@ func (r *docRenderer) RenderPDF(_ context.Context, d ports.InvoiceDocument) ([]b
 	return []byte("%PDF"), nil
 }
 
+func (r *docRenderer) RenderQuote(context.Context, ports.QuoteDocument) ([]byte, error) {
+	return []byte("%PDF"), nil
+}
+
 func TestDisclaimerPulledOnEveryPDFAndOverdue(t *testing.T) {
 	h := newHarness(t).seed()
 	rr := &docRenderer{}

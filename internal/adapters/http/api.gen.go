@@ -109,6 +109,7 @@ func (e CustomerDisclaimerSource) Valid() bool {
 // Defines values for EmailMessageKind.
 const (
 	EmailMessageKindInvoice   EmailMessageKind = "invoice"
+	EmailMessageKindQuote     EmailMessageKind = "quote"
 	EmailMessageKindStatement EmailMessageKind = "statement"
 )
 
@@ -116,6 +117,8 @@ const (
 func (e EmailMessageKind) Valid() bool {
 	switch e {
 	case EmailMessageKindInvoice:
+		return true
+	case EmailMessageKindQuote:
 		return true
 	case EmailMessageKindStatement:
 		return true
@@ -247,6 +250,63 @@ func (e PaymentTermsKind) Valid() bool {
 	case DaysAfter:
 		return true
 	case OnReceipt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuoteStage.
+const (
+	QuoteStageAccepted  QuoteStage = "accepted"
+	QuoteStageConverted QuoteStage = "converted"
+	QuoteStageDeclined  QuoteStage = "declined"
+	QuoteStageDraft     QuoteStage = "draft"
+	QuoteStageExpired   QuoteStage = "expired"
+	QuoteStageSent      QuoteStage = "sent"
+)
+
+// Valid indicates whether the value is a known member of the QuoteStage enum.
+func (e QuoteStage) Valid() bool {
+	switch e {
+	case QuoteStageAccepted:
+		return true
+	case QuoteStageConverted:
+		return true
+	case QuoteStageDeclined:
+		return true
+	case QuoteStageDraft:
+		return true
+	case QuoteStageExpired:
+		return true
+	case QuoteStageSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuoteStatus.
+const (
+	QuoteStatusAccepted  QuoteStatus = "accepted"
+	QuoteStatusConverted QuoteStatus = "converted"
+	QuoteStatusDeclined  QuoteStatus = "declined"
+	QuoteStatusDraft     QuoteStatus = "draft"
+	QuoteStatusSent      QuoteStatus = "sent"
+)
+
+// Valid indicates whether the value is a known member of the QuoteStatus enum.
+func (e QuoteStatus) Valid() bool {
+	switch e {
+	case QuoteStatusAccepted:
+		return true
+	case QuoteStatusConverted:
+		return true
+	case QuoteStatusDeclined:
+		return true
+	case QuoteStatusDraft:
+		return true
+	case QuoteStatusSent:
 		return true
 	default:
 		return false
@@ -508,6 +568,32 @@ func (e UpgradeJobState) Valid() bool {
 	}
 }
 
+// AdhocCustomer defines model for AdhocCustomer.
+type AdhocCustomer struct {
+	Address     string     `json:"address"`
+	Attention   string     `json:"attention"`
+	ConvertedAt *time.Time `json:"convertedAt,omitempty"`
+	CreatedAt   *time.Time `json:"createdAt,omitempty"`
+	Currency    string     `json:"currency"`
+
+	// CustomerId The customer made from them
+	CustomerId string `json:"customerId,omitempty"`
+
+	// Email Optional until they are made a customer.
+	Email     string `json:"email"`
+	Id        string `json:"id,omitempty"`
+	Name      string `json:"name"`
+	Phone     string `json:"phone"`
+	TaxNumber string `json:"taxNumber"`
+	Version   int    `json:"version"`
+}
+
+// AdhocCustomerList defines model for AdhocCustomerList.
+type AdhocCustomerList struct {
+	Items []AdhocCustomer `json:"items"`
+	Total int             `json:"total"`
+}
+
 // Aging defines model for Aging.
 type Aging struct {
 	// Current Example: 2701.16
@@ -698,6 +784,19 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"newPassword"`
 }
 
+// ConvertAdhocRequest defines model for ConvertAdhocRequest.
+type ConvertAdhocRequest struct {
+	// Code The new customer's invoice number code.
+	Code string `json:"code"`
+
+	// Currency Omit to keep the ad-hoc customer's.
+	Currency string `json:"currency,omitempty"`
+
+	// Email Omit to keep the ad-hoc customer's.
+	Email        string        `json:"email,omitempty"`
+	PaymentTerms *PaymentTerms `json:"paymentTerms,omitempty"`
+}
+
 // CreatedBackup defines model for CreatedBackup.
 type CreatedBackup struct {
 	Name   string `json:"name"`
@@ -803,6 +902,11 @@ type Debtor struct {
 // Decimal Example: 2701.16
 type Decimal = string
 
+// DeclineRequest defines model for DeclineRequest.
+type DeclineRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
+
 // DeploymentInfo defines model for DeploymentInfo.
 type DeploymentInfo struct {
 	// BackupDir The backups folder inside the container.
@@ -837,6 +941,7 @@ type EmailMessage struct {
 	Kind          EmailMessageKind `json:"kind"`
 	LastError     string           `json:"lastError"`
 	NextAttemptAt time.Time        `json:"nextAttemptAt"`
+	QuoteId       string           `json:"quoteId,omitempty"`
 	SendAt        time.Time        `json:"sendAt"`
 	SentAt        *time.Time       `json:"sentAt,omitempty"`
 	Status        EmailStatus      `json:"status"`
@@ -1196,6 +1301,117 @@ type ProductList struct {
 	Items []Product `json:"items"`
 	Total int       `json:"total"`
 }
+
+// Quote defines model for Quote.
+type Quote struct {
+	AcceptedAt      *time.Time `json:"acceptedAt,omitempty"`
+	AdhocCustomerId string     `json:"adhocCustomerId,omitempty"`
+	BillTo          Party      `json:"billTo"`
+	ConvertedAt     *time.Time `json:"convertedAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	Currency        string     `json:"currency"`
+	CustomerId      string     `json:"customerId,omitempty"`
+	DeclineReason   string     `json:"declineReason,omitempty"`
+	DeclinedAt      *time.Time `json:"declinedAt,omitempty"`
+
+	// Fingerprint The verification code printed on the PDF; changes with any printed content.
+	Fingerprint string             `json:"fingerprint"`
+	Id          string             `json:"id"`
+	InvoiceId   string             `json:"invoiceId,omitempty"`
+	IssueDate   openapi_types.Date `json:"issueDate"`
+	Lines       []Line             `json:"lines"`
+	Notes       string             `json:"notes"`
+	Number      string             `json:"number"`
+	Reference   string             `json:"reference"`
+	SalesPerson string             `json:"salesPerson"`
+	SentAt      *time.Time         `json:"sentAt,omitempty"`
+
+	// Stage The status, or expired for a draft or sent quote past its validity.
+	Stage      QuoteStage         `json:"stage"`
+	Status     QuoteStatus        `json:"status"`
+	Terms      string             `json:"terms"`
+	Totals     Totals             `json:"totals"`
+	UpdatedAt  time.Time          `json:"updatedAt"`
+	ValidUntil openapi_types.Date `json:"validUntil"`
+
+	// VatPercent Example: 2701.16
+	VatPercent Decimal `json:"vatPercent"`
+	Version    int     `json:"version"`
+}
+
+// QuoteDetail defines model for QuoteDetail.
+type QuoteDetail struct {
+	AdhocCustomer *AdhocCustomer `json:"adhocCustomer,omitempty"`
+	Emails        []EmailMessage `json:"emails"`
+	Events        []InvoiceEvent `json:"events"`
+
+	// InvoiceNumber The number of the invoice made from the quote
+	InvoiceNumber string `json:"invoiceNumber,omitempty"`
+	Quote         Quote  `json:"quote"`
+}
+
+// QuoteInput defines model for QuoteInput.
+type QuoteInput struct {
+	AdhocCustomerId string `json:"adhocCustomerId,omitempty"`
+	BillTo          *Party `json:"billTo,omitempty"`
+
+	// CustomerId A customer
+	CustomerId string              `json:"customerId,omitempty"`
+	IssueDate  *openapi_types.Date `json:"issueDate,omitempty"`
+	Lines      []LineInput         `json:"lines"`
+
+	// Notes Plain text or formatted notes, as on invoices.
+	Notes       *string `json:"notes,omitempty"`
+	Reference   string  `json:"reference,omitempty"`
+	SalesPerson string  `json:"salesPerson,omitempty"`
+
+	// Terms Omit to use the Quote settings' terms.
+	Terms *string `json:"terms,omitempty"`
+
+	// ValidUntil Omit for the date plus the Quote settings' valid days.
+	ValidUntil *openapi_types.Date `json:"validUntil,omitempty"`
+
+	// VatPercent Omit to use the business default VAT.
+	VatPercent *string `json:"vatPercent,omitempty"`
+
+	// Version Required on update.
+	Version int `json:"version,omitempty"`
+}
+
+// QuoteList defines model for QuoteList.
+type QuoteList struct {
+	Items []Quote `json:"items"`
+	Total int     `json:"total"`
+}
+
+// QuoteSettings defines model for QuoteSettings.
+type QuoteSettings struct {
+	EmailBody string `json:"emailBody"`
+
+	// EmailSubject Placeholders: {{quote_number}}, {{customer_name}}, {{attention}}, {{total}}, {{valid_until}}, {{date}}, {{business_name}}.
+	EmailSubject string `json:"emailSubject"`
+
+	// NextSequence Next quote sequence value; may only increase.
+	NextSequence int64 `json:"nextSequence"`
+
+	// NumberFormat Quote number template. Must contain {seq}; may contain {dd}, {mm}, {yy}, {yyyy} and literal text (no {code}).
+	//
+	// Example: Q-{seq}/{yy}
+	NumberFormat string `json:"numberFormat"`
+
+	// Terms Printed on every new quote (each quote keeps its own copy).
+	Terms string `json:"terms"`
+
+	// ValidDays A new quote is valid for this many days.
+	ValidDays int `json:"validDays"`
+	Version   int `json:"version"`
+}
+
+// QuoteStage The status, or expired for a draft or sent quote past its validity.
+type QuoteStage string
+
+// QuoteStatus defines model for QuoteStatus.
+type QuoteStatus string
 
 // ReauthRequest defines model for ReauthRequest.
 type ReauthRequest struct {
@@ -1762,6 +1978,16 @@ type Offset = int
 // Query defines model for Query.
 type Query = string
 
+// ListAdhocCustomersParams defines parameters for ListAdhocCustomers.
+type ListAdhocCustomersParams struct {
+	Q Query `form:"q,omitempty" json:"q,omitempty"`
+
+	// IncludeConverted Also those already made customers.
+	IncludeConverted bool   `form:"includeConverted,omitempty" json:"includeConverted,omitempty"`
+	Limit            Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset           Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
 // ListAuditParams defines parameters for ListAudit.
 type ListAuditParams struct {
 	EntityType string `form:"entityType,omitempty" json:"entityType,omitempty"`
@@ -1833,6 +2059,24 @@ type ListProductsParams struct {
 	Offset          Offset          `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// ListQuotesParams defines parameters for ListQuotes.
+type ListQuotesParams struct {
+	Status QuoteStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// Expired Only draft and sent quotes past their validity.
+	Expired         bool   `form:"expired,omitempty" json:"expired,omitempty"`
+	CustomerId      string `form:"customerId,omitempty" json:"customerId,omitempty"`
+	AdhocCustomerId string `form:"adhocCustomerId,omitempty" json:"adhocCustomerId,omitempty"`
+	Q               Query  `form:"q,omitempty" json:"q,omitempty"`
+	Limit           Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset          Offset `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// SendQuoteParams defines parameters for SendQuote.
+type SendQuoteParams struct {
+	IdempotencyKey string `json:"Idempotency-Key,omitempty"`
+}
+
 // ListSchedulesParams defines parameters for ListSchedules.
 type ListSchedulesParams struct {
 	CustomerId string         `form:"customerId,omitempty" json:"customerId,omitempty"`
@@ -1862,6 +2106,15 @@ type SendStatementsJSONBody struct {
 	// IncludeZero Also e-mail customers who owe nothing.
 	IncludeZero bool `json:"includeZero,omitempty"`
 }
+
+// CreateAdhocCustomerJSONRequestBody defines body for CreateAdhocCustomer for application/json ContentType.
+type CreateAdhocCustomerJSONRequestBody = AdhocCustomer
+
+// UpdateAdhocCustomerJSONRequestBody defines body for UpdateAdhocCustomer for application/json ContentType.
+type UpdateAdhocCustomerJSONRequestBody = AdhocCustomer
+
+// ConvertAdhocCustomerJSONRequestBody defines body for ConvertAdhocCustomer for application/json ContentType.
+type ConvertAdhocCustomerJSONRequestBody = ConvertAdhocRequest
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
@@ -1926,6 +2179,18 @@ type CreateProductJSONRequestBody = Product
 // UpdateProductJSONRequestBody defines body for UpdateProduct for application/json ContentType.
 type UpdateProductJSONRequestBody = Product
 
+// CreateQuoteJSONRequestBody defines body for CreateQuote for application/json ContentType.
+type CreateQuoteJSONRequestBody = QuoteInput
+
+// UpdateQuoteJSONRequestBody defines body for UpdateQuote for application/json ContentType.
+type UpdateQuoteJSONRequestBody = QuoteInput
+
+// DeclineQuoteJSONRequestBody defines body for DeclineQuote for application/json ContentType.
+type DeclineQuoteJSONRequestBody = DeclineRequest
+
+// SendQuoteJSONRequestBody defines body for SendQuote for application/json ContentType.
+type SendQuoteJSONRequestBody = SendRequest
+
 // StageRestoreJSONRequestBody defines body for StageRestore for application/json ContentType.
 type StageRestoreJSONRequestBody = StageRestoreRequest
 
@@ -1956,6 +2221,9 @@ type ExportSettingsJSONRequestBody = SettingsExportRequest
 // ImportSettingsJSONRequestBody defines body for ImportSettings for application/json ContentType.
 type ImportSettingsJSONRequestBody = SettingsImportRequest
 
+// UpdateQuoteSettingsJSONRequestBody defines body for UpdateQuoteSettings for application/json ContentType.
+type UpdateQuoteSettingsJSONRequestBody = QuoteSettings
+
 // UpdateSystemSettingsJSONRequestBody defines body for UpdateSystemSettings for application/json ContentType.
 type UpdateSystemSettingsJSONRequestBody = SystemSettings
 
@@ -1979,6 +2247,24 @@ type ResetUserPasswordJSONRequestBody = ResetPasswordRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /adhoc-customers)
+	ListAdhocCustomers(w http.ResponseWriter, r *http.Request, params ListAdhocCustomersParams)
+
+	// (POST /adhoc-customers)
+	CreateAdhocCustomer(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /adhoc-customers/{id})
+	DeleteAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /adhoc-customers/{id})
+	GetAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /adhoc-customers/{id})
+	UpdateAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /adhoc-customers/{id}/convert)
+	ConvertAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
@@ -2136,6 +2422,36 @@ type ServerInterface interface {
 	// (PUT /products/{id})
 	UpdateProduct(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (GET /quotes)
+	ListQuotes(w http.ResponseWriter, r *http.Request, params ListQuotesParams)
+
+	// (POST /quotes)
+	CreateQuote(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /quotes/{id})
+	DeleteQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /quotes/{id})
+	GetQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /quotes/{id})
+	UpdateQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /quotes/{id}/accept)
+	AcceptQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /quotes/{id}/convert)
+	ConvertQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /quotes/{id}/decline)
+	DeclineQuote(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /quotes/{id}/pdf)
+	GetQuotePdf(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /quotes/{id}/send)
+	SendQuote(w http.ResponseWriter, r *http.Request, id Id, params SendQuoteParams)
+
 	// (POST /restores)
 	StageRestore(w http.ResponseWriter, r *http.Request)
 
@@ -2205,6 +2521,12 @@ type ServerInterface interface {
 	// (POST /settings/import)
 	ImportSettings(w http.ResponseWriter, r *http.Request, params ImportSettingsParams)
 
+	// (GET /settings/quotes)
+	GetQuoteSettings(w http.ResponseWriter, r *http.Request)
+
+	// (PUT /settings/quotes)
+	UpdateQuoteSettings(w http.ResponseWriter, r *http.Request)
+
 	// (GET /settings/system)
 	GetSystemSettings(w http.ResponseWriter, r *http.Request)
 
@@ -2256,6 +2578,196 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAdhocCustomers operation middleware
+func (siw *ServerInterfaceWrapper) ListAdhocCustomers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdhocCustomersParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "includeConverted" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "includeConverted", r.URL.Query(), &params.IncludeConverted, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "includeConverted"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "includeConverted", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdhocCustomers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAdhocCustomer operation middleware
+func (siw *ServerInterfaceWrapper) CreateAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAdhocCustomer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAdhocCustomer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAdhocCustomer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdhocCustomer operation middleware
+func (siw *ServerInterfaceWrapper) GetAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdhocCustomer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAdhocCustomer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAdhocCustomer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConvertAdhocCustomer operation middleware
+func (siw *ServerInterfaceWrapper) ConvertAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConvertAdhocCustomer(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListAudit operation middleware
 func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Request) {
@@ -3784,6 +4296,363 @@ func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListQuotes operation middleware
+func (siw *ServerInterfaceWrapper) ListQuotes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListQuotesParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "expired" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "expired", r.URL.Query(), &params.Expired, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expired"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expired", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "customerId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customerId", r.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "customerId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "customerId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "adhocCustomerId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "adhocCustomerId", r.URL.Query(), &params.AdhocCustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "adhocCustomerId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "adhocCustomerId", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListQuotes(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateQuote operation middleware
+func (siw *ServerInterfaceWrapper) CreateQuote(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateQuote(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteQuote operation middleware
+func (siw *ServerInterfaceWrapper) DeleteQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetQuote operation middleware
+func (siw *ServerInterfaceWrapper) GetQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateQuote operation middleware
+func (siw *ServerInterfaceWrapper) UpdateQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptQuote operation middleware
+func (siw *ServerInterfaceWrapper) AcceptQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConvertQuote operation middleware
+func (siw *ServerInterfaceWrapper) ConvertQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConvertQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeclineQuote operation middleware
+func (siw *ServerInterfaceWrapper) DeclineQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeclineQuote(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetQuotePdf operation middleware
+func (siw *ServerInterfaceWrapper) GetQuotePdf(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetQuotePdf(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendQuote operation middleware
+func (siw *ServerInterfaceWrapper) SendQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SendQuoteParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendQuote(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // StageRestore operation middleware
 func (siw *ServerInterfaceWrapper) StageRestore(w http.ResponseWriter, r *http.Request) {
 
@@ -4323,6 +5192,34 @@ func (siw *ServerInterfaceWrapper) ImportSettings(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetQuoteSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetQuoteSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetQuoteSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateQuoteSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateQuoteSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateQuoteSettings(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetSystemSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetSystemSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -4694,6 +5591,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/me", wrapper.Me)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/business", wrapper.GetBusiness)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/business", wrapper.UpdateBusiness)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/quotes", wrapper.GetQuoteSettings)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/quotes", wrapper.UpdateQuoteSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
@@ -4739,6 +5638,22 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/invoices/{id}/notes", wrapper.UpdateInvoiceNotes)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/invoices/{id}/send", wrapper.SendInvoice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/invoices/{id}/pdf", wrapper.GetInvoicePdf)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/quotes", wrapper.ListQuotes)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes", wrapper.CreateQuote)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/quotes/{id}", wrapper.DeleteQuote)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/quotes/{id}", wrapper.GetQuote)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/quotes/{id}", wrapper.UpdateQuote)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/accept", wrapper.AcceptQuote)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/decline", wrapper.DeclineQuote)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/convert", wrapper.ConvertQuote)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/send", wrapper.SendQuote)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/quotes/{id}/pdf", wrapper.GetQuotePdf)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/adhoc-customers", wrapper.ListAdhocCustomers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/adhoc-customers", wrapper.CreateAdhocCustomer)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/adhoc-customers/{id}", wrapper.DeleteAdhocCustomer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/adhoc-customers/{id}", wrapper.GetAdhocCustomer)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/adhoc-customers/{id}", wrapper.UpdateAdhocCustomer)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/adhoc-customers/{id}/convert", wrapper.ConvertAdhocCustomer)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/schedules", wrapper.ListSchedules)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules", wrapper.CreateSchedule)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/schedules/preview", wrapper.PreviewSchedule)
@@ -4781,6 +5696,236 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 }
 
 type ProblemApplicationProblemPlusJSONResponse Problem
+
+type ListAdhocCustomersRequestObject struct {
+	Params ListAdhocCustomersParams
+}
+
+type ListAdhocCustomersResponseObject interface {
+	VisitListAdhocCustomersResponse(w http.ResponseWriter) error
+}
+
+type ListAdhocCustomers200JSONResponse AdhocCustomerList
+
+func (response ListAdhocCustomers200JSONResponse) VisitListAdhocCustomersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAdhocCustomersdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListAdhocCustomersdefaultApplicationProblemPlusJSONResponse) VisitListAdhocCustomersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAdhocCustomerRequestObject struct {
+	Body *CreateAdhocCustomerJSONRequestBody
+}
+
+type CreateAdhocCustomerResponseObject interface {
+	VisitCreateAdhocCustomerResponse(w http.ResponseWriter) error
+}
+
+type CreateAdhocCustomer201JSONResponse AdhocCustomer
+
+func (response CreateAdhocCustomer201JSONResponse) VisitCreateAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAdhocCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateAdhocCustomerdefaultApplicationProblemPlusJSONResponse) VisitCreateAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteAdhocCustomerRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type DeleteAdhocCustomerResponseObject interface {
+	VisitDeleteAdhocCustomerResponse(w http.ResponseWriter) error
+}
+
+type DeleteAdhocCustomer204Response struct {
+}
+
+func (response DeleteAdhocCustomer204Response) VisitDeleteAdhocCustomerResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteAdhocCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteAdhocCustomerdefaultApplicationProblemPlusJSONResponse) VisitDeleteAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAdhocCustomerRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetAdhocCustomerResponseObject interface {
+	VisitGetAdhocCustomerResponse(w http.ResponseWriter) error
+}
+
+type GetAdhocCustomer200JSONResponse AdhocCustomer
+
+func (response GetAdhocCustomer200JSONResponse) VisitGetAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAdhocCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetAdhocCustomerdefaultApplicationProblemPlusJSONResponse) VisitGetAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAdhocCustomerRequestObject struct {
+	Id   Id `json:"id"`
+	Body *UpdateAdhocCustomerJSONRequestBody
+}
+
+type UpdateAdhocCustomerResponseObject interface {
+	VisitUpdateAdhocCustomerResponse(w http.ResponseWriter) error
+}
+
+type UpdateAdhocCustomer200JSONResponse AdhocCustomer
+
+func (response UpdateAdhocCustomer200JSONResponse) VisitUpdateAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateAdhocCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateAdhocCustomerdefaultApplicationProblemPlusJSONResponse) VisitUpdateAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConvertAdhocCustomerRequestObject struct {
+	Id   Id `json:"id"`
+	Body *ConvertAdhocCustomerJSONRequestBody
+}
+
+type ConvertAdhocCustomerResponseObject interface {
+	VisitConvertAdhocCustomerResponse(w http.ResponseWriter) error
+}
+
+type ConvertAdhocCustomer201JSONResponse Customer
+
+func (response ConvertAdhocCustomer201JSONResponse) VisitConvertAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConvertAdhocCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ConvertAdhocCustomerdefaultApplicationProblemPlusJSONResponse) VisitConvertAdhocCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListAuditRequestObject struct {
 	Params ListAuditParams
@@ -7016,6 +8161,406 @@ func (response UpdateProductdefaultApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type ListQuotesRequestObject struct {
+	Params ListQuotesParams
+}
+
+type ListQuotesResponseObject interface {
+	VisitListQuotesResponse(w http.ResponseWriter) error
+}
+
+type ListQuotes200JSONResponse QuoteList
+
+func (response ListQuotes200JSONResponse) VisitListQuotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListQuotesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListQuotesdefaultApplicationProblemPlusJSONResponse) VisitListQuotesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateQuoteRequestObject struct {
+	Body *CreateQuoteJSONRequestBody
+}
+
+type CreateQuoteResponseObject interface {
+	VisitCreateQuoteResponse(w http.ResponseWriter) error
+}
+
+type CreateQuote201JSONResponse Quote
+
+func (response CreateQuote201JSONResponse) VisitCreateQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateQuotedefaultApplicationProblemPlusJSONResponse) VisitCreateQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteQuoteRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type DeleteQuoteResponseObject interface {
+	VisitDeleteQuoteResponse(w http.ResponseWriter) error
+}
+
+type DeleteQuote204Response struct {
+}
+
+func (response DeleteQuote204Response) VisitDeleteQuoteResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteQuotedefaultApplicationProblemPlusJSONResponse) VisitDeleteQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuoteRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetQuoteResponseObject interface {
+	VisitGetQuoteResponse(w http.ResponseWriter) error
+}
+
+type GetQuote200JSONResponse QuoteDetail
+
+func (response GetQuote200JSONResponse) VisitGetQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetQuotedefaultApplicationProblemPlusJSONResponse) VisitGetQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateQuoteRequestObject struct {
+	Id   Id `json:"id"`
+	Body *UpdateQuoteJSONRequestBody
+}
+
+type UpdateQuoteResponseObject interface {
+	VisitUpdateQuoteResponse(w http.ResponseWriter) error
+}
+
+type UpdateQuote200JSONResponse Quote
+
+func (response UpdateQuote200JSONResponse) VisitUpdateQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateQuotedefaultApplicationProblemPlusJSONResponse) VisitUpdateQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptQuoteRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type AcceptQuoteResponseObject interface {
+	VisitAcceptQuoteResponse(w http.ResponseWriter) error
+}
+
+type AcceptQuote200JSONResponse Quote
+
+func (response AcceptQuote200JSONResponse) VisitAcceptQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AcceptQuotedefaultApplicationProblemPlusJSONResponse) VisitAcceptQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConvertQuoteRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type ConvertQuoteResponseObject interface {
+	VisitConvertQuoteResponse(w http.ResponseWriter) error
+}
+
+type ConvertQuote201JSONResponse Invoice
+
+func (response ConvertQuote201JSONResponse) VisitConvertQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConvertQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ConvertQuotedefaultApplicationProblemPlusJSONResponse) VisitConvertQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeclineQuoteRequestObject struct {
+	Id   Id `json:"id"`
+	Body *DeclineQuoteJSONRequestBody
+}
+
+type DeclineQuoteResponseObject interface {
+	VisitDeclineQuoteResponse(w http.ResponseWriter) error
+}
+
+type DeclineQuote200JSONResponse Quote
+
+func (response DeclineQuote200JSONResponse) VisitDeclineQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeclineQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeclineQuotedefaultApplicationProblemPlusJSONResponse) VisitDeclineQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuotePdfRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type GetQuotePdfResponseObject interface {
+	VisitGetQuotePdfResponse(w http.ResponseWriter) error
+}
+
+type GetQuotePdf200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type GetQuotePdf200ApplicationpdfResponse struct {
+	Body          io.Reader
+	Headers       GetQuotePdf200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetQuotePdf200ApplicationpdfResponse) VisitGetQuotePdfResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetQuotePdfdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetQuotePdfdefaultApplicationProblemPlusJSONResponse) VisitGetQuotePdfResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendQuoteRequestObject struct {
+	Id     Id `json:"id"`
+	Params SendQuoteParams
+	Body   *SendQuoteJSONRequestBody
+}
+
+type SendQuoteResponseObject interface {
+	VisitSendQuoteResponse(w http.ResponseWriter) error
+}
+
+type SendQuote202JSONResponse EmailMessage
+
+func (response SendQuote202JSONResponse) VisitSendQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendQuotedefaultApplicationProblemPlusJSONResponse) VisitSendQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type StageRestoreRequestObject struct {
 	Body *StageRestoreJSONRequestBody
 }
@@ -7928,6 +9473,83 @@ func (response ImportSettingsdefaultApplicationProblemPlusJSONResponse) VisitImp
 	return err
 }
 
+type GetQuoteSettingsRequestObject struct {
+}
+
+type GetQuoteSettingsResponseObject interface {
+	VisitGetQuoteSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetQuoteSettings200JSONResponse QuoteSettings
+
+func (response GetQuoteSettings200JSONResponse) VisitGetQuoteSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuoteSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetQuoteSettingsdefaultApplicationProblemPlusJSONResponse) VisitGetQuoteSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateQuoteSettingsRequestObject struct {
+	Body *UpdateQuoteSettingsJSONRequestBody
+}
+
+type UpdateQuoteSettingsResponseObject interface {
+	VisitUpdateQuoteSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateQuoteSettings200JSONResponse QuoteSettings
+
+func (response UpdateQuoteSettings200JSONResponse) VisitUpdateQuoteSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateQuoteSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateQuoteSettingsdefaultApplicationProblemPlusJSONResponse) VisitUpdateQuoteSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSystemSettingsRequestObject struct {
 }
 
@@ -8694,6 +10316,24 @@ func (response GetVersion200JSONResponse) VisitGetVersionResponse(w http.Respons
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (GET /adhoc-customers)
+	ListAdhocCustomers(ctx context.Context, request ListAdhocCustomersRequestObject) (ListAdhocCustomersResponseObject, error)
+
+	// (POST /adhoc-customers)
+	CreateAdhocCustomer(ctx context.Context, request CreateAdhocCustomerRequestObject) (CreateAdhocCustomerResponseObject, error)
+
+	// (DELETE /adhoc-customers/{id})
+	DeleteAdhocCustomer(ctx context.Context, request DeleteAdhocCustomerRequestObject) (DeleteAdhocCustomerResponseObject, error)
+
+	// (GET /adhoc-customers/{id})
+	GetAdhocCustomer(ctx context.Context, request GetAdhocCustomerRequestObject) (GetAdhocCustomerResponseObject, error)
+
+	// (PUT /adhoc-customers/{id})
+	UpdateAdhocCustomer(ctx context.Context, request UpdateAdhocCustomerRequestObject) (UpdateAdhocCustomerResponseObject, error)
+
+	// (POST /adhoc-customers/{id}/convert)
+	ConvertAdhocCustomer(ctx context.Context, request ConvertAdhocCustomerRequestObject) (ConvertAdhocCustomerResponseObject, error)
+
 	// (GET /audit)
 	ListAudit(ctx context.Context, request ListAuditRequestObject) (ListAuditResponseObject, error)
 
@@ -8850,6 +10490,36 @@ type StrictServerInterface interface {
 	// (PUT /products/{id})
 	UpdateProduct(ctx context.Context, request UpdateProductRequestObject) (UpdateProductResponseObject, error)
 
+	// (GET /quotes)
+	ListQuotes(ctx context.Context, request ListQuotesRequestObject) (ListQuotesResponseObject, error)
+
+	// (POST /quotes)
+	CreateQuote(ctx context.Context, request CreateQuoteRequestObject) (CreateQuoteResponseObject, error)
+
+	// (DELETE /quotes/{id})
+	DeleteQuote(ctx context.Context, request DeleteQuoteRequestObject) (DeleteQuoteResponseObject, error)
+
+	// (GET /quotes/{id})
+	GetQuote(ctx context.Context, request GetQuoteRequestObject) (GetQuoteResponseObject, error)
+
+	// (PUT /quotes/{id})
+	UpdateQuote(ctx context.Context, request UpdateQuoteRequestObject) (UpdateQuoteResponseObject, error)
+
+	// (POST /quotes/{id}/accept)
+	AcceptQuote(ctx context.Context, request AcceptQuoteRequestObject) (AcceptQuoteResponseObject, error)
+
+	// (POST /quotes/{id}/convert)
+	ConvertQuote(ctx context.Context, request ConvertQuoteRequestObject) (ConvertQuoteResponseObject, error)
+
+	// (POST /quotes/{id}/decline)
+	DeclineQuote(ctx context.Context, request DeclineQuoteRequestObject) (DeclineQuoteResponseObject, error)
+
+	// (GET /quotes/{id}/pdf)
+	GetQuotePdf(ctx context.Context, request GetQuotePdfRequestObject) (GetQuotePdfResponseObject, error)
+
+	// (POST /quotes/{id}/send)
+	SendQuote(ctx context.Context, request SendQuoteRequestObject) (SendQuoteResponseObject, error)
+
 	// (POST /restores)
 	StageRestore(ctx context.Context, request StageRestoreRequestObject) (StageRestoreResponseObject, error)
 
@@ -8918,6 +10588,12 @@ type StrictServerInterface interface {
 
 	// (POST /settings/import)
 	ImportSettings(ctx context.Context, request ImportSettingsRequestObject) (ImportSettingsResponseObject, error)
+
+	// (GET /settings/quotes)
+	GetQuoteSettings(ctx context.Context, request GetQuoteSettingsRequestObject) (GetQuoteSettingsResponseObject, error)
+
+	// (PUT /settings/quotes)
+	UpdateQuoteSettings(ctx context.Context, request UpdateQuoteSettingsRequestObject) (UpdateQuoteSettingsResponseObject, error)
 
 	// (GET /settings/system)
 	GetSystemSettings(ctx context.Context, request GetSystemSettingsRequestObject) (GetSystemSettingsResponseObject, error)
@@ -8999,6 +10675,181 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListAdhocCustomers operation middleware
+func (sh *strictHandler) ListAdhocCustomers(w http.ResponseWriter, r *http.Request, params ListAdhocCustomersParams) {
+	var request ListAdhocCustomersRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAdhocCustomers(ctx, request.(ListAdhocCustomersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAdhocCustomers")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAdhocCustomersResponseObject); ok {
+		if err := validResponse.VisitListAdhocCustomersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAdhocCustomer operation middleware
+func (sh *strictHandler) CreateAdhocCustomer(w http.ResponseWriter, r *http.Request) {
+	var request CreateAdhocCustomerRequestObject
+
+	var body CreateAdhocCustomerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAdhocCustomer(ctx, request.(CreateAdhocCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAdhocCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAdhocCustomerResponseObject); ok {
+		if err := validResponse.VisitCreateAdhocCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteAdhocCustomer operation middleware
+func (sh *strictHandler) DeleteAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id) {
+	var request DeleteAdhocCustomerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteAdhocCustomer(ctx, request.(DeleteAdhocCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteAdhocCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteAdhocCustomerResponseObject); ok {
+		if err := validResponse.VisitDeleteAdhocCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAdhocCustomer operation middleware
+func (sh *strictHandler) GetAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetAdhocCustomerRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAdhocCustomer(ctx, request.(GetAdhocCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAdhocCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAdhocCustomerResponseObject); ok {
+		if err := validResponse.VisitGetAdhocCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateAdhocCustomer operation middleware
+func (sh *strictHandler) UpdateAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id) {
+	var request UpdateAdhocCustomerRequestObject
+
+	request.Id = id
+
+	var body UpdateAdhocCustomerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateAdhocCustomer(ctx, request.(UpdateAdhocCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateAdhocCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateAdhocCustomerResponseObject); ok {
+		if err := validResponse.VisitUpdateAdhocCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConvertAdhocCustomer operation middleware
+func (sh *strictHandler) ConvertAdhocCustomer(w http.ResponseWriter, r *http.Request, id Id) {
+	var request ConvertAdhocCustomerRequestObject
+
+	request.Id = id
+
+	var body ConvertAdhocCustomerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConvertAdhocCustomer(ctx, request.(ConvertAdhocCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConvertAdhocCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConvertAdhocCustomerResponseObject); ok {
+		if err := validResponse.VisitConvertAdhocCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListAudit operation middleware
@@ -10477,6 +12328,299 @@ func (sh *strictHandler) UpdateProduct(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
+// ListQuotes operation middleware
+func (sh *strictHandler) ListQuotes(w http.ResponseWriter, r *http.Request, params ListQuotesParams) {
+	var request ListQuotesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListQuotes(ctx, request.(ListQuotesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListQuotes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListQuotesResponseObject); ok {
+		if err := validResponse.VisitListQuotesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateQuote operation middleware
+func (sh *strictHandler) CreateQuote(w http.ResponseWriter, r *http.Request) {
+	var request CreateQuoteRequestObject
+
+	var body CreateQuoteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateQuote(ctx, request.(CreateQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateQuoteResponseObject); ok {
+		if err := validResponse.VisitCreateQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteQuote operation middleware
+func (sh *strictHandler) DeleteQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request DeleteQuoteRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteQuote(ctx, request.(DeleteQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteQuoteResponseObject); ok {
+		if err := validResponse.VisitDeleteQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetQuote operation middleware
+func (sh *strictHandler) GetQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetQuoteRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetQuote(ctx, request.(GetQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetQuoteResponseObject); ok {
+		if err := validResponse.VisitGetQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateQuote operation middleware
+func (sh *strictHandler) UpdateQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request UpdateQuoteRequestObject
+
+	request.Id = id
+
+	var body UpdateQuoteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateQuote(ctx, request.(UpdateQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateQuoteResponseObject); ok {
+		if err := validResponse.VisitUpdateQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcceptQuote operation middleware
+func (sh *strictHandler) AcceptQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request AcceptQuoteRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcceptQuote(ctx, request.(AcceptQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcceptQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcceptQuoteResponseObject); ok {
+		if err := validResponse.VisitAcceptQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConvertQuote operation middleware
+func (sh *strictHandler) ConvertQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request ConvertQuoteRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConvertQuote(ctx, request.(ConvertQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConvertQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConvertQuoteResponseObject); ok {
+		if err := validResponse.VisitConvertQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeclineQuote operation middleware
+func (sh *strictHandler) DeclineQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request DeclineQuoteRequestObject
+
+	request.Id = id
+
+	var body DeclineQuoteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeclineQuote(ctx, request.(DeclineQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeclineQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeclineQuoteResponseObject); ok {
+		if err := validResponse.VisitDeclineQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetQuotePdf operation middleware
+func (sh *strictHandler) GetQuotePdf(w http.ResponseWriter, r *http.Request, id Id) {
+	var request GetQuotePdfRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetQuotePdf(ctx, request.(GetQuotePdfRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetQuotePdf")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetQuotePdfResponseObject); ok {
+		if err := validResponse.VisitGetQuotePdfResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendQuote operation middleware
+func (sh *strictHandler) SendQuote(w http.ResponseWriter, r *http.Request, id Id, params SendQuoteParams) {
+	var request SendQuoteRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body SendQuoteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendQuote(ctx, request.(SendQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendQuoteResponseObject); ok {
+		if err := validResponse.VisitSendQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // StageRestore operation middleware
 func (sh *strictHandler) StageRestore(w http.ResponseWriter, r *http.Request) {
 	var request StageRestoreRequestObject
@@ -11116,6 +13260,61 @@ func (sh *strictHandler) ImportSettings(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ImportSettingsResponseObject); ok {
 		if err := validResponse.VisitImportSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetQuoteSettings operation middleware
+func (sh *strictHandler) GetQuoteSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetQuoteSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetQuoteSettings(ctx, request.(GetQuoteSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetQuoteSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetQuoteSettingsResponseObject); ok {
+		if err := validResponse.VisitGetQuoteSettingsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateQuoteSettings operation middleware
+func (sh *strictHandler) UpdateQuoteSettings(w http.ResponseWriter, r *http.Request) {
+	var request UpdateQuoteSettingsRequestObject
+
+	var body UpdateQuoteSettingsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateQuoteSettings(ctx, request.(UpdateQuoteSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateQuoteSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateQuoteSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateQuoteSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

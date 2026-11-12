@@ -218,6 +218,9 @@ const actionLabels: Record<string, string> = {
   'invoice.email_sent': 'E-mailed', 'invoice.email_failed': 'E-mail failed', 'invoice.email_cancelled': 'E-mail cancelled',
   'invoice.email_retried': 'E-mail retried', 'invoice.overdue': 'Marked overdue', 'invoice.paid': 'Marked paid',
   'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed', 'invoice.notes_updated': 'Notes edited',
+  'quote.created': 'Created', 'quote.updated': 'Edited', 'quote.email_queued': 'E-mail queued', 'quote.email_sent': 'E-mailed',
+  'quote.email_failed': 'E-mail failed', 'quote.accepted': 'Marked accepted', 'quote.declined': 'Marked declined',
+  'quote.converted': 'Turned into an invoice', 'quote.invoice_deleted': 'Its draft invoice was deleted', 'quote.pdf_viewed': 'PDF viewed',
 }
 
 export function actionLabel(a: string): string {

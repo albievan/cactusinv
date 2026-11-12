@@ -27,6 +27,17 @@ var operationAccess = map[string][]domain.Permission{
 	"sendinvoice": {domain.PermInvoicesSend},
 	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay}, "updateinvoicenotes": {domain.PermInvoicesEdit},
 
+	"listquotes": {domain.PermQuotesView}, "getquote": {domain.PermQuotesView}, "getquotepdf": {domain.PermQuotesView},
+	"createquote": {domain.PermQuotesCreate}, "updatequote": {domain.PermQuotesEdit}, "deletequote": {domain.PermQuotesDelete},
+	"sendquote": {domain.PermQuotesSend}, "acceptquote": {domain.PermQuotesOutcome}, "declinequote": {domain.PermQuotesOutcome},
+	// Making the invoice also needs invoices.create (checked by the use case).
+	"convertquote":       {domain.PermQuotesConvert},
+	"listadhoccustomers": {domain.PermQuotesView}, "getadhoccustomer": {domain.PermQuotesView},
+	"createadhoccustomer": {domain.PermQuotesCreate}, "updateadhoccustomer": {domain.PermQuotesEdit}, "deleteadhoccustomer": {domain.PermQuotesDelete},
+	// Making a customer of an ad-hoc customer is adding a customer.
+	"convertadhoccustomer": {domain.PermCustomersCreate},
+	"getquotesettings":     {domain.PermSettingsQuotesView, domain.PermQuotesCreate, domain.PermQuotesEdit}, "updatequotesettings": {domain.PermSettingsQuotes},
+
 	"listcustomers": {domain.PermCustomersView}, "getcustomer": {domain.PermCustomersView},
 	"createcustomer": {domain.PermCustomersCreate}, "updatecustomer": {domain.PermCustomersEdit}, "deletecustomer": {domain.PermCustomersDelete},
 

@@ -82,9 +82,33 @@ Released into the public domain — see [LICENSE](LICENSE).
   invoice are a small word processor: font (Sans, Serif, Mono), size, **bold**, *italic*,
   underline, strikethrough, colour, alignment, bulleted and numbered lists, tables and pictures
   (PNG or JPEG, from a file, a paste or a drop; made smaller to at most 1000 px and 500 kB).
-  The PDF prints them as shown. Notes written before stay plain text until edited. Only what
-  the editor offers is kept: no scripts, links or pictures from elsewhere (at most 800 kB of
-  notes, pictures included).
+  The PDF prints them as shown. **Links**: select text and press *Insert link* (or type the
+  address with nothing selected) to link to a web page or an e-mail address; in the PDF the
+  link is blue, underlined and clickable. A web address typed in plain notes, the disclaimer or
+  quote terms is clickable in the PDF too. Notes written before stay plain text until edited.
+  Only what the editor offers is kept: no scripts, links other than http, https and mailto, or
+  pictures from elsewhere (at most 800 kB of notes, pictures included).
+- **Quotes** — Quotes → *New quote*: products from the product list, priced in the customer's
+  currency (each price can be changed), with VAT, notes (as on invoices), a reference and
+  terms. A quote is for a customer or an **ad-hoc customer** — someone who is not a customer
+  yet, with just a name and currency (contact details optional); add one on the spot from the
+  quote editor or under Quotes → *Ad-hoc customers*. Each quote is numbered (`Q-17/26`; its own
+  sequence) and valid until its date plus the days set in **Settings → Quotes**, which also
+  holds the quote number format, the **quote e-mail** (subject and body with
+  `{{quote_number}}`, `{{valid_until}}`, `{{total}}`, …) and the terms printed on every new
+  quote. **E-mail** sends it through the same outbox as invoices (now or later, retried,
+  cancellable), with the PDF attached. Mark it **Accepted** or **Declined**; a draft or sent
+  quote past its date shows as *Expired*. **Make customer** turns an ad-hoc customer into a
+  real one (an invoice code, e-mail address and payment terms are added); their quotes move to
+  the new customer. **Convert to invoice** then makes a draft invoice with the quoted products,
+  prices, VAT and notes, to check and issue as usual (deleting that draft makes the quote
+  convertible again). The **quote PDF can only be printed**: it is encrypted (AES-128) with
+  printing as its only permission, so it opens without a password but Adobe Acrobat, macOS
+  Preview and other readers that honour PDF permissions refuse to edit it, fill or annotate
+  it, or copy from it. (Chrome's built-in viewer still lets you draw on its own copy, and no
+  PDF can stop a determined editing tool.) Each quote therefore also prints a **verification
+  code** that changes if anything printed changes, shown on the quote's page, so a PDF that
+  comes back can be checked against the quote.
 - **Invoice archive** — every issued invoice is exported as a PDF to the invoices volume
   (`<year>/Inv_no_<number>.pdf`) and refreshed when it changes.
 - **Encrypted backups and restore** — the app backs itself up daily (configurable), encrypted
@@ -289,7 +313,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `HTTP_PORT` | `8080` | Docker: host port for the web app and API (`http://localhost:8080`). |
 | `MAILPIT_PORT` | `8025` | Docker: host port for the Mailpit test mailbox's web page (when `COMPOSE_PROFILES` includes `mailpit`). |
-| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.17.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
+| `CACTUSINV_IMAGE` | `cactusinv:latest` | Name of the image `--install` builds and runs. On k3s/k8s the tag becomes the version (`cactusinv:1.18.0`); for `--k8s` it is pushed to `K8S_REGISTRY`. |
 
 ### Application (all targets)
 
@@ -297,7 +321,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.17.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `http(s)` URL of a file whose first line is a version like `1.18.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |

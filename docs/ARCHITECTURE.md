@@ -203,8 +203,57 @@ Schedule { customer, name, frequency: once|weekly|monthly|quarterly|yearly,
   (schedule `Validate`, draft content, `AmendNotes`). The PDF adapter lays the model out
   (`pdf/notes.go`); the editor cleans loaded and pasted HTML in an inert document before
   showing it. `notes` columns are MEDIUMTEXT (migration 00023); at most 800 kB.
+- Notes may hold links (M35): `<a href>` becomes `NoteStyle.Link` when `domain.SafeLink`
+  accepts the address (absolute http/https with a host and no user info, or mailto;
+  `www.…` means https), otherwise only its text is kept; the canonical HTML writes it back as
+  `<a href>`. The PDF draws a linked run blue and underlined with a URI link annotation over
+  it (`fpdf.LinkString`); web addresses in plain notes, the disclaimer and quote terms are
+  found by pattern and made clickable the same way. The editor (`safeHref`, the same rules)
+  inserts links and keeps only such `href`s from pastes; read-only notes open links in a new
+  tab.
 - A failed run keeps the schedule on the failing period with backoff
   (`RecordFailure`); after `MaxScheduleFailures` it is paused, and it surfaces in the UI.
+
+### 3.9 Quotes (M34)
+
+```
+Quote { number (own sequence, invoice_sequences 'quote'), customer_id? | adhoc_customer_id,
+        currency, issue_date, valid_until, sales_person, reference, bill_to, notes, terms,
+        vat, lines (product snapshots, as invoice lines), totals, invoice_id?,
+        status: draft|sent|accepted|declined|converted }
+AdhocCustomer { name, email?, attention, address, phone, tax_number, currency,
+                customer_id? (set when made a customer) }
+QuoteSettings { valid_days, number_format ({seq} {dd} {mm} {yy} {yyyy}), email subject/body, terms }
+```
+
+- A quote is not a tax document: it is numbered when created (gaps allowed when a draft is
+  deleted), revisable while draft or sent (a sent one goes back to draft), and final once
+  accepted, declined or converted. Its stage adds *expired* for a draft or sent quote past
+  `valid_until` (`Quote.Stage`).
+- Lines are priced like invoice lines (`app.priceLines`, shared): every line is a product,
+  priced in the quote's currency unless overridden.
+- `SendQuote` writes an outbox row of kind `quote` (`email_outbox.quote_id`) with the Quote
+  settings' template (`{{quote_number}}`, `{{valid_until}}`, …) and marks the quote sent; the
+  dispatcher renders the PDF at delivery (`deliverQuote`), exactly as for invoices.
+- `ConvertAdhocCustomer` creates the customer (`checkCustomer`, `customers.create`), marks
+  the ad-hoc customer converted and sets `quotes.customer_id` on its quotes.
+  `ConvertQuote` (also needs `invoices.create`) builds the draft invoice from
+  `Quote.InvoiceContent` (the customer's addresses and terms, the quote's lines, prices, VAT,
+  notes, sales person and reference) in one transaction with the quote's `converted`; deleting
+  that draft puts the quote back to accepted.
+- The quote PDF (`pdf.RenderQuote`) is encrypted with the PDF standard security handler,
+  revision 4 with AES-128 (`pdf/encrypt.go`, rewriting fpdf's output: every string and
+  stream with its object's key and a random IV, `/Length`s and the xref rebuilt): no user
+  password, a random owner password thrown away, permissions *print* only (`/P` -1852).
+  fpdf's own `SetProtection` is not used: its RC4 keeps one keystream per object, so every
+  string after the first (the title, a second link on a page) could not be read back. A
+  conforming reader (Acrobat, Preview) opens it but will not change, fill, annotate or copy
+  it; the permission is advisory (Chrome's viewer still offers its drawing tool on its own
+  copy, editing tools can ignore it), so each quote also
+  prints `Quote.Fingerprint()` (SHA-256 over the printed content, 12 hex digits), shown in
+  the app, to check a returned PDF. Invoices and statements are not encrypted.
+- Permissions: `quotes.view|create|edit|delete|send|outcome|convert`,
+  `settings.quotes.view`, `settings.quotes` (ADR-012 catalogue).
 
 ### 3.8 E-mail outbox (ADR-004)
 
@@ -582,7 +631,7 @@ the session timeouts and the host folders mapped to the container's folders.
   could not be made (switched off, a development build, unreachable, unreadable). Versions
   compare as MAJOR.MINOR.PATCH (`domain.ParseVersion`); a newer build of the same version is
   not offered.
-- **Install in place (M31, cactusDB's mechanism)**, standalone binary only: `make dist` builds
+- **Install in place (M31)**, standalone binary only: `make dist` builds
   `dist/cactusinv-<os>-<arch>[.exe]` (linux, darwin, windows × amd64, arm64) and
   `dist/SHA256SUMS`, committed with `VERSION`, so a push to `main` publishes a release.
   `POST /settings/system/update` (`settings.system.edit`) starts `app.InstallUpdate`: a backup

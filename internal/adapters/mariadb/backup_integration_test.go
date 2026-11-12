@@ -353,6 +353,8 @@ func TestOlderSchemaBackupRestoresIntoHead(t *testing.T) {
 		t.Fatalf("preview %+v / result %+v", p, res)
 	}
 	_, _, after := snapshotRows(t, ctx)
+	// Rows the later migrations add: the quote number sequence (00024).
+	after["invoice_sequences"] = slices.DeleteFunc(after["invoice_sequences"], func(r []any) bool { return fmt.Sprint(r[0]) == "quote" })
 	for table, rows := range withoutAudit(before) {
 		if !reflect.DeepEqual(leading(after[table], rows), rows) {
 			t.Errorf("table %s differs", table)

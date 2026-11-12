@@ -12,7 +12,7 @@ import (
 )
 
 const claimDueEmails = `-- name: ClaimDueEmails :many
-SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id, quote_id FROM email_outbox
 WHERE (status = 'pending' AND next_attempt_at <= ?)
    OR (status = 'sending' AND updated_at <= ?)
 ORDER BY next_attempt_at
@@ -53,6 +53,7 @@ func (q *Queries) ClaimDueEmails(ctx context.Context, arg ClaimDueEmailsParams) 
 			&i.Kind,
 			&i.CustomerID,
 			&i.InvoiceID,
+			&i.QuoteID,
 		); err != nil {
 			return nil, err
 		}
@@ -72,12 +73,14 @@ SELECT COUNT(*) FROM email_outbox
 WHERE (? = '' OR status = ?)
   AND (? = '' OR invoice_id = ?)
   AND (? = '' OR customer_id = ?)
+  AND (? = '' OR quote_id = ?)
 `
 
 type CountEmailsParams struct {
 	Status     string
 	InvoiceID  sql.NullString
 	CustomerID sql.NullString
+	QuoteID    sql.NullString
 }
 
 func (q *Queries) CountEmails(ctx context.Context, arg CountEmailsParams) (int64, error) {
@@ -88,6 +91,8 @@ func (q *Queries) CountEmails(ctx context.Context, arg CountEmailsParams) (int64
 		arg.InvoiceID,
 		arg.CustomerID,
 		arg.CustomerID,
+		arg.QuoteID,
+		arg.QuoteID,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -106,7 +111,7 @@ func (q *Queries) CountSendingEmails(ctx context.Context, updatedAt time.Time) (
 }
 
 const getEmail = `-- name: GetEmail :one
-SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox WHERE id = ?
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id, quote_id FROM email_outbox WHERE id = ?
 `
 
 func (q *Queries) GetEmail(ctx context.Context, id string) (EmailOutbox, error) {
@@ -130,12 +135,13 @@ func (q *Queries) GetEmail(ctx context.Context, id string) (EmailOutbox, error) 
 		&i.Kind,
 		&i.CustomerID,
 		&i.InvoiceID,
+		&i.QuoteID,
 	)
 	return i, err
 }
 
 const getEmailByIdempotencyKey = `-- name: GetEmailByIdempotencyKey :one
-SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox WHERE idempotency_key = ?
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id, quote_id FROM email_outbox WHERE idempotency_key = ?
 `
 
 func (q *Queries) GetEmailByIdempotencyKey(ctx context.Context, idempotencyKey sql.NullString) (EmailOutbox, error) {
@@ -159,14 +165,15 @@ func (q *Queries) GetEmailByIdempotencyKey(ctx context.Context, idempotencyKey s
 		&i.Kind,
 		&i.CustomerID,
 		&i.InvoiceID,
+		&i.QuoteID,
 	)
 	return i, err
 }
 
 const insertEmail = `-- name: InsertEmail :exec
-INSERT INTO email_outbox (id, kind, invoice_id, customer_id, to_addrs, cc_addrs, subject, body, status, attempts,
+INSERT INTO email_outbox (id, kind, invoice_id, customer_id, quote_id, to_addrs, cc_addrs, subject, body, status, attempts,
     send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertEmailParams struct {
@@ -174,6 +181,7 @@ type InsertEmailParams struct {
 	Kind           string
 	InvoiceID      sql.NullString
 	CustomerID     sql.NullString
+	QuoteID        sql.NullString
 	ToAddrs        string
 	CcAddrs        string
 	Subject        string
@@ -195,6 +203,7 @@ func (q *Queries) InsertEmail(ctx context.Context, arg InsertEmailParams) error 
 		arg.Kind,
 		arg.InvoiceID,
 		arg.CustomerID,
+		arg.QuoteID,
 		arg.ToAddrs,
 		arg.CcAddrs,
 		arg.Subject,
@@ -213,10 +222,11 @@ func (q *Queries) InsertEmail(ctx context.Context, arg InsertEmailParams) error 
 }
 
 const listEmails = `-- name: ListEmails :many
-SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id, quote_id FROM email_outbox
 WHERE (? = '' OR status = ?)
   AND (? = '' OR invoice_id = ?)
   AND (? = '' OR customer_id = ?)
+  AND (? = '' OR quote_id = ?)
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?
 `
@@ -225,6 +235,7 @@ type ListEmailsParams struct {
 	Status     string
 	InvoiceID  sql.NullString
 	CustomerID sql.NullString
+	QuoteID    sql.NullString
 	Limit      int32
 	Offset     int32
 }
@@ -237,6 +248,8 @@ func (q *Queries) ListEmails(ctx context.Context, arg ListEmailsParams) ([]Email
 		arg.InvoiceID,
 		arg.CustomerID,
 		arg.CustomerID,
+		arg.QuoteID,
+		arg.QuoteID,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -265,6 +278,7 @@ func (q *Queries) ListEmails(ctx context.Context, arg ListEmailsParams) ([]Email
 			&i.Kind,
 			&i.CustomerID,
 			&i.InvoiceID,
+			&i.QuoteID,
 		); err != nil {
 			return nil, err
 		}
@@ -280,7 +294,7 @@ func (q *Queries) ListEmails(ctx context.Context, arg ListEmailsParams) ([]Email
 }
 
 const lockEmail = `-- name: LockEmail :one
-SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id FROM email_outbox WHERE id = ? FOR UPDATE
+SELECT id, to_addrs, cc_addrs, subject, body, status, attempts, send_at, next_attempt_at, last_error, sent_at, idempotency_key, created_at, updated_at, kind, customer_id, invoice_id, quote_id FROM email_outbox WHERE id = ? FOR UPDATE
 `
 
 // LockEmail reads a message FOR UPDATE: every status change locks it first, so a cancel and
@@ -306,6 +320,7 @@ func (q *Queries) LockEmail(ctx context.Context, id string) (EmailOutbox, error)
 		&i.Kind,
 		&i.CustomerID,
 		&i.InvoiceID,
+		&i.QuoteID,
 	)
 	return i, err
 }

@@ -18,6 +18,11 @@ import { ImportExportSettingsPage } from './features/settings/transfer/ImportExp
 import { SystemSettingsPage } from './features/settings/system/SystemSettings'
 import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
+import { QuoteList } from './features/quotes/QuoteList'
+import { QuoteEditor } from './features/quotes/QuoteEditor'
+import { QuoteDetail } from './features/quotes/QuoteDetail'
+import { AdhocCustomers } from './features/quotes/AdhocCustomers'
+import { QuoteSettingsPage } from './features/settings/QuoteSettings'
 
 export function AppRoutes() {
   const need = (p: string | string[], el: JSX.Element) => <RequireAccess need={p}>{el}</RequireAccess>
@@ -29,6 +34,11 @@ export function AppRoutes() {
         <Route path="invoices/new" element={need('invoices.create', <InvoiceEditor />)} />
         <Route path="invoices/:id" element={need('invoices.view', <InvoiceDetail />)} />
         <Route path="invoices/:id/edit" element={need('invoices.edit', <InvoiceEditor />)} />
+        <Route path="quotes" element={need('quotes.view', <QuoteList />)} />
+        <Route path="quotes/new" element={need('quotes.create', <QuoteEditor />)} />
+        <Route path="quotes/adhoc-customers" element={need('quotes.view', <AdhocCustomers />)} />
+        <Route path="quotes/:id" element={need('quotes.view', <QuoteDetail />)} />
+        <Route path="quotes/:id/edit" element={need('quotes.edit', <QuoteEditor />)} />
         <Route path="customers" element={need('customers.view', <CustomerList />)} />
         <Route path="customers/new" element={need('customers.create', <CustomerEditor />)} />
         <Route path="customers/:id" element={need('customers.view', <CustomerEditor />)} />
@@ -47,6 +57,7 @@ export function AppRoutes() {
         <Route path="settings">
           <Route index element={<SettingsHome />} />
           <Route path="business" element={need('settings.business.view', <BusinessSettingsPage />)} />
+          <Route path="quotes" element={need('settings.quotes.view', <QuoteSettingsPage />)} />
           <Route path="email" element={need('settings.email.view', <EmailSettingsPage />)} />
           <Route path="currencies" element={need('settings.currencies.view', <CurrencySettingsPage />)} />
           <Route path="import-export" element={need(['settings.export', 'settings.import'], <ImportExportSettingsPage />)} />

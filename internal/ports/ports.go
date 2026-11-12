@@ -49,6 +49,11 @@ type Repos struct {
 	BackupRuns  BackupRunRepository
 	// SystemSettings are the installation's own settings (System Settings, M23).
 	SystemSettings SystemSettingsRepository
+	// Quotes, ad-hoc customers, Settings → Quotes and the quote numbers (M34).
+	Quotes         QuoteRepository
+	AdhocCustomers AdhocCustomerRepository
+	QuoteSettings  QuoteSettingsRepository
+	QuoteSequences SequenceRepository
 }
 
 // SystemSettingsRepository stores the single System Settings row (never backed up).
@@ -230,6 +235,60 @@ type InvoiceFilter struct {
 	Page       Page
 }
 
+// QuoteFilter narrows a quote list.
+type QuoteFilter struct {
+	Status          domain.QuoteStatus
+	CustomerID      string
+	AdhocCustomerID string
+	Query           string
+	Expired         bool // only draft and sent quotes whose validity ended before Today
+	Today           domain.Date
+	Page            Page
+}
+
+// QuoteRepository persists quotes and their lines.
+type QuoteRepository interface {
+	// List returns a page of quotes (without lines), newest first, and the total count.
+	List(ctx context.Context, f QuoteFilter) ([]domain.Quote, int, error)
+	Get(ctx context.Context, id string) (*domain.Quote, error)
+	// GetByInvoice returns the quote an invoice was made from (ErrNotFound if none).
+	GetByInvoice(ctx context.Context, invoiceID string) (*domain.Quote, error)
+	Create(ctx context.Context, q *domain.Quote) error
+	// Update saves q if its version is current (ErrConflict otherwise) and bumps it.
+	Update(ctx context.Context, q *domain.Quote) error
+	Delete(ctx context.Context, id string) error
+	// SetCustomerForAdhoc gives every quote made out to the ad-hoc customer the customer
+	// they became.
+	SetCustomerForAdhoc(ctx context.Context, adhocID, customerID string, now time.Time) error
+	CountForAdhoc(ctx context.Context, adhocID string) (int, error)
+}
+
+// AdhocCustomerFilter narrows the ad-hoc customer list.
+type AdhocCustomerFilter struct {
+	Query            string
+	IncludeConverted bool
+	Page             Page
+}
+
+// AdhocCustomerRepository persists ad-hoc customers.
+type AdhocCustomerRepository interface {
+	List(ctx context.Context, f AdhocCustomerFilter) ([]domain.AdhocCustomer, int, error)
+	Get(ctx context.Context, id string) (domain.AdhocCustomer, error)
+	Create(ctx context.Context, a domain.AdhocCustomer) error
+	// Update saves a if its version is current (ErrConflict otherwise).
+	Update(ctx context.Context, a domain.AdhocCustomer) error
+	// Delete removes an ad-hoc customer no quote refers to (ErrConflict otherwise).
+	Delete(ctx context.Context, id string) error
+}
+
+// QuoteSettingsRepository stores the single Settings → Quotes row.
+type QuoteSettingsRepository interface {
+	// Get returns the saved settings, or ErrNotFound before they are first saved.
+	Get(ctx context.Context) (domain.QuoteSettings, error)
+	// Save inserts (version 0) or updates the row if its version is current.
+	Save(ctx context.Context, s domain.QuoteSettings) error
+}
+
 // CurrencyTotals summarise open invoices in one currency.
 type CurrencyTotals struct {
 	Currency     domain.CurrencyCode
@@ -335,6 +394,7 @@ type EmailFilter struct {
 	Status     domain.EmailStatus
 	InvoiceID  string
 	CustomerID string // statement e-mails of a customer
+	QuoteID    string // e-mails of a quote
 	Page       Page
 }
 
@@ -482,6 +542,15 @@ type InvoiceDocument struct {
 	Disclaimer string
 }
 
+// QuoteDocument is everything printed on a quote.
+type QuoteDocument struct {
+	Quote    *domain.Quote
+	Business domain.BusinessProfile
+	Currency domain.Currency
+	// Expired is shown on the PDF of a draft or sent quote past its validity.
+	Expired bool
+}
+
 // StatementDocument is everything printed on a customer statement.
 type StatementDocument struct {
 	Statement  domain.Statement
@@ -495,6 +564,8 @@ type StatementDocument struct {
 type InvoiceRenderer interface {
 	RenderPDF(ctx context.Context, doc InvoiceDocument) ([]byte, error)
 	RenderStatement(ctx context.Context, doc StatementDocument) ([]byte, error)
+	// RenderQuote renders a quote as a PDF that a reader lets you print but not change.
+	RenderQuote(ctx context.Context, doc QuoteDocument) ([]byte, error)
 }
 
 // InvoiceArchive stores exported invoice PDFs (the invoices volume).

@@ -1,5 +1,5 @@
-// Package selfupdate replaces a standalone cactusInv binary with a published release, the
-// way cactusDB does (M31): the binaries and their SHA256SUMS are published in dist/ on the
+// Package selfupdate replaces a standalone cactusInv binary with a published release
+// (M31): the binaries and their SHA256SUMS are published in dist/ on the
 // main branch beside VERSION. A container never replaces itself (its image would bring the
 // old version back at the next start); it is updated with ./deploy.sh --upgrade.
 package selfupdate

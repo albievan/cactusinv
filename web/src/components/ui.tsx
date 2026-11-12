@@ -72,6 +72,10 @@ const statusColours: Record<string, string> = {
   active: tone('success'),
   paused: tone('warning'),
   ended: tone('secondary'),
+  accepted: tone('success'),
+  declined: tone('danger'),
+  converted: tone('success'),
+  expired: tone('warning'),
 }
 
 /** Human labels for invoice stages. */
@@ -82,6 +86,16 @@ export const stageLabels: Record<string, string> = {
   overdue: 'Overdue',
   paid: 'Paid',
   void: 'Void',
+}
+
+/** Human labels for quote stages (a quote's "sent" is not an e-mail's). */
+export const quoteStageLabels: Record<string, string> = {
+  draft: 'Draft',
+  sent: 'Sent',
+  accepted: 'Accepted',
+  declined: 'Declined',
+  converted: 'Invoiced',
+  expired: 'Expired',
 }
 
 export function Badge({ status, label }: { status: string; label?: string }) {
