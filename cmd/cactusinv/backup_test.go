@@ -68,18 +68,17 @@ func TestReadPassphrase(t *testing.T) {
 	}
 }
 
-func TestCatLegacy(t *testing.T) {
+// The legacy dump commands are gone (M40): they are not backup subcommands any more.
+func TestLegacyDumpCommandsAreGone(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "cactusinv-20261001-020000.sql.gz"), []byte("dump"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := backupCommand(context.Background(), config{BackupDir: dir}, []string{"cat-legacy", "cactusinv-20261001-020000.sql.gz"}, nil, &out, false); err != nil || out.String() != "dump" {
-		t.Fatalf("%q %v", out.String(), err)
-	}
-	for _, bad := range []string{"../etc/passwd", "cactusinv-20261015T000000Z-s14-manual.age", "x.sql.gz"} {
-		if err := backupCommand(context.Background(), config{BackupDir: dir}, []string{"cat-legacy", bad}, nil, &out, false); err == nil {
-			t.Errorf("%q accepted", bad)
+	for _, cmd := range []string{"cat-legacy", "note-legacy-restore"} {
+		err := backupCommand(context.Background(), config{BackupDir: dir}, []string{cmd, "cactusinv-20261001-020000.sql.gz"}, strings.NewReader("dump"), &out, false)
+		if err == nil || out.String() != "" {
+			t.Errorf("%s still works: %q %v", cmd, out.String(), err)
 		}
 	}
 }

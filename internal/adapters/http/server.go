@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -42,6 +43,9 @@ type Options struct {
 	// client. Without them every client behind a proxy shares its address, so one client's
 	// wrong passwords would lock everyone out.
 	TrustedProxies []netip.Prefix
+	// MetricsToken guards GET /metrics: it answers only a request with
+	// "Authorization: Bearer <token>". Empty = no /metrics at all (M40).
+	MetricsToken string
 }
 
 // NewHandler builds the complete HTTP handler.
@@ -80,11 +84,29 @@ func NewHandler(o Options) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	root.HandleFunc("GET /readyz", readyz(o.Ready))
-	root.Handle("GET /metrics", promhttp.HandlerFor(o.Registry, promhttp.HandlerOpts{}))
+	root.Handle("GET /metrics", metricsGuard(o.MetricsToken, promhttp.HandlerFor(o.Registry, promhttp.HandlerOpts{})))
 	if o.Web != nil {
 		root.Handle("/", spa(o.Web))
 	}
 	return withRequestLog(o.Logger, withSecurityHeaders(root))
+}
+
+// metricsGuard serves next only with the bearer token; without a configured token the
+// endpoint does not exist. The figures (request counts, outbox depth) are not for everyone.
+func metricsGuard(token string, next http.Handler) http.Handler {
+	want := []byte("Bearer " + token)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token == "" {
+			writeProblem(w, Problem{Type: problemType("not-found"), Title: "No such endpoint", Status: http.StatusNotFound})
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
+			writeProblem(w, Problem{Type: problemType("unauthorized"), Title: "Metrics need the bearer token", Status: http.StatusUnauthorized})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func readyz(checks map[string]ReadyCheck) http.HandlerFunc {

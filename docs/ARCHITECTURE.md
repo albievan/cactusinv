@@ -302,7 +302,7 @@ Tables: `business_profile` (single row), `users` (with `disabled_at`, `must_chan
 | Schedules | `GET/POST /schedules`, `GET/PUT/DELETE /schedules/{id}`, `POST /schedules/{id}/pause`, `/resume`, `/run-now`, `GET /schedules/{id}/preview` (next N run dates) |
 | Outbox | `GET /emails` (`?status=`), `POST /emails/{id}/cancel`, `/retry` |
 | Dashboard | `GET /dashboard` (outstanding per currency, overdue, upcoming sends) |
-| Ops | `GET /healthz`, `GET /readyz`, `GET /metrics` (not under `/api`) |
+| Ops | `GET /healthz`, `GET /readyz`, `GET /metrics` with the `metrics_token` bearer token (404 without a configured token; not under `/api`) |
 
 Errors: `application/problem+json` with `type` URIs `https://cactusinv/problems/<code>`.
 Mutations require header `X-Requested-With: cactusinv` (CSRF) and accept `Idempotency-Key`

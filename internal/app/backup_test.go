@@ -901,7 +901,7 @@ func TestConcurrentUploadsInOneSecond(t *testing.T) {
 	}
 }
 
-func TestOperatorRestoreAndLegacyNote(t *testing.T) {
+func TestOperatorRestore(t *testing.T) {
 	b := newBackupHarness(t, nil, true, nil)
 	name := b.backupNow()
 	p := must(b.svc.StageRestore(app.WithActor(context.Background(), app.ActorOperator), name, ""))
@@ -912,16 +912,9 @@ func TestOperatorRestoreAndLegacyNote(t *testing.T) {
 	if a := b.lastAudit(); a.Action != "backup.restored" || a.ActorName != "Operator (CLI)" || res.Source != name {
 		t.Fatalf("audit = %+v", a)
 	}
-	must0(t, b.svc.NoteLegacyRestore(context.Background(), "cactusinv-20261001-020000.sql.gz", strings.NewReader("-- dump")))
-	if a := b.lastAudit(); a.Action != "backup.legacy_restored" || !strings.Contains(a.Summary, "7 bytes") || a.ActorName != "Operator (CLI)" {
-		t.Fatalf("legacy note = %+v", a)
-	}
 	plain := app.New(app.Deps{Tx: b.store, Clock: b.clock, IDs: &fakes.IDs{}, Hasher: fakes.Hasher{}})
 	if _, err := plain.ApplyRestoreAsOperator(b.ctx, "x"); !errors.Is(err, domain.ErrNotConfigured) {
 		t.Fatalf("not configured: %v", err)
-	}
-	if err := b.svc.NoteLegacyRestore(b.ctx, "x", errReader{}); err == nil {
-		t.Fatal("read error")
 	}
 }
 

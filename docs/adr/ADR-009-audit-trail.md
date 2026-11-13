@@ -63,7 +63,8 @@ an audit entry:
   `backup.restore_failed`.
 - Restores of legacy `.sql.gz` dumps (kept one release, ADR-007) still bypass this; the
   operator records them with `cactusinv backup note-legacy-restore FILE`, and the hole
-  closes when the sidecar's dumps are retired.
+  closes when the sidecar's dumps are retired. (Closed in v1.22.0, M40: they can no longer
+  be restored.)
 - Appends assign `seq` explicitly (last + 1, under the `audit_head` lock) instead of
   relying on `AUTO_INCREMENT`, which InnoDB does not roll back: a rolled-back append used
   to leave a gap that verification reports as missing entries.

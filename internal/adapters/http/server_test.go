@@ -44,7 +44,8 @@ func newServer(t *testing.T) (*client, *fakes.Store, *fakes.Clock, *app.Service)
 	}
 	h := httpapi.NewHandler(httpapi.Options{
 		Service: svc, Clock: clock, Web: web,
-		Ready: map[string]httpapi.ReadyCheck{"db": func(context.Context) error { return nil }},
+		Ready:        map[string]httpapi.ReadyCheck{"db": func(context.Context) error { return nil }},
+		MetricsToken: "metrics-test-token",
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -468,7 +469,7 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 
 func TestOpsEndpointsAndSPA(t *testing.T) {
 	c, _, _, _ := newServer(t)
-	for path, want := range map[string]int{"/healthz": 200, "/readyz": 200, "/metrics": 200, "/": 200, "/invoices/123": 200, "/assets/app.js": 200} {
+	for path, want := range map[string]int{"/healthz": 200, "/readyz": 200, "/metrics": 401, "/": 200, "/invoices/123": 200, "/assets/app.js": 200} {
 		resp, err := c.get(path)
 		if err != nil {
 			t.Fatal(err)
@@ -496,6 +497,43 @@ func TestOpsEndpointsAndSPA(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 405 {
 		t.Fatalf("POST / = %d", resp.StatusCode)
+	}
+}
+
+// /metrics answers only with its bearer token, and does not exist without one (M40).
+func TestMetricsNeedTheToken(t *testing.T) {
+	svc := app.New(app.Deps{Tx: fakes.NewStore(), Clock: &fakes.Clock{}, IDs: &fakes.IDs{}})
+	get := func(token, auth string) *httptest.ResponseRecorder {
+		h := httpapi.NewHandler(httpapi.Options{Service: svc, Clock: &fakes.Clock{}, MetricsToken: token})
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/metrics", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	for name, tc := range map[string]struct {
+		token, auth string
+		want        int
+	}{
+		"no token configured":        {"", "Bearer ", 404},
+		"no token configured, empty": {"", "", 404},
+		"missing header":             {"s3cret-token", "", 401},
+		"wrong token":                {"s3cret-token", "Bearer s3cret-tokeN", 401},
+		"not bearer":                 {"s3cret-token", "Basic s3cret-token", 401},
+		"right token":                {"s3cret-token", "Bearer s3cret-token", 200},
+	} {
+		rec := get(tc.token, tc.auth)
+		if rec.Code != tc.want {
+			t.Errorf("%s: /metrics = %d, want %d", name, rec.Code, tc.want)
+		}
+		if tc.want == 200 && !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain") {
+			t.Errorf("%s: not the Prometheus text format: %q", name, rec.Header().Get("Content-Type"))
+		}
+		if tc.want == 401 && rec.Header().Get("WWW-Authenticate") == "" {
+			t.Errorf("%s: no WWW-Authenticate", name)
+		}
 	}
 }
 

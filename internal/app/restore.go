@@ -426,18 +426,6 @@ func (s *Service) ApplyRestoreAsOperator(ctx context.Context, id string) (Restor
 	return s.applyRestore(WithActor(ctx, ActorOperator), id)
 }
 
-// NoteLegacyRestore records in the audit trail that a plaintext mariadb-dump backup was
-// restored outside the application (deploy.sh, retired sidecar format): such a restore
-// replaces audit_log wholesale, so this entry marks the break (ADR-009 amendment).
-func (s *Service) NoteLegacyRestore(ctx context.Context, name string, r io.Reader) error {
-	sum := newCountingHash()
-	if _, err := io.Copy(sum, r); err != nil {
-		return wrap("app.NoteLegacyRestore", err)
-	}
-	return wrap("app.NoteLegacyRestore", s.auditNow(WithActor(ctx, ActorOperator), "backup.legacy_restored", "backup", domain.TruncateUTF8(name, 64),
-		fmt.Sprintf("a plaintext mariadb-dump backup (%d bytes, sha256 %s) was restored with deploy.sh; the audit trail before this entry came from that dump", sum.n, sum.Sum())))
-}
-
 func (s *Service) applyRestore(ctx context.Context, id string) (RestoreResult, error) {
 	// The in-process slot only: the stager takes the installation-wide lock on the swap's
 	// own connection (ADR-010).

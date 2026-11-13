@@ -15,8 +15,7 @@
 #   --backup-now         take an encrypted backup now (stored in the backups volume)
 #   --restore FILE       restore a backup: a cactusinv-*.age file (a stored name or a path;
 #                        passphrase-encrypted ones read $CACTUSINV_BACKUP_PASSPHRASE), shown
-#                        first and confirmed by typing RESTORE; or a legacy cactusinv-*.sql.gz
-#                        dump (checked, a safety backup taken, then the database replaced)
+#                        first and confirmed by typing RESTORE
 #
 # TARGET
 #   --dockerdesktop      Docker Desktop, or Docker Engine on a Linux host (docker compose)
@@ -45,7 +44,9 @@ usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit "${1:-0}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --install | --uninstall | --delete-uninstall | --status | --backup-now | --upgrade | --version)
+    # --check-data: used by --upgrade (and --install) to stop before anything changes when
+    # the configured data folders are not the running install's (M40).
+    --install | --uninstall | --delete-uninstall | --status | --backup-now | --upgrade | --version | --check-data)
       [[ -z "$ACTION" ]] || die "choose one action"; ACTION="${1#--}" ;;
     --to) UPGRADE_TO="${2:-}"; shift; [[ -n "$UPGRADE_TO" && "$UPGRADE_TO" != --* ]] || die "--to needs a tag, branch or commit" ;;
     --migrate-down-to)
@@ -184,6 +185,7 @@ upgrade() {
     [[ "$answer" == upgrade ]] || die "aborted; nothing was changed"
   fi
 
+  self --check-data </dev/null || die "the data folders do not match the running install (nothing was changed)"
   info "taking a backup first"
   backup_out="$(self --backup-now </dev/null 2>&1 | tr -d '\r')" || { echo "$backup_out"; die "the backup failed, so nothing was changed"; }
   backup_name="$(printf '%s\n' "$backup_out" | grep -o 'cactusinv-[A-Za-z0-9._-]*\.age' | head -1 || true)"
@@ -268,6 +270,24 @@ random_key() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 
 random_secret() { od -An -N24 -tx1 /dev/urandom | tr -d ' \n'; }
 
+# The first administrator's password (M40): 24 hex characters, above the 12-character
+# minimum; it must still be changed at the first sign-in.
+random_password() { od -An -N12 -tx1 /dev/urandom | tr -d ' \n'; }
+
+# first_signin tells how to sign in the first time: the .env password when one is set,
+# else the generated admin_password (shown when generated in this run, its place otherwise).
+NEW_ADMIN_PASSWORD=
+first_signin() {
+  local where="$1"
+  if [[ -n "${CACTUSINV_DEFAULT_ADMIN_PASSWORD:-}" ]]; then
+    echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (a new installation only; change it after signing in)"
+  elif [[ -n "$NEW_ADMIN_PASSWORD" ]]; then
+    echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${NEW_ADMIN_PASSWORD} (a new installation only; you choose your own at the first sign-in)"
+  else
+    echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} with the password in ${where} (a new installation only)"
+  fi
+}
+
 ensure_secrets_dir() {
   mkdir -p "$SECRETS_DIR"
   chmod 700 "$SECRETS_DIR"
@@ -279,6 +299,13 @@ ensure_secrets_dir() {
     fi
   done
   [[ -f "$SECRETS_DIR/smtp_password" ]] || : >"$SECRETS_DIR/smtp_password"
+  # The first administrator's password (used only while no user exists) and the bearer
+  # token /metrics asks for (M40).
+  if [[ ! -s "$SECRETS_DIR/admin_password" ]]; then
+    NEW_ADMIN_PASSWORD="$(random_password)"
+    printf '%s' "$NEW_ADMIN_PASSWORD" >"$SECRETS_DIR/admin_password"
+  fi
+  [[ -s "$SECRETS_DIR/metrics_token" ]] || random_secret >"$SECRETS_DIR/metrics_token"
   if [[ ! -s "$SECRETS_DIR/app_key" ]]; then
     random_key >"$SECRETS_DIR/app_key"
     ok "generated $SECRETS_DIR/app_key (encrypts the SMTP password stored in the app)"
@@ -321,10 +348,8 @@ staging_grant_sql() {
   printf 'REVOKE ALL PRIVILEGES ON `%s`.* FROM %s;\n' "$db" "$to"
   printf 'GRANT %s ON `%s`.* TO %s;\n' "$STAGING_PRIVILEGES" "$db" "$to"
 }
-# Run inside the MariaDB container: as root (only to drop and recreate the database), and
-# as the application user (everything a dump does).
+# Run inside the MariaDB container as root (the restore staging database's grant).
 MARIADB_ROOT_SQL='MYSQL_PWD="$(cat /run/secrets/db_root_password)" exec mariadb -uroot'
-MARIADB_APP_SQL="MYSQL_PWD=\"\$(cat /run/secrets/db_password)\" exec mariadb -u'${MARIADB_USER}' '${MARIADB_DATABASE}'"
 
 docker_preflight() {
   command -v docker >/dev/null || die "docker is not installed"
@@ -341,6 +366,28 @@ mounted_dir() {
   id="$(compose ps -q app 2>/dev/null || true)"
   [[ -n "$id" ]] || return 0
   docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$1\"}}{{.Source}}{{end}}{{end}}" "$id" 2>/dev/null || true
+}
+
+# docker_data_guard stops when the running database or secrets are in another folder than
+# MARIADB_DATA_DIR / SECRETS_DIR say (M40): an .env written for another host would
+# otherwise start an empty database with new keys beside the real one. To really start
+# afresh elsewhere, --uninstall first (the data is kept).
+same_dir() { [[ "$(printf '%s' "${1%/}" | tr -s /)" == "$(printf '%s' "${2%/}" | tr -s /)" ]]; }
+docker_data_guard() {
+  local id cur want
+  id="$(compose ps -q mariadb 2>/dev/null || true)"
+  if [[ -n "$id" ]]; then
+    cur="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}' "$id" 2>/dev/null || true)"
+    want="$(abs_dir "$MARIADB_DATA_DIR")"
+    [[ -z "$cur" ]] || same_dir "$cur" "$want" ||
+      die "the running database is in $cur but MARIADB_DATA_DIR is $want: set MARIADB_DATA_DIR (and DATA_DIR, INVOICES_DIR, BACKUP_DIR, SECRETS_DIR) to this install's folders, in .env or the environment (nothing was changed)"
+  fi
+  cur="$(mounted_dir /run/secrets/app_key)"
+  if [[ -n "$cur" ]]; then
+    cur="${cur%/app_key}" want="$(abs_dir "$SECRETS_DIR")"
+    same_dir "$cur" "$want" ||
+      die "the running app's secrets are in $cur but SECRETS_DIR is $want: set SECRETS_DIR to that folder, in .env or the environment (nothing was changed)"
+  fi
 }
 
 # move_folder copies a folder's files to its new host folder when that is empty, so the
@@ -441,6 +488,7 @@ apply_folder_mappings() {
 
 docker_install() {
   docker_preflight
+  docker_data_guard
   mkdir -p "$MARIADB_DATA_DIR"
   ensure_secrets_dir
   info "building cactusInv ${CACTUSINV_VERSION} (build ${CACTUSINV_BUILD})"
@@ -463,7 +511,7 @@ docker_install() {
   for _ in $(seq 1 90); do
     if curl -fsS "http://localhost:${HTTP_PORT}/healthz" >/dev/null 2>&1; then
       ok "cactusInv is running at http://localhost:${HTTP_PORT}"
-      echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (change it after signing in)"
+      first_signin "$(abs_dir "$SECRETS_DIR")/admin_password"
       [[ ",${COMPOSE_PROFILES:-}," == *",mailpit,"* ]] && echo "    test mailbox:  http://localhost:${MAILPIT_PORT}"
       echo "    invoices:      $INVOICES_DIR    backups: $BACKUP_DIR (encrypted, daily at ${BACKUP_TIMES})"
       backup_key_notice
@@ -532,46 +580,6 @@ restore_source() {
   die "no such backup: $RESTORE_FILE"
 }
 
-legacy_warning() {
-  printf '\033[33mwarning:\033[0m %s is a legacy plaintext mariadb-dump backup. Restoring it drops and\n' "$1"
-  echo "         recreates the whole database, the audit trail included (it is replaced by the one in"
-  echo "         the dump); the restore is recorded in the new trail afterwards. Prefer an .age backup."
-  echo "         The current data was saved first as $2 (restore that to undo)."
-}
-
-# legacy_reset_sql drops and recreates the live database (a legacy dump replaces it whole).
-legacy_reset_sql() {
-  printf 'DROP DATABASE IF EXISTS `%s`; CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' "$MARIADB_DATABASE" "$MARIADB_DATABASE"
-}
-
-# check_dump refuses anything but an intact gzip of a mariadb-dump/mysqldump file.
-check_dump() {
-  gzip -t "$1" 2>/dev/null || die "$2 is not an intact .gz file; nothing was changed"
-  local start
-  # (gunzip is cut off by head on purpose: under pipefail that is not a failure here)
-  start="$(gunzip -c "$1" 2>/dev/null | head -c 1024 | tr -d '\0' || true)"
-  grep -Eq '(MariaDB|MySQL) dump' <<<"$start" || die "$2 is not a mariadb-dump backup; nothing was changed"
-}
-
-# with_legacy_dump fetches the dump into a private temporary file, checks it, and runs
-# "$1" with the file and its name. Nothing is changed before the checks pass.
-LEGACY_TMP=""
-with_legacy_dump() {
-  local fetch="$1" apply="$2" src name file
-  src="$(restore_source)"
-  if [[ "$src" == stored:* ]]; then
-    name="${src#stored:}"
-    LEGACY_TMP="$(umask 077 && mktemp "${TMPDIR:-/tmp}/cactusinv-legacy.XXXXXX")"
-    trap 'rm -f "$LEGACY_TMP"' EXIT
-    "$fetch" "$name" >"$LEGACY_TMP" || die "cannot read $name from the backups volume"
-    file="$LEGACY_TMP"
-  else
-    name="$(basename "$src")" file="$src"
-  fi
-  check_dump "$file" "$name"
-  "$apply" "$file" "$name"
-}
-
 # restore_age stages the backup (the app prints the preview), asks, then applies it.
 restore_age() {
   local run="$1" src out id
@@ -592,31 +600,17 @@ restore_age() {
 }
 
 docker_app_backup() { compose exec -T -e CACTUSINV_BACKUP_PASSPHRASE app /cactusinv backup "$@"; }
-docker_cat_legacy() { compose exec -T app /cactusinv backup cat-legacy "$1" </dev/null; }
-
-docker_load_legacy() {
-  local file="$1" name="$2" safety
-  info "taking a safety backup of the current data"
-  safety="$(docker_app_backup create </dev/null | awk '{print $1}')" || true
-  [[ "$safety" == cactusinv-*.age ]] || die "could not take a safety backup first (is backup_key set up?); nothing was changed"
-  legacy_warning "$name" "$safety"
-  confirm_word RESTORE "Restoring $name replaces the whole database." || die "aborted; nothing was changed"
-  info "replacing database ${MARIADB_DATABASE} with $name"
-  compose stop app </dev/null
-  legacy_reset_sql | compose exec -T mariadb sh -c "$MARIADB_ROOT_SQL"
-  gunzip -c "$file" | compose exec -T mariadb sh -c "$MARIADB_APP_SQL"
-  compose up -d --wait app </dev/null
-  compose exec -T app /cactusinv backup note-legacy-restore - --name "$name" <"$file"
-  ok "restored $name (migrated to this version on start); the data before is in $safety"
+# A legacy .sql.gz dump of the retired backup sidecar can no longer be restored (M40; it
+# was kept for a release after M14, with a warning).
+legacy_refused() {
+  [[ "$RESTORE_FILE" != *.sql.gz ]] ||
+    die "$RESTORE_FILE is a legacy plaintext dump: restoring those ended in 1.22.0 (restore it with cactusInv 1.21.x, then take an .age backup)"
 }
 
 docker_restore() {
   docker_preflight
-  if [[ "$RESTORE_FILE" == *.sql.gz ]]; then
-    with_legacy_dump docker_cat_legacy docker_load_legacy
-  else
-    restore_age docker_app_backup
-  fi
+  legacy_refused
+  restore_age docker_app_backup
 }
 
 # ---------------------------------------------------------------------------------------
@@ -870,6 +864,7 @@ stringData:
   db_password: "$(random_secret)"
   db_root_password: "$(random_secret)"
   app_key: "$(random_key)"
+  metrics_token: "$(random_secret)"
 data:
   # base64, so a password with quotes or backslashes arrives as typed
   smtp_password: "$(printf '%s' "${CACTUSINV_SMTP_PASSWORD:-}" | base64 | tr -d '\n')"
@@ -880,6 +875,14 @@ YAML
   # Older installs: add the app_key that encrypts the in-app SMTP password.
   if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.app_key}' | grep -q .; then
     printf '{"stringData":{"app_key":"%s"}}' "$(random_key)" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
+  fi
+  # M40: the first administrator's password and the /metrics bearer token.
+  if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.admin_password}' | grep -q .; then
+    NEW_ADMIN_PASSWORD="$(random_password)"
+    printf '{"stringData":{"admin_password":"%s"}}' "$NEW_ADMIN_PASSWORD" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
+  fi
+  if ! kc -n "$K8S_NAMESPACE" get secret cactusinv-secrets -o jsonpath='{.data.metrics_token}' | grep -q .; then
+    printf '{"stringData":{"metrics_token":"%s"}}' "$(random_secret)" | kc -n "$K8S_NAMESPACE" patch secret cactusinv-secrets --type merge --patch-file /dev/stdin
   fi
   # The mariadb-dump CronJob and its script are retired: the app takes the backups now.
   kc -n "$K8S_NAMESPACE" delete cronjob cactusinv-backup --ignore-not-found
@@ -919,7 +922,7 @@ YAML
   else
     ok "cactusInv is running at http://${host}:${K8S_NODE_PORT}"
   fi
-  echo "    first sign-in: ${CACTUSINV_DEFAULT_ADMIN_USER} / ${CACTUSINV_DEFAULT_ADMIN_PASSWORD} (change it after signing in)"
+  first_signin "secret cactusinv-secrets (kubectl -n ${K8S_NAMESPACE} get secret cactusinv-secrets -o jsonpath='{.data.admin_password}' | base64 -d)"
   echo "    test mailbox:  http://${host}:${K8S_MAILPIT_NODE_PORT}    backups: encrypted, daily at ${BACKUP_TIMES}"
   echo "    backup_key:    copy it OFF the cluster: kubectl -n ${K8S_NAMESPACE} get secret cactusinv-secrets -o jsonpath='{.data.backup_key}' | base64 -d"
 }
@@ -963,31 +966,10 @@ k8s_backup_now() {
 }
 
 k8s_app_backup() { kc -n "$K8S_NAMESPACE" exec -i deploy/cactusinv -- /cactusinv backup "$@"; }
-k8s_cat_legacy() { kc -n "$K8S_NAMESPACE" exec deploy/cactusinv -- /cactusinv backup cat-legacy "$1" </dev/null; }
-
-k8s_load_legacy() {
-  local file="$1" name="$2" safety
-  info "taking a safety backup of the current data"
-  safety="$(k8s_app_backup create </dev/null | awk '{print $1}')" || true
-  [[ "$safety" == cactusinv-*.age ]] || die "could not take a safety backup first (is backup_key set up?); nothing was changed"
-  legacy_warning "$name" "$safety"
-  confirm_word RESTORE "Restoring $name replaces the whole database." || die "aborted; nothing was changed"
-  kc -n "$K8S_NAMESPACE" scale deploy/cactusinv --replicas=0 </dev/null
-  legacy_reset_sql | kc -n "$K8S_NAMESPACE" exec -i deploy/mariadb -- sh -c "$MARIADB_ROOT_SQL"
-  gunzip -c "$file" | kc -n "$K8S_NAMESPACE" exec -i deploy/mariadb -- sh -c "$MARIADB_APP_SQL"
-  kc -n "$K8S_NAMESPACE" scale deploy/cactusinv --replicas=1 </dev/null
-  rollout cactusinv
-  kc -n "$K8S_NAMESPACE" exec -i deploy/cactusinv -- /cactusinv backup note-legacy-restore - --name "$name" <"$file"
-  ok "restored $name; the data before is in $safety"
-}
-
 k8s_restore() {
-  if [[ "$RESTORE_FILE" == *.sql.gz ]]; then
-    with_legacy_dump k8s_cat_legacy k8s_load_legacy
-  else
-    [[ -z "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]] || die "on k3s/k8s restore passphrase-encrypted backups in the app (Settings > Backup & restore)"
-    restore_age k8s_app_backup
-  fi
+  legacy_refused
+  [[ -z "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]] || die "on k3s/k8s restore passphrase-encrypted backups in the app (Settings > Backup & restore)"
+  restore_age k8s_app_backup
 }
 
 # ---------------------------------------------------------------------------------------
@@ -1032,6 +1014,7 @@ main() {
       restore) docker_restore ;;
       version) docker_version ;;
       migrate-down-to) docker_migrate_down_to ;;
+      check-data) docker_preflight; docker_data_guard ;;
     esac
   else
     case "$ACTION" in
@@ -1043,6 +1026,7 @@ main() {
       restore) k8s_restore ;;
       version) k8s_version ;;
       migrate-down-to) k8s_migrate_down_to ;;
+      check-data) : ;; # the volumes are claims, found by name
     esac
   fi
 }

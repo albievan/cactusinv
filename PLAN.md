@@ -759,10 +759,31 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 39.4 | Web: a Quotes card for the selected currency (open, accepted to invoice, win rate with a bar, expiring in 7 days / expired, this month), and Upcoming invoices, Due in the next 7 days, Quotes expiring soon lists linking to the schedule, invoice or quote; each card only with its permission; the currency picker includes quote currencies | done | `Dashboard.test.tsx` (figures, links, details, a quotes-only user); Chrome on an isolated preview with a mock API at desktop and 390 px |
 | 39.5 | Gate | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.4 %, app 84.0 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 116 tests, build OK |
 
+### M40 — The recommended next steps: releases, upgrades, first password, /metrics, safer deploys (Albie, 2026-11-13) — v1.22.0
+
+> "execute the recommended next steps in order, update documentation, rebuild all binaries then commit codebase to github"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 40.1 | Release M39 as v1.21.0 (docs, binaries, push) | done | `6ea2dd6`; `make check` exit 0 before it; dist reports 1.21.0 (build 43) |
+| 40.2 | Docker Desktop install on the owner's Mac: backup, then upgrade 1.12.1 → 1.21.0. The first `--upgrade` stopped at `mkdir: /data: Read-only file system`: the committed `.env` (since M27/M28) names `/data/k3s/...` folders, while this install's data is in `./data` and `./secrets`; it rolled back (still 1.12.1, healthy). Re-run with this Mac's folders given in the environment (they win over `.env`) | done | backup `cactusinv-20261113T145207Z-s22-manual.age` (and the upgrade's own `…145254Z…`); upgraded 1.12.1 (29) → 1.21.0 (43), schema 22 → 24; 4 customers, 14 invoices, 5 products, 2 schedules; 0 error log lines |
+| 40.3 | k3s at 10.101.18.101: backup, upgrade 1.20.0 → 1.21.0 (volumes checked against `.env` first) | done | backup `cactusinv-20261113T145406Z-s24-manual.age`; rollout ok; https and :30080 report 1.21.0 (43); 0 errors |
+| 40.4 | Owner's decisions (asked): a generated first password; `/metrics` behind a token; remove unused Docker volumes; no install on 192.168.1.72 | done | answers recorded below |
+| 40.5 | First password: `CACTUSINV_DEFAULT_ADMIN_PASSWORD` defaults to empty; the app then reads the `admin_password` secret (only while no user exists, still changed at first sign-in). `deploy.sh` generates it (24 hex) into `SECRETS_DIR/admin_password` / `cactusinv-secrets` (also on existing installs, where it is unused) and prints it when it generated it; compose and the k8s manifest mount it; `.env` default emptied | done | `config_test` (default ""); deploy `bash -n`; README |
+| 40.6 | `/metrics` needs `Authorization: Bearer <metrics_token>` (constant-time compare; 401 with `WWW-Authenticate`); no token = 404. `deploy.sh` generates `metrics_token`; compose and k8s mount it. Optional secrets missing from Vault no longer stop the start (`vault.Get` wraps `domain.ErrNotFound`) | done | `TestMetricsNeedTheToken` (6 cases), `TestOpsEndpointsAndSPA` (401), vault test |
+| 40.7 | Docker disk: build cache older than 24 h pruned (262 MB), unused anonymous volumes removed (`docker volume prune`, 5.4 GB); 89 % used, 6.3 GB free | done | `docker system df`; named volumes kept |
+| 40.8 | `deploy.sh` data guard: `--install` and `--upgrade` (before its backup, via `--check-data`) stop, changing nothing, when the running MariaDB data or the app's secrets folder differs from `MARIADB_DATA_DIR` / `SECRETS_DIR` | done | on this Mac: plain `.env` refused with the message; the real folders (absolute and relative) pass |
+| 40.9 | Legacy `.sql.gz` restore removed (it was to stay one release after M14): `deploy.sh` refuses one with a pointer to 1.21.x; `backup cat-legacy`, `backup note-legacy-restore` and `NoteLegacyRestore` gone. Old dumps are still listed and pruned (they are plaintext) | done | `TestLegacyDumpCommandsAreGone`; ADR-007/009/010 notes |
+| 40.10 | Docs (README, ARCHITECTURE, ADRs), VERSION 1.22.0, gate, binaries, commit | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.4 %, app 84.0 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 116 tests, build OK; `make dist` 1.22.0 (build 44) |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-13 | A new install's first password is generated, not `admin` (owner's decision) | a well-known first password is a window until someone signs in; the forced change at first sign-in stays |
+| 2026-11-13 | `/metrics` needs a bearer token; without one it does not exist (owner's decision) | request counts and outbox depth are not for anyone who can reach the server; Prometheus can send a bearer token |
+| 2026-11-13 | `deploy.sh` refuses to install or upgrade onto other data folders than the running install's | the committed `.env` names folders for another host; an install there would have started an empty database and new keys next to the real ones |
+| 2026-11-13 | Old `.sql.gz` dumps stay listed and pruned after their restore was removed | they hold plaintext data and should still age out under the retention period |
 | 2026-11-13 | Quote figures are counted in the app from all quotes (a domain function), not by a SQL aggregate | the stages (expired is a draft or sent quote past its date) are domain rules; a small business has hundreds of quotes, not millions; no new query or migration |
 | 2026-11-13 | The colour mode follows the device's light/dark setting, with no toggle; this replaces light-only (13.1) | requested; the earlier problem (light text on stray dark backgrounds) is avoided by giving every colour a value in both modes and keeping the system setting in one file (`lib/theme.ts`) |
 | 2026-11-13 | The saved mail user name is hidden in the web form only; the API still returns it | the server needs it to warn about the Send-as address and to keep the stored password with its account; who may read Settings → E-mail server may already see them; hiding it on screen stops it being read over a shoulder or in a screenshot |
@@ -919,6 +940,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 ## Open questions
 
-- Left as they are after the M36 review, for the owner to decide: should an expired quote be refused for acceptance and conversion? Should a restore cancel e-mails that were pending in the backup? Should `/metrics` need sign-in (or move to its own port)? Should the default `admin`/`admin` be replaced by a generated password? Should releases be signed (today SHA256SUMS from the same https origin)?
+- Left as they are after the M36 review, for the owner to decide: should an expired quote be refused for acceptance and conversion? Should a restore cancel e-mails that were pending in the backup? Should releases be signed (today SHA256SUMS from the same https origin)? HSTS (needs a real certificate first)? (Decided in M40: a generated first password; `/metrics` behind a token.)
+- (M40) The committed `.env` names `/data/k3s/...` folders for the Docker targets; the owner's Mac install keeps its data in `./data` and `./secrets`, so a Docker deploy there needs `DATA_DIR`, `MARIADB_DATA_DIR`, `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` in the environment (the new guard stops it otherwise). Should `.env` go back to `./data`, or the Mac keep passing them?
 - (M38) A saved mail user name can only be replaced, not emptied, from the form (as with the password). A relay that needs no sign-in would need a way to clear both — add a "Remove" if someone needs it.
 - (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)

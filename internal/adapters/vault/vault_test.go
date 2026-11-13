@@ -2,11 +2,14 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/albievan/cactusinv/internal/domain"
 )
 
 func fakeVault(t *testing.T) *httptest.Server {
@@ -50,6 +53,10 @@ func TestVault(t *testing.T) {
 	}
 	if _, err := c.Get(ctx, "n"); err == nil {
 		t.Fatal("non-string values are ignored")
+	}
+	// A missing key is ErrNotFound, so an optional secret (metrics_token) may be absent.
+	if _, err := c.Get(ctx, "metrics_token"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("missing key: %v", err)
 	}
 	if err := c.Ping(ctx); err != nil {
 		t.Fatal(err)

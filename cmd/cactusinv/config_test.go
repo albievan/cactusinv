@@ -15,7 +15,7 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.HTTPAddr != ":8080" || c.DefaultAdminUser != "admin" || c.DefaultAdminPassword != "admin" || !c.MigrateOnStart || c.InvoicesDir != "/data/invoices" {
+	if c.HTTPAddr != ":8080" || c.DefaultAdminUser != "admin" || c.DefaultAdminPassword != "" || !c.MigrateOnStart || c.InvoicesDir != "/data/invoices" {
 		t.Fatalf("defaults = %+v", c)
 	}
 	if c.BackupDir != "/data/backups" || len(c.BackupTimes) != 1 || c.BackupTimes[0].Hour != 2 || c.BackupRetentionDays != 14 ||

@@ -33,7 +33,7 @@ volume is ReadWriteOnce; with a ReadWriteMany class it can scale out.
   `--restore FILE` restores an `.age` backup through the application (staging, preview,
   apply). A legacy `.sql.gz` dump is still restored the old way for one release, with a
   warning, followed by `cactusinv backup note-legacy-restore FILE` to record it in the
-  audit trail.
+  audit trail. (That path was removed in v1.22.0, M40.)
 - `--install` creates the staging database `<db>_restore` and grants it to the app user
   (idempotent, with the root secret), and generates the `backup_key` secret (ADR-006).
 

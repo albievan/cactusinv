@@ -179,6 +179,8 @@ spec:
               - { key: smtp_password, path: smtp_password }
               - { key: app_key, path: app_key }
               - { key: backup_key, path: backup_key }
+              - { key: admin_password, path: admin_password }
+              - { key: metrics_token, path: metrics_token }
 ---
 apiVersion: v1
 kind: Service

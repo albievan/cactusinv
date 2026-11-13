@@ -122,7 +122,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		MigrateOnStart:       boolean("CACTUSINV_MIGRATE_ON_START", true),
 		CookieSecure:         boolean("CACTUSINV_COOKIE_SECURE", true),
 		DefaultAdminUser:     str("CACTUSINV_DEFAULT_ADMIN_USER", "admin"),
-		DefaultAdminPassword: str("CACTUSINV_DEFAULT_ADMIN_PASSWORD", "admin"),
+		DefaultAdminPassword: str("CACTUSINV_DEFAULT_ADMIN_PASSWORD", ""),
 	}
 	c.BackupDir = str("CACTUSINV_BACKUP_DIR", "/data/backups")
 	c.DeployTarget = getenv("CACTUSINV_DEPLOY_TARGET")
@@ -206,9 +206,13 @@ func (c *config) secret(ctx context.Context, key string) (string, error) {
 	return s.Get(ctx, key)
 }
 
-// optionalSecret returns "" when the secret is absent (e.g. SMTP without auth).
+// optionalSecret returns "" when the secret is absent (e.g. SMTP without auth), from files
+// or from Vault.
 func (c *config) optionalSecret(ctx context.Context, key string) (string, error) {
 	v, err := c.secret(ctx, key)
+	if errors.Is(err, domain.ErrNotFound) {
+		return "", nil
+	}
 	if err != nil && c.SecretsSource == "file" {
 		if _, statErr := os.Stat(c.SecretsDir + "/" + key); os.IsNotExist(statErr) {
 			return "", nil

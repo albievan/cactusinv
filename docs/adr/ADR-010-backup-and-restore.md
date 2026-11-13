@@ -140,7 +140,8 @@ the first and last name, not every name.
   --install`); until then restore is disabled with a reason. The grant is exactly what the
   stager needs: `SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES,
   LOCK TABLES, TRIGGER` on `<db>_restore` (an older `ALL` is narrowed).
-- Legacy `.sql.gz` dumps (this release only, `deploy.sh --restore`): the dump is read from
+- (Removed in v1.22.0, M40: `.sql.gz` dumps are still listed and pruned but no longer
+  restored.) Legacy `.sql.gz` dumps (this release only, `deploy.sh --restore`): the dump is read from
   the backups volume through the app (`cactusinv backup cat-legacy NAME`), checked (`gzip
   -t`, mariadb-dump header) and a safety backup taken before anything changes; only `DROP`
   and `CREATE DATABASE` run as MariaDB root, the dump itself as the application user.

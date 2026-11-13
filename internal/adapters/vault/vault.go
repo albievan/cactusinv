@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
 )
 
@@ -85,7 +86,7 @@ func (c *Client) Get(_ context.Context, key string) (string, error) {
 	defer c.mu.RUnlock()
 	v, ok := c.data[key]
 	if !ok {
-		return "", fmt.Errorf("vault.Get: secret %q not found at %s", key, c.cfg.KVPath)
+		return "", fmt.Errorf("vault.Get: secret %q not found at %s: %w", key, c.cfg.KVPath, domain.ErrNotFound)
 	}
 	return v, nil
 }

@@ -7,7 +7,7 @@
 //	cactusinv migrate status             the database's schema and this version's
 //	cactusinv admin create <login>       create an administrator (password on stdin)
 //	cactusinv admin set-password <login> reset a password (password on stdin)
-//	cactusinv backup keygen|create|list|restore|note-legacy-restore
+//	cactusinv backup keygen|create|list|restore
 //	                                     backups and restores (cactusinv backup for help)
 //	cactusinv healthcheck                exit 0 if the local server is healthy (Docker)
 //	cactusinv version
@@ -281,9 +281,18 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		}
 	})
 	if cfg.DefaultAdminUser != "" {
-		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, cfg.DefaultAdminPassword)
+		// The first password: CACTUSINV_DEFAULT_ADMIN_PASSWORD, else the admin_password secret
+		// that deploy.sh generates (M40). Only used while no user exists.
+		pw := cfg.DefaultAdminPassword
+		if pw == "" {
+			if pw, err = cfg.optionalSecret(ctx, "admin_password"); err != nil {
+				return err
+			}
+			pw = strings.TrimSpace(pw)
+		}
+		created, err := svc.EnsureDefaultAdmin(ctx, cfg.DefaultAdminUser, pw)
 		if err != nil {
-			return err
+			return fmt.Errorf("first administrator: set the admin_password secret or CACTUSINV_DEFAULT_ADMIN_PASSWORD: %w", err)
 		}
 		if created {
 			log.Warn("created the default administrator — it must choose a new password at the first sign-in", "login", cfg.DefaultAdminUser)
@@ -294,8 +303,13 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	store := mariadb.NewStore(db)
 	arch := archive.Dir{Root: cfg.InvoicesDir}
+	metricsToken, err := cfg.optionalSecret(ctx, "metrics_token")
+	if err != nil {
+		return err
+	}
 	handler := httpapi.NewHandler(httpapi.Options{
-		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, TrustedProxies: cfg.TrustedProxies, Registry: reg, Web: web.FS(), Version: version, Build: build,
+		MetricsToken: strings.TrimSpace(metricsToken),
+		Service:      svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, TrustedProxies: cfg.TrustedProxies, Registry: reg, Web: web.FS(), Version: version, Build: build,
 		MaxUploadBytes: int64(cfg.BackupMaxUploadMB) << 20,
 		Ready:          map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
 	})

@@ -77,7 +77,7 @@ services:
       CACTUSINV_HOST_PROJECT_DIR: ${CACTUSINV_HOST_PROJECT_DIR:-}
       CACTUSINV_HOST_BACKUP_DIR: ${CACTUSINV_HOST_BACKUP_DIR:-${BACKUP_DIR}}
       CACTUSINV_HOST_INVOICES_DIR: ${CACTUSINV_HOST_INVOICES_DIR:-${INVOICES_DIR}}
-    secrets: [db_password, smtp_password, app_key, backup_key]
+    secrets: [db_password, smtp_password, app_key, backup_key, admin_password, metrics_token]
     volumes:
       - ${INVOICES_DIR}:/data/invoices
       - ${BACKUP_DIR}:/data/backups
@@ -103,3 +103,7 @@ secrets:
     file: ${SECRETS_DIR}/app_key
   backup_key:
     file: ${SECRETS_DIR}/backup_key
+  admin_password:
+    file: ${SECRETS_DIR}/admin_password
+  metrics_token:
+    file: ${SECRETS_DIR}/metrics_token

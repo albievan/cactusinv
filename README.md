@@ -162,11 +162,16 @@ The data folders in `.env` default to `/data/cactusinv/…`. Where `/data` canno
 Mac the disk root is read-only) or you are not root, set `DATA_DIR`, `MARIADB_DATA_DIR`,
 `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` to a folder you can write, e.g. `./data/…` and
 `./secrets` (both git-ignored), **before** the first install. See
-[Configuration](#configuration--env).
+[Configuration](#configuration--env). Once installed, `--install` and `--upgrade` refuse to
+run (and change nothing) when the database or secrets folder they are given is not the one the
+running install uses — an `.env` written for another host would otherwise start an empty
+database beside the real one.
 
-Open <http://localhost:8080> and sign in as **`admin` / `admin`**. You are asked to choose a
-new password straight away; nothing else works until you have (the server enforces it). Then
-add the people who need to sign in under **Settings → Users**.
+Open <http://localhost:8080> and sign in as **`admin`** with the password `--install` printed.
+It is generated on the first install and kept in `SECRETS_DIR/admin_password` (on k3s/k8s, the
+`admin_password` key of the secret `cactusinv-secrets`); it is only used while no user exists.
+You are asked to choose a new password straight away; nothing else works until you have (the
+server enforces it). Then add the people who need to sign in under **Settings → Users**.
 
 Upgrading from v1.5.0 or earlier: the default administrator (`admin`, or whatever
 `CACTUSINV_DEFAULT_ADMIN_USER` was) is asked for a new password at its next sign-in, even if
@@ -217,7 +222,6 @@ TARGET   --dockerdesktop | --k3s | --k8s
 | `./deploy.sh --delete-uninstall --dockerdesktop` | remove the app **and all data** (asks to confirm; `--yes` to skip) |
 | `./deploy.sh --backup-now --dockerdesktop` | take an encrypted backup now (stored in `BACKUP_DIR`) |
 | `./deploy.sh --restore cactusinv-20261015T000000Z-s14-scheduled.age --dockerdesktop` | restore a stored backup (or a path to an `.age` file) |
-| `./deploy.sh --restore cactusinv-20261001-020000.sql.gz --dockerdesktop` | restore an old plaintext dump (whole database replaced; with a warning) |
 
 On k3s the SSH user must be root or have passwordless `sudo` (`k3s ctr` and `k3s kubectl`
 need root); the image is imported for the node's CPU without attestation manifests, checked
@@ -228,7 +232,7 @@ sizes apply to new installs. Pods do not mount a Kubernetes service-account toke
 them uses the API; on k3s the token's mount point would fall inside the read-only
 `/run/secrets` volume and MariaDB would not start).
 
-After a first install on k3s/k8s, sign in with `admin` / `admin` (you are asked to change it)
+After a first install on k3s/k8s, sign in as `admin` with the password `--install` printed (you are asked to change it)
 and copy the generated backup key off the cluster:
 
 ```
@@ -335,7 +339,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_TRUSTED_PROXIES` | empty (k3s/k8s: `10.42.0.0/16`) | Reverse proxies (addresses or CIDRs, comma-separated) whose `X-Forwarded-For` names the client. The sign-in rate limit counts per client address; without this, everyone behind an ingress shares its address, so one person's wrong passwords would lock everyone out. Only list proxies you run: a listed address can name any client. |
 | `CACTUSINV_DEFAULT_ADMIN_USER` | `admin` | User name of the first Administrator. It is created only on the first start, when no user exists; changing it later does nothing. |
-| `CACTUSINV_DEFAULT_ADMIN_PASSWORD` | `admin` | That user's first password. You are asked to change it at the first sign-in. |
+| `CACTUSINV_DEFAULT_ADMIN_PASSWORD` | empty | That user's first password. Empty = the random one `--install` generates into the `admin_password` secret and prints (since v1.22.0). You are asked to change it at the first sign-in. |
 
 ### Database
 
@@ -455,7 +459,7 @@ the stored backups and the backup key. So take the backup **off the cluster** fi
    is saved on your computer.
 2. `./deploy.sh --delete-uninstall --k3s --ssh-access root@<node>`.
 3. Set `K8S_VOLUME_DIR` (and leave `K8S_STORAGE_CLASS` empty).
-4. `./deploy.sh --install --k3s --ssh-access root@<node>`, sign in as `admin` / `admin`, then go to
+4. `./deploy.sh --install --k3s --ssh-access root@<node>`, sign in as `admin` with the printed password, then go to
    Settings → Backup & restore → **Restore from file** with the downloaded file and its
    passphrase.
 5. Copy the new install's backup key off the cluster (see [Deploying](#deploying--deploysh)).
@@ -552,11 +556,10 @@ restore. No secret is in a backup.
 - From the command line (in the app container): `cactusinv backup create`, `backup list`,
   `backup create --out FILE --passphrase-file P`, `backup restore NAME|FILE|- [--yes]`
   (shows what restoring does and asks for `RESTORE`), `backup stage …` / `backup apply ID
-  --yes` / `backup discard ID`, `backup note-legacy-restore FILE`, `backup keygen`.
+  --yes` / `backup discard ID`, `backup keygen`.
 - Old plaintext `.sql.gz` dumps of the retired backup container are listed and pruned with the
-  rest; restore one with `deploy.sh --restore NAME` (this release only). The script reads it
-  from the backups volume through the app (`cactusinv backup cat-legacy NAME`), checks it,
-  takes a safety backup, asks for `RESTORE`, and loads it as the application user.
+  rest, but can no longer be restored (since v1.22.0): restore one with cactusInv 1.21.x, then
+  take an `.age` backup.
 - A download in the browser is put together in memory before it is saved; for a very large
   database use `cactusinv backup create --out FILE` instead.
 
@@ -600,7 +603,10 @@ deploy, deploy.sh    Docker Compose, k3s/k8s manifests, MariaDB init (restore st
 
 ## Operations
 
-- Health: `GET /healthz`, readiness: `GET /readyz`, Prometheus metrics: `GET /metrics`.
+- Health: `GET /healthz`, readiness: `GET /readyz`, Prometheus metrics: `GET /metrics` with
+  `Authorization: Bearer <token>`. The token is the `metrics_token` secret (`--install`
+  generates it: `SECRETS_DIR/metrics_token`, or that key of `cactusinv-secrets`); without a
+  token the endpoint answers 404, and a wrong one 401.
 - Logs are JSON on stdout and never contain e-mail addresses or bank details.
 - CLI inside the container: `/cactusinv migrate up|down`, `/cactusinv admin create <login>`
   and `/cactusinv admin set-password <login>` (password on stdin).

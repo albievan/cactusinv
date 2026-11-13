@@ -126,8 +126,6 @@ const backupUsage = `usage:
   cactusinv backup stage NAME|FILE|- [--passphrase-file P]
                                                        only stage and show the preview; prints restore-id: ID
   cactusinv backup apply ID --yes | discard ID         apply or discard a staged restore
-  cactusinv backup note-legacy-restore FILE|- [--name NAME]
-                                                       record in the audit log that a .sql.gz dump was restored
 The passphrase may also come from $` + passphraseEnv + `.`
 
 // backupCommand runs `cactusinv backup …`. interactive says stdin is a terminal (the
@@ -135,12 +133,6 @@ The passphrase may also come from $` + passphraseEnv + `.`
 func backupCommand(ctx context.Context, cfg config, args []string, stdin io.Reader, stdout io.Writer, interactive bool) error {
 	if len(args) == 0 {
 		return errors.New(backupUsage)
-	}
-	if args[0] == "cat-legacy" { // used by deploy.sh: no database needed
-		if len(args) != 2 {
-			return errors.New("usage: cactusinv backup cat-legacy NAME")
-		}
-		return catLegacy(ctx, cfg.BackupDir, args[1], stdout)
 	}
 	if args[0] == "keygen" {
 		key, err := agecrypt.GenerateKey()
@@ -158,7 +150,6 @@ func backupCommand(ctx context.Context, cfg config, args []string, stdin io.Read
 	out := fs.String("out", "", "write a passphrase-encrypted backup to this file instead of storing one")
 	passFile := fs.String("passphrase-file", "", "file holding the passphrase")
 	yes := fs.Bool("yes", false, "apply the restore without asking")
-	legacyName := fs.String("name", "", "the dump's file name when it is read from stdin")
 	pos, err := parseInterleaved(fs, args[1:])
 	if err != nil {
 		return err
@@ -218,24 +209,6 @@ func backupCommand(ctx context.Context, cfg config, args []string, stdin io.Read
 		}
 		_, err := fmt.Fprintln(stdout, "discarded")
 		return err
-	case args[0] == "note-legacy-restore" && len(pos) == 1:
-		src, name := stdin, *legacyName
-		if pos[0] != "-" {
-			f, err := openPath(pos[0], false)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			src, name = f, filepath.Base(pos[0])
-		}
-		if name == "" {
-			return errors.New("note-legacy-restore -: give the dump's file name with --name")
-		}
-		if err := svc.NoteLegacyRestore(ctx, name, src); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintln(stdout, "recorded in the audit log")
-		return err
 	}
 	return errors.New(backupUsage)
 }
@@ -291,25 +264,6 @@ func listBackups(ctx context.Context, svc *app.Service, stdout io.Writer) error 
 		_, _ = fmt.Fprintln(stdout, "restores unavailable: "+ov.RestoreUnavailable)
 	}
 	return nil
-}
-
-// catLegacy streams a legacy plaintext dump, by its validated name, from the backups
-// directory (deploy.sh pipes it into the database client).
-func catLegacy(ctx context.Context, dir, name string, stdout io.Writer) error {
-	if !domain.IsLegacyBackupName(name) {
-		return errors.New("not a legacy backup name (cactusinv-YYYYMMDD-HHMMSS.sql.gz)")
-	}
-	files, err := backupdir.New(dir)
-	if err != nil {
-		return err
-	}
-	f, err := files.Open(ctx, name)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(stdout, f)
-	return err
 }
 
 // stageCommand stages NAME, or a file (stored first as an upload, which records its
