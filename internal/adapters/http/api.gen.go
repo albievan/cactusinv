@@ -1129,26 +1129,32 @@ type ImportCounts struct {
 
 // Invoice defines model for Invoice.
 type Invoice struct {
-	Bank         BankDetails         `json:"bank"`
-	BillTo       Party               `json:"billTo"`
-	CreatedAt    time.Time           `json:"createdAt"`
-	Currency     string              `json:"currency"`
-	CustomerId   string              `json:"customerId"`
-	DueDate      *openapi_types.Date `json:"dueDate,omitempty"`
-	Header       InvoiceHeader       `json:"header"`
-	Id           string              `json:"id"`
-	IssueDate    openapi_types.Date  `json:"issueDate"`
-	IssuedAt     *time.Time          `json:"issuedAt,omitempty"`
-	Lines        []Line              `json:"lines"`
-	Notes        string              `json:"notes"`
-	Number       string              `json:"number,omitempty"`
-	Overdue      bool                `json:"overdue"`
-	OverdueAt    *time.Time          `json:"overdueAt,omitempty"`
-	PaidAt       *time.Time          `json:"paidAt,omitempty"`
-	PaymentTerms PaymentTerms        `json:"paymentTerms"`
-	ScheduleId   string              `json:"scheduleId,omitempty"`
-	SentAt       *time.Time          `json:"sentAt,omitempty"`
-	ShipTo       Party               `json:"shipTo"`
+	Bank       BankDetails `json:"bank"`
+	BillTo     Party       `json:"billTo"`
+	CreatedAt  time.Time   `json:"createdAt"`
+	Currency   string      `json:"currency"`
+	CustomerId string      `json:"customerId"`
+
+	// CustomerPaidAt When the customer said, through the e-mail link, that they paid (M42). Records no payment: mark the invoice paid once it is received.
+	CustomerPaidAt *time.Time `json:"customerPaidAt,omitempty"`
+
+	// CustomerPaidNote The customer's note with it.
+	CustomerPaidNote string              `json:"customerPaidNote,omitempty"`
+	DueDate          *openapi_types.Date `json:"dueDate,omitempty"`
+	Header           InvoiceHeader       `json:"header"`
+	Id               string              `json:"id"`
+	IssueDate        openapi_types.Date  `json:"issueDate"`
+	IssuedAt         *time.Time          `json:"issuedAt,omitempty"`
+	Lines            []Line              `json:"lines"`
+	Notes            string              `json:"notes"`
+	Number           string              `json:"number,omitempty"`
+	Overdue          bool                `json:"overdue"`
+	OverdueAt        *time.Time          `json:"overdueAt,omitempty"`
+	PaidAt           *time.Time          `json:"paidAt,omitempty"`
+	PaymentTerms     PaymentTerms        `json:"paymentTerms"`
+	ScheduleId       string              `json:"scheduleId,omitempty"`
+	SentAt           *time.Time          `json:"sentAt,omitempty"`
+	ShipTo           Party               `json:"shipTo"`
 
 	// Stage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
 	Stage     InvoiceStage  `json:"stage"`
@@ -1225,6 +1231,26 @@ type InvoiceNotesRequest struct {
 
 	// Version The invoice version you edited (optimistic locking).
 	Version int `json:"version"`
+}
+
+// InvoiceResponse What the customer's "I have paid" page shows for an invoice e-mail link (M42).
+type InvoiceResponse struct {
+	BillToName    string `json:"billToName"`
+	BusinessEmail string `json:"businessEmail"`
+	BusinessName  string `json:"businessName"`
+
+	// CanMark Whether the customer may still say they paid it.
+	CanMark          bool               `json:"canMark"`
+	Currency         string             `json:"currency"`
+	CustomerPaidAt   *time.Time         `json:"customerPaidAt,omitempty"`
+	CustomerPaidNote string             `json:"customerPaidNote,omitempty"`
+	DueDate          openapi_types.Date `json:"dueDate"`
+	IssueDate        openapi_types.Date `json:"issueDate"`
+	Number           string             `json:"number"`
+
+	// Stage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
+	Stage InvoiceStage `json:"stage"`
+	Total string       `json:"total"`
 }
 
 // InvoiceStage Where the invoice is in its life — issued (not e-mailed), emailed (awaiting payment), overdue, paid or void.
@@ -1796,7 +1822,7 @@ type SendRequest struct {
 	Body string   `json:"body,omitempty"`
 	Cc   []string `json:"cc,omitempty"`
 
-	// LinkBase Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).
+	// LinkBase Quotes and invoices: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).
 	LinkBase string `json:"linkBase,omitempty"`
 
 	// SendAt Omit to send now.
@@ -2233,6 +2259,12 @@ type ListProductsParams struct {
 	Offset          Offset          `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// MarkInvoicePaidByCustomerJSONBody defines parameters for MarkInvoicePaidByCustomer.
+type MarkInvoicePaidByCustomerJSONBody struct {
+	// Note Optional feedback for the business (up to 1000 characters).
+	Note string `json:"note,omitempty"`
+}
+
 // RespondToQuoteJSONBody defines parameters for RespondToQuote.
 type RespondToQuoteJSONBody struct {
 	Answer RespondToQuoteJSONBodyAnswer `json:"answer"`
@@ -2369,6 +2401,9 @@ type CreateProductJSONRequestBody = Product
 
 // UpdateProductJSONRequestBody defines body for UpdateProduct for application/json ContentType.
 type UpdateProductJSONRequestBody = Product
+
+// MarkInvoicePaidByCustomerJSONRequestBody defines body for MarkInvoicePaidByCustomer for application/json ContentType.
+type MarkInvoicePaidByCustomerJSONRequestBody MarkInvoicePaidByCustomerJSONBody
 
 // RespondToQuoteJSONRequestBody defines body for RespondToQuote for application/json ContentType.
 type RespondToQuoteJSONRequestBody RespondToQuoteJSONBody
@@ -2615,6 +2650,15 @@ type ServerInterface interface {
 
 	// (PUT /products/{id})
 	UpdateProduct(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /public/invoices/{token})
+	GetInvoiceResponse(w http.ResponseWriter, r *http.Request, token ResponseToken)
+
+	// (POST /public/invoices/{token}/paid)
+	MarkInvoicePaidByCustomer(w http.ResponseWriter, r *http.Request, token ResponseToken)
+
+	// (GET /public/invoices/{token}/pdf)
+	GetInvoiceResponsePdf(w http.ResponseWriter, r *http.Request, token ResponseToken)
 
 	// (GET /public/quotes/{token})
 	GetQuoteResponse(w http.ResponseWriter, r *http.Request, token ResponseToken)
@@ -4502,6 +4546,84 @@ func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetInvoiceResponse operation middleware
+func (siw *ServerInterfaceWrapper) GetInvoiceResponse(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInvoiceResponse(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MarkInvoicePaidByCustomer operation middleware
+func (siw *ServerInterfaceWrapper) MarkInvoicePaidByCustomer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MarkInvoicePaidByCustomer(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInvoiceResponsePdf operation middleware
+func (siw *ServerInterfaceWrapper) GetInvoiceResponsePdf(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInvoiceResponsePdf(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetQuoteResponse operation middleware
 func (siw *ServerInterfaceWrapper) GetQuoteResponse(w http.ResponseWriter, r *http.Request) {
 
@@ -5972,6 +6094,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/send", wrapper.SendQuote)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/quotes/{id}/pdf", wrapper.GetQuotePdf)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/renew", wrapper.RenewQuote)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/invoices/{token}", wrapper.GetInvoiceResponse)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/invoices/{token}/paid", wrapper.MarkInvoicePaidByCustomer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/invoices/{token}/pdf", wrapper.GetInvoiceResponsePdf)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/quotes/{token}", wrapper.GetQuoteResponse)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/quotes/{token}/response", wrapper.RespondToQuote)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/quotes/{token}/pdf", wrapper.GetQuoteResponsePdf)
@@ -8488,6 +8613,136 @@ func (response UpdateProductdefaultApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type GetInvoiceResponseRequestObject struct {
+	Token ResponseToken `json:"token"`
+}
+
+type GetInvoiceResponseResponseObject interface {
+	VisitGetInvoiceResponseResponse(w http.ResponseWriter) error
+}
+
+type GetInvoiceResponse200JSONResponse InvoiceResponse
+
+func (response GetInvoiceResponse200JSONResponse) VisitGetInvoiceResponseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInvoiceResponsedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetInvoiceResponsedefaultApplicationProblemPlusJSONResponse) VisitGetInvoiceResponseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkInvoicePaidByCustomerRequestObject struct {
+	Token ResponseToken `json:"token"`
+	Body  *MarkInvoicePaidByCustomerJSONRequestBody
+}
+
+type MarkInvoicePaidByCustomerResponseObject interface {
+	VisitMarkInvoicePaidByCustomerResponse(w http.ResponseWriter) error
+}
+
+type MarkInvoicePaidByCustomer200JSONResponse InvoiceResponse
+
+func (response MarkInvoicePaidByCustomer200JSONResponse) VisitMarkInvoicePaidByCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type MarkInvoicePaidByCustomerdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response MarkInvoicePaidByCustomerdefaultApplicationProblemPlusJSONResponse) VisitMarkInvoicePaidByCustomerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInvoiceResponsePdfRequestObject struct {
+	Token ResponseToken `json:"token"`
+}
+
+type GetInvoiceResponsePdfResponseObject interface {
+	VisitGetInvoiceResponsePdfResponse(w http.ResponseWriter) error
+}
+
+type GetInvoiceResponsePdf200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type GetInvoiceResponsePdf200ApplicationpdfResponse struct {
+	Body          io.Reader
+	Headers       GetInvoiceResponsePdf200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetInvoiceResponsePdf200ApplicationpdfResponse) VisitGetInvoiceResponsePdfResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetInvoiceResponsePdfdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetInvoiceResponsePdfdefaultApplicationProblemPlusJSONResponse) VisitGetInvoiceResponsePdfResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetQuoteResponseRequestObject struct {
 	Token ResponseToken `json:"token"`
 }
@@ -10986,6 +11241,15 @@ type StrictServerInterface interface {
 	// (PUT /products/{id})
 	UpdateProduct(ctx context.Context, request UpdateProductRequestObject) (UpdateProductResponseObject, error)
 
+	// (GET /public/invoices/{token})
+	GetInvoiceResponse(ctx context.Context, request GetInvoiceResponseRequestObject) (GetInvoiceResponseResponseObject, error)
+
+	// (POST /public/invoices/{token}/paid)
+	MarkInvoicePaidByCustomer(ctx context.Context, request MarkInvoicePaidByCustomerRequestObject) (MarkInvoicePaidByCustomerResponseObject, error)
+
+	// (GET /public/invoices/{token}/pdf)
+	GetInvoiceResponsePdf(ctx context.Context, request GetInvoiceResponsePdfRequestObject) (GetInvoiceResponsePdfResponseObject, error)
+
 	// (GET /public/quotes/{token})
 	GetQuoteResponse(ctx context.Context, request GetQuoteResponseRequestObject) (GetQuoteResponseResponseObject, error)
 
@@ -12829,6 +13093,91 @@ func (sh *strictHandler) UpdateProduct(w http.ResponseWriter, r *http.Request, i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateProductResponseObject); ok {
 		if err := validResponse.VisitUpdateProductResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInvoiceResponse operation middleware
+func (sh *strictHandler) GetInvoiceResponse(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request GetInvoiceResponseRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInvoiceResponse(ctx, request.(GetInvoiceResponseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInvoiceResponse")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInvoiceResponseResponseObject); ok {
+		if err := validResponse.VisitGetInvoiceResponseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MarkInvoicePaidByCustomer operation middleware
+func (sh *strictHandler) MarkInvoicePaidByCustomer(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request MarkInvoicePaidByCustomerRequestObject
+
+	request.Token = token
+
+	var body MarkInvoicePaidByCustomerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MarkInvoicePaidByCustomer(ctx, request.(MarkInvoicePaidByCustomerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MarkInvoicePaidByCustomer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MarkInvoicePaidByCustomerResponseObject); ok {
+		if err := validResponse.VisitMarkInvoicePaidByCustomerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetInvoiceResponsePdf operation middleware
+func (sh *strictHandler) GetInvoiceResponsePdf(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request GetInvoiceResponsePdfRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInvoiceResponsePdf(ctx, request.(GetInvoiceResponsePdfRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInvoiceResponsePdf")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInvoiceResponsePdfResponseObject); ok {
+		if err := validResponse.VisitGetInvoiceResponsePdfResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

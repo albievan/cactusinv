@@ -781,6 +781,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/invoices/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getInvoiceResponse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/invoices/{token}/paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The customer says they paid, with an optional note for the business. It records no payment. */
+        post: operations["markInvoicePaidByCustomer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/invoices/{token}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getInvoiceResponsePdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/quotes/{token}": {
         parameters: {
             query?: never;
@@ -2056,6 +2114,13 @@ export interface components {
             /** Format: date-time */
             voidedAt?: string;
             voidReason?: string;
+            /**
+             * Format: date-time
+             * @description When the customer said, through the e-mail link, that they paid (M42). Records no payment: mark the invoice paid once it is received.
+             */
+            customerPaidAt?: string;
+            /** @description The customer's note with it. */
+            customerPaidNote?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2271,7 +2336,7 @@ export interface components {
              * @description Omit to send now.
              */
             sendAt?: string;
-            /** @description Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41). */
+            /** @description Quotes and invoices: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41). */
             linkBase?: string;
         };
         /** @enum {string} */
@@ -2512,6 +2577,25 @@ export interface components {
             upcomingRuns: components["schemas"]["Schedule"][];
             recentInvoices: components["schemas"]["Invoice"][];
             failedEmailCount: number;
+        };
+        /** @description What the customer's "I have paid" page shows for an invoice e-mail link (M42). */
+        InvoiceResponse: {
+            number: string;
+            businessName: string;
+            businessEmail: string;
+            billToName: string;
+            currency: string;
+            /** Format: date */
+            issueDate: string;
+            /** Format: date */
+            dueDate: string;
+            total: string;
+            stage: components["schemas"]["InvoiceStage"];
+            /** @description Whether the customer may still say they paid it. */
+            canMark: boolean;
+            /** Format: date-time */
+            customerPaidAt?: string;
+            customerPaidNote?: string;
         };
         /** @description What the customer's page shows for a quote e-mail link (M41). */
         QuoteResponse: {
@@ -4294,6 +4378,86 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getInvoiceResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invoice the "I have paid" link is for (M42). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    markInvoicePaidByCustomer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Optional feedback for the business (up to 1000 characters). */
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recorded (or already so). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getInvoiceResponsePdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invoice as a PDF. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
                 };
             };
             default: components["responses"]["Problem"];

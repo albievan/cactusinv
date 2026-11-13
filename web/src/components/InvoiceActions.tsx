@@ -125,7 +125,8 @@ export function InvoiceActions({ inv, onChanged, onError, showLabels = false, wi
   const send = (datedToday = false) =>
     run(async () => {
       if (datedToday) await unwrap(api.POST('/invoices/{id}/issue', { ...path, body: { issueDate: todayISO() } }))
-      await unwrap(api.POST('/invoices/{id}/send', { params: { path: { id: inv.id }, header: { 'Idempotency-Key': idempotencyKey() } }, body: {} }))
+      // The customer's "I have paid" link points here unless Settings → Quotes names an address (M42).
+      await unwrap(api.POST('/invoices/{id}/send', { params: { path: { id: inv.id }, header: { 'Idempotency-Key': idempotencyKey() } }, body: { linkBase: window.location.origin } }))
     }, `${inv.number || 'Invoice'} queued for e-mail`)
   const startSend = () => (inv.status === 'draft' && inv.issueDate < todayISO() ? setAskDate(true) : void send())
   return (

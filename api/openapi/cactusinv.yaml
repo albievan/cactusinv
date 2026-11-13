@@ -1023,6 +1023,60 @@ paths:
 
   # The customer's answer through the links in a quote e-mail (M41): no sign-in; the
   # e-mail's random token is the only key, and opening the page changes nothing.
+  /public/invoices/{token}:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getInvoiceResponse
+      security: []
+      responses:
+        '200':
+          description: The invoice the "I have paid" link is for (M42).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/invoices/{token}/paid:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    post:
+      tags: [public]
+      operationId: markInvoicePaidByCustomer
+      security: []
+      description: The customer says they paid, with an optional note for the business. It records no payment.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 4000, description: Optional feedback for the business (up to 1000 characters). }
+      responses:
+        '200':
+          description: Recorded (or already so).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/invoices/{token}/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getInvoiceResponsePdf
+      security: []
+      responses:
+        '200':
+          description: The invoice as a PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
   /public/quotes/{token}:
     parameters:
       - { $ref: '#/components/parameters/ResponseToken' }
@@ -2465,6 +2519,8 @@ components:
         overdueAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         voidedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         voidReason: { type: string }
+        customerPaidAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false, description: 'When the customer said, through the e-mail link, that they paid (M42). Records no payment: mark the invoice paid once it is received.' }
+        customerPaidNote: { type: string, description: The customer's note with it. }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer }
@@ -2678,7 +2734,7 @@ components:
         subject: { type: string, maxLength: 300 }
         body: { type: string, maxLength: 20000 }
         sendAt: { type: string, format: date-time, description: Omit to send now., x-go-type-skip-optional-pointer: false }
-        linkBase: { type: string, maxLength: 300, description: 'Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).' }
+        linkBase: { type: string, maxLength: 300, description: 'Quotes and invoices: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).' }
 
     EmailStatus:
       type: string
@@ -2928,6 +2984,23 @@ components:
         upcomingRuns: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
         recentInvoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
         failedEmailCount: { type: integer }
+    InvoiceResponse:
+      type: object
+      description: What the customer's "I have paid" page shows for an invoice e-mail link (M42).
+      required: [number, businessName, businessEmail, billToName, currency, issueDate, dueDate, total, stage, canMark]
+      properties:
+        number: { type: string }
+        businessName: { type: string }
+        businessEmail: { type: string }
+        billToName: { type: string }
+        currency: { type: string }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        total: { type: string }
+        stage: { $ref: '#/components/schemas/InvoiceStage' }
+        canMark: { type: boolean, description: Whether the customer may still say they paid it. }
+        customerPaidAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
+        customerPaidNote: { type: string }
     QuoteResponse:
       type: object
       description: What the customer's page shows for a quote e-mail link (M41).

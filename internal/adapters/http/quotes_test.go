@@ -240,3 +240,61 @@ func TestCustomerAnswersAQuoteOverHTTP(t *testing.T) {
 		t.Fatalf("answered by staff = %d", list.Total)
 	}
 }
+
+// The customer's "I have paid" page for an invoice e-mail (M42): no session; the note goes
+// to the business; the invoice shows the flag and stays unpaid.
+func TestCustomerMarksAnInvoicePaidOverHTTP(t *testing.T) {
+	c, _, _, svc := newServer(t)
+	c.login()
+	ctx := context.Background()
+	if _, err := svc.CreateCurrency(ctx, "ZAR", "Rand", "R", 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateBankAccount(ctx, domainBank()); err != nil {
+		t.Fatal(err)
+	}
+	prod, err := svc.CreateProduct(ctx, domain.Product{SKU: "WEB", Name: "Website", Description: "Website build", Prices: map[domain.CurrencyCode]int64{"ZAR": 1500000}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cust, err := svc.CreateCustomer(ctx, domain.Customer{Code: "AC", Name: "Acme", Email: "ap@acme.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inv httpapi.Invoice
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": cust.ID, "lines": []obj{{"productId": prod.ID, "quantity": "1"}}}, &inv), 201, "invoice")
+	var m httpapi.EmailMessage
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/send", obj{"linkBase": "https://inv.example.com"}, &m), 202, "send")
+	match := regexp.MustCompile(`/i/([A-Za-z0-9_-]{43})\n`).FindStringSubmatch(m.Body)
+	if match == nil {
+		t.Fatalf("no link in %q", m.Body)
+	}
+	token := match[1]
+
+	anon := &client{t: t, srv: c.srv, http: &http.Client{}}
+	var r httpapi.InvoiceResponse
+	anon.ok(anon.do("GET", "/api/v1/public/invoices/"+token, nil, &r), 200, "page")
+	if !r.CanMark || r.BusinessName == "" || r.Total == "" || r.Number == "" || r.CustomerPaidAt != nil {
+		t.Fatalf("page = %+v", r)
+	}
+	var p httpapi.Problem
+	anon.ok(anon.do("GET", "/api/v1/public/invoices/"+strings.Repeat("A", 43), nil, &p), 404, "unknown token")
+	anon.ok(anon.do("GET", "/api/v1/invoices/"+inv.Id, nil, &p), 401, "the rest still needs a session")
+	anon.ok(anon.do("POST", "/api/v1/public/invoices/"+token+"/paid", obj{"note": "Paid by EFT, ref AC-7"}, &r), 200, "mark paid")
+	if r.CanMark || r.CustomerPaidAt == nil || r.CustomerPaidNote != "Paid by EFT, ref AC-7" || r.Stage == "paid" {
+		t.Fatalf("after marking = %+v", r)
+	}
+	var d httpapi.InvoiceDetail
+	c.ok(c.do("GET", "/api/v1/invoices/"+inv.Id, nil, &d), 200, "staff view")
+	if d.Invoice.CustomerPaidAt == nil || d.Invoice.CustomerPaidNote != "Paid by EFT, ref AC-7" || d.Invoice.Status == "paid" {
+		t.Fatalf("staff view = %+v", d.Invoice)
+	}
+	pdf, err := anon.get("/api/v1/public/invoices/" + token + "/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf.Body.Close()
+	if pdf.StatusCode != 200 || pdf.Header.Get("Content-Type") != "application/pdf" {
+		t.Fatalf("pdf = %d", pdf.StatusCode)
+	}
+}

@@ -95,6 +95,7 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
                 <div className="d-flex align-items-center gap-2">
                   <span className="fw-semibold text-primary-emphasis">{inv.number || 'Draft'}</span>
                   <Badge status={inv.stage} />
+                  {inv.customerPaidAt && inv.status !== 'paid' && <span className="fs-8 fw-semibold text-success-emphasis text-nowrap">customer says paid</span>}
                 </div>
                 <div className="text-truncate small text-body-secondary">{inv.billTo.name}</div>
               </div>
@@ -130,7 +131,7 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
                 <td>{inv.billTo.name}</td>
                 <td className="text-nowrap">{formatDate(inv.issueDate)}</td>
                 <td className="text-nowrap">{formatDate(inv.dueDate)}</td>
-                <td><Badge status={inv.stage} /></td>
+                <td><div className="d-flex align-items-center gap-2"><Badge status={inv.stage} />{inv.customerPaidAt && inv.status !== 'paid' && <span className="fs-8 fw-semibold text-success-emphasis text-nowrap">customer says paid</span>}</div></td>
                 <td className="text-nowrap text-end fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</td>
                 {onChanged && onError && (
                   <td>

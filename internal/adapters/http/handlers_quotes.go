@@ -324,6 +324,58 @@ func (h *handlers) GetQuoteResponsePdf(ctx context.Context, req GetQuoteResponse
 	}, nil
 }
 
+// ---- the customer's "I have paid" link in an invoice e-mail (M42; no session) ----
+
+func (h *handlers) toInvoiceResponse(ctx context.Context, v app.InvoiceResponseView) (InvoiceResponse, error) {
+	mu, err := h.units(ctx)
+	if err != nil {
+		return InvoiceResponse{}, err
+	}
+	inv, c := v.Invoice, v.Invoice.Currency
+	return InvoiceResponse{
+		Number: inv.Number, BusinessName: v.Business.Name, BusinessEmail: v.Business.Email, BillToName: inv.BillTo.Name,
+		Currency: string(c), IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDate(inv.DueDate),
+		Total: mu.format(inv.Totals.Total, c), Stage: InvoiceStage(inv.Stage(v.Today)),
+		CanMark:        inv.IsOpen() && inv.CustomerPaidAt.IsZero(),
+		CustomerPaidAt: timePtr(inv.CustomerPaidAt), CustomerPaidNote: inv.CustomerPaidNote,
+	}, nil
+}
+
+func (h *handlers) GetInvoiceResponse(ctx context.Context, req GetInvoiceResponseRequestObject) (GetInvoiceResponseResponseObject, error) {
+	v, err := h.svc.GetInvoiceResponse(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.toInvoiceResponse(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	return GetInvoiceResponse200JSONResponse(out), nil
+}
+
+func (h *handlers) MarkInvoicePaidByCustomer(ctx context.Context, req MarkInvoicePaidByCustomerRequestObject) (MarkInvoicePaidByCustomerResponseObject, error) {
+	v, err := h.svc.MarkInvoicePaidByCustomer(ctx, req.Token, req.Body.Note)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.toInvoiceResponse(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	return MarkInvoicePaidByCustomer200JSONResponse(out), nil
+}
+
+func (h *handlers) GetInvoiceResponsePdf(ctx context.Context, req GetInvoiceResponsePdfRequestObject) (GetInvoiceResponsePdfResponseObject, error) {
+	pdf, name, err := h.svc.InvoiceResponsePDF(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	return GetInvoiceResponsePdf200ApplicationpdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: GetInvoiceResponsePdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
+	}, nil
+}
+
 // ---- ad-hoc customers ----
 
 func (h *handlers) ListAdhocCustomers(ctx context.Context, req ListAdhocCustomersRequestObject) (ListAdhocCustomersResponseObject, error) {

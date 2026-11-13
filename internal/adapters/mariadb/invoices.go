@@ -36,6 +36,7 @@ func toInvoice(r sqlcgen.Invoice) *domain.Invoice {
 		},
 		ScheduleID: r.ScheduleID.String, IssuedAt: fromNullTime(r.IssuedAt), SentAt: fromNullTime(r.SentAt),
 		PaidAt: fromNullTime(r.PaidAt), OverdueAt: fromNullTime(r.OverdueAt), VoidedAt: fromNullTime(r.VoidedAt), VoidReason: r.VoidReason,
+		CustomerPaidAt: fromNullTime(r.CustomerPaidAt), CustomerPaidNote: r.CustomerPaidNote,
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), Version: int(r.Version),
 	}
 }
@@ -149,6 +150,27 @@ func (r invoiceRepo) insertLines(ctx context.Context, inv *domain.Invoice) error
 		}
 	}
 	return nil
+}
+
+func (r invoiceRepo) SetCustomerPaid(ctx context.Context, inv *domain.Invoice) error {
+	n, err := r.q.SetInvoiceCustomerPaid(ctx, sqlcgen.SetInvoiceCustomerPaidParams{
+		CustomerPaidAt: nullTime(inv.CustomerPaidAt), CustomerPaidNote: inv.CustomerPaidNote,
+		UpdatedAt: inv.UpdatedAt.UTC(), ID: inv.ID, Version: i32(inv.Version),
+	})
+	if err := affected(n, err, domain.ErrConflict); err != nil {
+		return err
+	}
+	inv.Version++
+	return nil
+}
+
+func (r invoiceRepo) AddResponseToken(ctx context.Context, invoiceID, tokenHash string, now time.Time) error {
+	return mapErr(r.q.InsertInvoiceResponseToken(ctx, sqlcgen.InsertInvoiceResponseTokenParams{TokenHash: tokenHash, InvoiceID: invoiceID, CreatedAt: now.UTC()}))
+}
+
+func (r invoiceRepo) InvoiceIDByResponseToken(ctx context.Context, tokenHash string) (string, error) {
+	id, err := r.q.GetInvoiceIDByResponseToken(ctx, tokenHash)
+	return id, mapErr(err)
 }
 
 func (r invoiceRepo) Delete(ctx context.Context, id string) error {

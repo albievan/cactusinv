@@ -262,7 +262,8 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 		},
 		ScheduleId: inv.ScheduleID, Overdue: inv.IsOverdue(today), IssuedAt: timePtr(inv.IssuedAt),
 		SentAt: timePtr(inv.SentAt), PaidAt: timePtr(inv.PaidAt), OverdueAt: timePtr(inv.OverdueAt), VoidedAt: timePtr(inv.VoidedAt),
-		VoidReason: inv.VoidReason, CreatedAt: inv.CreatedAt.UTC(), UpdatedAt: inv.UpdatedAt.UTC(), Version: inv.Version,
+		VoidReason: inv.VoidReason, CustomerPaidAt: timePtr(inv.CustomerPaidAt), CustomerPaidNote: inv.CustomerPaidNote,
+		CreatedAt: inv.CreatedAt.UTC(), UpdatedAt: inv.UpdatedAt.UTC(), Version: inv.Version,
 	}
 }
 

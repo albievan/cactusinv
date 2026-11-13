@@ -790,10 +790,25 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 41.6 | Quotes page: filters *Accepted by customer*, *Declined by customer*, *All customer answers* (`answeredBy`), "by customer" on rows and the quote page | done | Vitest; integration (filter on MariaDB) |
 | 41.7 | Docs, VERSION 1.23.0, gate, binaries, commit; upgrade 10.101.18.101 (backup first) | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.5 %, app 84.1 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 122 tests, build OK; `make dist` 1.23.0 (build 45) |
 
+### M42 — The customer marks an invoice paid from the e-mail; the sheet close button (Albie, 2026-11-13) — v1.24.0
+
+> "when emailing a customer the invoice add a button to mark the invoice as paid by the customer, then add the customer paid flag on the invoice page as customer marked as paid. on the web page where the customer must mark the invoice as paid add a notes field for the customer if they want to send any feedback."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 42.1 | Migration 00026: `invoices.customer_paid_at`, `customer_paid_note` (≤ 1000), `invoice_response_tokens` (SHA-256 only, cascade, backed up) | done | integration (head schema 26, snapshot covers it, `TestInvoiceCustomerPaidPersistence`) |
+| 42.2 | Invoice e-mails (manual and scheduled) of an unpaid invoice carry an "I have paid" link and a **Mark as paid** button (HTML alternative; one token per e-mail); the HTML builder is shared with quotes | done | domain `TestInvoicePaidLinkAndHTML`; app `TestCustomerMarksAnInvoicePaid`, `TestInvoicePaidLinkAddress` |
+| 42.3 | Customer page `/i/:token` (no sign-in): the invoice and PDF, an optional **note for the business**, **Mark as paid**; marked / paid / unknown links say so. `/api/v1/public/invoices/{token}`, `/paid`, `/pdf` | done | http `TestCustomerMarksAnInvoicePaidOverHTTP` (no cookie; 404 unknown; 401 elsewhere); Vitest `InvoicePaidPage.test.tsx`; Chrome on an isolated preview with a mock API |
+| 42.4 | Invoice page: **Customer marked as paid · date** with the note, and "check that the payment arrived, then mark the invoice paid" until it is paid; *customer says paid* in the invoice list; audit label | done | Vitest (`CustomerPaid`); Chrome |
+| 42.5 | Sheets (every pop-up form): the close button at the right edge of the header (it sat after the title) | done | Vitest `Sheet.test.tsx`; Chrome |
+| 42.6 | Docs (README, ARCHITECTURE §3.10, PLAN), VERSION 1.24.0, binaries, commit | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.5 %, app 84.1 %; integration ok 40.6 s; "No vulnerabilities found."; contracts in sync; web 126 tests, build OK; `make dist` 1.24.0 (build 46) |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-13 | "Mark as paid" by the customer flags the invoice and does not mark it paid | a payment is the business's to confirm; the flag and note tell them to check |
+| 2026-11-13 | The invoice links use Settings → Quotes' public address (one address customers reach the app on), else the sending browser's | scheduled invoice e-mails have no browser; one setting for both kinds of link |
 | 2026-11-13 | A quote e-mail's links open a confirmation page; nothing changes on a GET | mail scanners and link previews open links on their own and would otherwise accept or decline quotes |
 | 2026-11-13 | One random token per quote e-mail, stored only as SHA-256; every token of a quote works until it is answered or expires | a re-sent quote must not break the links in the earlier e-mail; a database read gives no usable link |
 | 2026-11-13 | Once answered, the customer cannot change the answer through the link | the business may already have acted on it; staff can still change it in the app |

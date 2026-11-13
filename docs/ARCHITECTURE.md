@@ -273,6 +273,20 @@ QuoteSettings { valid_days, number_format ({seq} {dd} {mm} {yy} {yyyy}), email s
 - Permissions: `quotes.view|create|edit|delete|send|outcome|convert`,
   `settings.quotes.view`, `settings.quotes` (ADR-012 catalogue).
 
+### 3.10 Customer says paid (M42)
+
+- `enqueue` (every invoice e-mail: manual, schedule runs) adds, while the invoice is unpaid
+  and an address is known (`QuoteSettings.public_url`, else the request's `linkBase`), a link
+  `<address>/i/<token>`: a 32-byte random token per e-mail, stored as SHA-256 in
+  `invoice_response_tokens`. `deliver` sends an HTML alternative with a **Mark as paid** button
+  (`domain.InvoiceEmailHTML`, only for links this app wrote; shared builder with quotes).
+- The web app's `/i/:token` page (outside sign-in) reads `GET /public/invoices/{token}` and
+  posts `POST /public/invoices/{token}/paid {note}`; opening it changes nothing.
+  `MarkInvoicePaidByCustomer` (actor "Customer (e-mail link)") sets `invoices.customer_paid_at`
+  and `customer_paid_note` (≤ 1000 characters) through `SetCustomerPaid` — not the invoice's
+  `Update`, which never writes them — and audits `invoice.customer_marked_paid`. The first
+  mark stays; a paid invoice is not changed. No payment is recorded: staff mark it paid.
+
 ### 3.8 E-mail outbox (ADR-004)
 
 - `email_outbox` row: `invoice_id`, `to`, `cc`, `subject`, `body`, `send_at`,

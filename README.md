@@ -33,6 +33,14 @@ Released into the public domain — see [LICENSE](LICENSE).
   text); each product has a unit cost per currency.
 - **Stages** — draft → issued → e-mailed → paid, or overdue / void, shown as a progress tracker;
   mark invoices paid, overdue or void.
+- **Customer says paid** — an e-mailed invoice that is still unpaid carries a **Mark as paid**
+  button (the plain-text version shows the link). It opens a page, without sign-in, with the
+  invoice and its PDF, a **note for the business** (when and how they paid, a reference, any
+  feedback) and **Mark as paid**. That records no payment: the invoice page shows **Customer
+  marked as paid** with the date and note, the invoice list shows *customer says paid*, and you
+  mark the invoice paid once the money is in. The link points at the address in Settings →
+  Quotes (needed for scheduled e-mails, which have no browser), else the address the invoice
+  was sent from.
 - **Statements** — a Statements menu with every customer's balance and aging; open any
   customer's full statement, download the PDF, e-mail one or many statements at once, or
   e-mail them on a schedule.

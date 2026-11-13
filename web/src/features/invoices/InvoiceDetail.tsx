@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Can } from '../../components/Access'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, idempotencyKey, unwrap, type InvoiceDetail } from '../../lib/api/client'
+import { api, idempotencyKey, unwrap, type Invoice, type InvoiceDetail } from '../../lib/api/client'
 import { InvoiceActions } from '../../components/InvoiceActions'
 import { formatDate, formatDateTime, todayISO } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
@@ -59,6 +59,7 @@ export function InvoiceDetail() {
             <div className="mt-1 fs-4 fw-bold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</div>
           </div>
         </div>
+        <CustomerPaid inv={inv} />
         <dl className="row row-cols-2 row-cols-md-4 g-2 mt-2 mb-0 small">
           <div><dt className="fw-normal text-body-secondary">Issued</dt><dd className="mb-0">{formatDate(inv.issueDate)}</dd></div>
           <div><dt className="fw-normal text-body-secondary">Due</dt><dd className="mb-0">{formatDate(inv.dueDate)}</dd></div>
@@ -174,7 +175,7 @@ export function InvoiceDetail() {
         </ol>
       </section>
 
-      <SendSheet open={sendOpen} onClose={() => setSendOpen(false)} onSend={(body) => act(async () => { await unwrap(api.POST('/invoices/{id}/send', { ...path, body, params: { path: { id }, header: { 'Idempotency-Key': idempotencyKey() } } })); setSendOpen(false) })} busy={busy} />
+      <SendSheet open={sendOpen} onClose={() => setSendOpen(false)} onSend={(body) => act(async () => { await unwrap(api.POST('/invoices/{id}/send', { ...path, body: { ...body, linkBase: window.location.origin }, params: { path: { id }, header: { 'Idempotency-Key': idempotencyKey() } } })); setSendOpen(false) })} busy={busy} />
     </Page>
   )
 }
@@ -219,6 +220,7 @@ const actionLabels: Record<string, string> = {
   'invoice.created': 'Created', 'invoice.updated': 'Edited', 'invoice.issued': 'Issued', 'invoice.email_queued': 'E-mail queued',
   'invoice.email_sent': 'E-mailed', 'invoice.email_failed': 'E-mail failed', 'invoice.email_cancelled': 'E-mail cancelled',
   'invoice.email_retried': 'E-mail retried', 'invoice.overdue': 'Marked overdue', 'invoice.paid': 'Marked paid',
+  'invoice.customer_marked_paid': 'Customer marked as paid',
   'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed', 'invoice.notes_updated': 'Notes edited',
   'quote.created': 'Created', 'quote.updated': 'Edited', 'quote.email_queued': 'E-mail queued', 'quote.email_sent': 'E-mailed',
   'quote.email_failed': 'E-mail failed', 'quote.accepted': 'Marked accepted', 'quote.declined': 'Marked declined',
@@ -248,5 +250,24 @@ function WhoDidWhat({ events }: { events: InvoiceDetail['events'] }) {
         </div>
       ))}
     </dl>
+  )
+}
+
+/**
+ * CustomerPaid shows that the customer said, through the link in the invoice e-mail, that
+ * they paid (M42), with their note. It is not a payment: until the invoice is marked paid
+ * it asks the reader to check and record it.
+ */
+export function CustomerPaid({ inv }: { inv: Invoice }) {
+  if (!inv.customerPaidAt) return null
+  const open = inv.status !== 'paid' && inv.status !== 'void'
+  return (
+    <div role="note" className={`mt-3 rounded-3 border-start border-4 p-3 small ${open ? 'border-success bg-success-subtle' : 'border-secondary bg-body-tertiary'}`}>
+      <div className="fw-semibold text-success-emphasis">
+        <i className="bi bi-check2-circle me-1" aria-hidden="true" />Customer marked as paid · {formatDateTime(inv.customerPaidAt)}
+      </div>
+      {inv.customerPaidNote && <div className="mt-1" style={{ whiteSpace: 'pre-wrap' }}>“{inv.customerPaidNote}”</div>}
+      {open && <div className="mt-1 text-body-secondary">Check that the payment arrived, then mark the invoice paid.</div>}
+    </div>
   )
 }

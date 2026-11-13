@@ -32,6 +32,8 @@ var operationAccess = map[string][]domain.Permission{
 	"renewquote": {domain.PermQuotesCreate},
 	// The customer's quote page (M41): no session, the e-mail's token is the key.
 	"getquoteresponse": signedIn, "respondtoquote": signedIn, "getquoteresponsepdf": signedIn,
+	// The customer's "I have paid" page for an invoice e-mail (M42), likewise.
+	"getinvoiceresponse": signedIn, "markinvoicepaidbycustomer": signedIn, "getinvoiceresponsepdf": signedIn,
 	"sendquote": {domain.PermQuotesSend}, "acceptquote": {domain.PermQuotesOutcome}, "declinequote": {domain.PermQuotesOutcome},
 	// Making the invoice also needs invoices.create (checked by the use case).
 	"convertquote":       {domain.PermQuotesConvert},

@@ -108,3 +108,13 @@ UPDATE invoices SET exported_version = NULL;
 
 -- name: CountInvoicesCreatedSince :one
 SELECT COUNT(*) FROM invoices WHERE created_at > ?;
+
+-- name: SetInvoiceCustomerPaid :execrows
+UPDATE invoices SET customer_paid_at = ?, customer_paid_note = ?, updated_at = ?, version = version + 1
+WHERE id = ? AND version = ?;
+
+-- name: InsertInvoiceResponseToken :exec
+INSERT INTO invoice_response_tokens (token_hash, invoice_id, created_at) VALUES (?, ?, ?);
+
+-- name: GetInvoiceIDByResponseToken :one
+SELECT invoice_id FROM invoice_response_tokens WHERE token_hash = ?;

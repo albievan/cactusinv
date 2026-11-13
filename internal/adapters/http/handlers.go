@@ -532,7 +532,7 @@ func (h *handlers) UpdateInvoiceNotes(ctx context.Context, req UpdateInvoiceNote
 func (h *handlers) SendInvoice(ctx context.Context, req SendInvoiceRequestObject) (SendInvoiceResponseObject, error) {
 	in := app.SendInput{IdempotencyKey: req.Params.IdempotencyKey}
 	if b := req.Body; b != nil {
-		in.To, in.CC, in.Subject, in.Body = b.To, b.Cc, b.Subject, b.Body
+		in.To, in.CC, in.Subject, in.Body, in.LinkBase = b.To, b.Cc, b.Subject, b.Body, b.LinkBase
 		if b.SendAt != nil {
 			in.SendAt = b.SendAt.UTC()
 		}

@@ -10,6 +10,7 @@ import { StatementView, Statements } from './features/statements/Statements'
 import { InvoiceDetail } from './features/invoices/InvoiceDetail'
 import { InvoiceEditor } from './features/invoices/InvoiceEditor'
 import { InvoiceList } from './features/invoices/InvoiceList'
+import { InvoicePaidPage } from './features/invoices/InvoicePaidPage'
 import { ProductEditor, ProductList } from './features/products/Products'
 import { ScheduleDetailPage, ScheduleEditor, ScheduleList } from './features/schedules/Schedules'
 import { AccountSettingsPage, BusinessSettingsPage, CurrencySettingsPage, EmailSettingsPage, More } from './features/settings/Settings'
@@ -96,6 +97,8 @@ export function App() {
       <Routes>
         {/* The customer's answer to a quote e-mail (M41): no sign-in. */}
         <Route path="/q/:token" element={<QuoteResponsePage />} />
+        {/* The customer's "I have paid" page for an invoice e-mail (M42): no sign-in. */}
+        <Route path="/i/:token" element={<InvoicePaidPage />} />
         <Route path="*" element={<AuthProvider><AppRoutes /></AuthProvider>} />
       </Routes>
     </BrowserRouter>

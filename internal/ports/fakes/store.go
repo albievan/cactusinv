@@ -80,6 +80,7 @@ type state struct {
 	quoteSet    *domain.QuoteSettings
 	quoteSeq    int64
 	quoteTokens map[string]string // response token hash → quote ID
+	invTokens   map[string]string // invoice "I have paid" token hash → invoice ID
 }
 
 func newState() *state {
@@ -91,7 +92,7 @@ func newState() *state {
 		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
-		quoteTokens: map[string]string{},
+		quoteTokens: map[string]string{}, invTokens: map[string]string{},
 	}
 }
 
@@ -120,6 +121,7 @@ func (s *state) clone() *state {
 	c.quotes = maps.Clone(s.quotes) // stored quotes are cloned on the way in and out
 	c.adhoc = maps.Clone(s.adhoc)
 	c.quoteTokens = maps.Clone(s.quoteTokens)
+	c.invTokens = maps.Clone(s.invTokens)
 	if s.quoteSet != nil {
 		q := *s.quoteSet
 		c.quoteSet = &q
@@ -679,6 +681,51 @@ func (r invoices) Update(_ context.Context, inv *domain.Invoice) error {
 		st.invoices[inv.ID] = *cloneInvoice(*inv)
 		return nil
 	})
+}
+
+func (r invoices) SetCustomerPaid(_ context.Context, inv *domain.Invoice) error {
+	return r.s.do(func(st *state) error {
+		cur, ok := st.invoices[inv.ID]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		if cur.Version != inv.Version {
+			return domain.ErrConflict
+		}
+		cur.CustomerPaidAt, cur.CustomerPaidNote, cur.UpdatedAt = inv.CustomerPaidAt, inv.CustomerPaidNote, inv.UpdatedAt
+		cur.Version++
+		inv.Version = cur.Version
+		st.invoices[inv.ID] = cur
+		return nil
+	})
+}
+
+func (r invoices) AddResponseToken(_ context.Context, invoiceID, tokenHash string, _ time.Time) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.invoices[invoiceID]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, dup := st.invTokens[tokenHash]; dup {
+			return domain.ErrConflict
+		}
+		st.invTokens[tokenHash] = invoiceID
+		return nil
+	})
+}
+
+func (r invoices) InvoiceIDByResponseToken(_ context.Context, tokenHash string) (string, error) {
+	var id string
+	err := r.s.do(func(st *state) error {
+		var ok bool
+		if id, ok = st.invTokens[tokenHash]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, ok := st.invoices[id]; !ok { // deleted with its invoice (ON DELETE CASCADE)
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+	return id, err
 }
 
 func (r invoices) Delete(_ context.Context, id string) error {

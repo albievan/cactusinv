@@ -115,9 +115,10 @@ export function Sheet({ title, open, onClose, children }: { title: string; open:
     <div className="modal sheet" onClick={onClose}>
       <div className="modal-dialog">
         <div role="dialog" aria-modal="true" aria-label={title} className="modal-content" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-header border-0 pb-0">
-            <h2 className="modal-title h5">{title}</h2>
-            <button type="button" className="btn btn-outline-primary btn-icon" onClick={onClose} aria-label="Close" title="Close">
+          {/* The close button sits at the right edge (Bootstrap's own .btn-close carries that margin). */}
+          <div className="modal-header border-0 pb-0 gap-3">
+            <h2 className="modal-title h5 min-w-0">{title}</h2>
+            <button type="button" className="btn btn-outline-primary btn-icon ms-auto flex-shrink-0" onClick={onClose} aria-label="Close" title="Close">
               <IconClose width={16} />
             </button>
           </div>

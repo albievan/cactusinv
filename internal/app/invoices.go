@@ -524,8 +524,33 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	if body == "" {
 		body = b.EmailBody
 	}
+	text := domain.RenderTemplate(body, data)
+	// The customer's "I have paid" link (M42) while the invoice is unpaid, at the address
+	// Settings → Quotes names (customers reach the app there), else the one it was sent from.
+	if inv.IsOpen() {
+		qs, err := s.quoteSettings(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		base := qs.PublicURL
+		if base == "" {
+			if base, err = domain.ParsePublicURL(in.LinkBase); err != nil {
+				return nil, err
+			}
+		}
+		if base != "" {
+			token, err := newToken()
+			if err != nil {
+				return nil, err
+			}
+			if err := r.Invoices.AddResponseToken(ctx, inv.ID, HashToken(token), s.now()); err != nil {
+				return nil, err
+			}
+			text = domain.AppendInvoicePaidLink(text, domain.InvoicePaidLink(base, token))
+		}
+	}
 	m, err := domain.NewEmailMessage(s.ids.NewID(), inv.ID, to, cc,
-		domain.SubjectLine(subject, data), domain.RenderTemplate(body, data),
+		domain.SubjectLine(subject, data), text,
 		in.SendAt, s.now(), in.IdempotencyKey)
 	if err != nil {
 		return nil, err

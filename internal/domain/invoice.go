@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // InvoiceStatus is a state in the invoice lifecycle (docs/ARCHITECTURE.md §3.3).
@@ -122,9 +123,14 @@ type Invoice struct {
 	OverdueAt  time.Time
 	VoidedAt   time.Time
 	VoidReason string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	Version    int
+	// CustomerPaidAt is when the customer said, through the link in the invoice e-mail,
+	// that they paid (M42), with their note. It records no payment: the business checks
+	// and marks the invoice paid.
+	CustomerPaidAt   time.Time
+	CustomerPaidNote string
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Version          int
 	// Sample marks a sample of a scheduled invoice (Schedule.SampleInvoice): built in
 	// memory, never stored or e-mailed; its PDF says so on every page.
 	Sample bool
@@ -404,4 +410,25 @@ func Disclaimer(c Customer, b BusinessProfile) string {
 // disclaimer; when it is false they print the business disclaimer (see Disclaimer).
 func UsesOwnDisclaimer(c Customer) bool {
 	return strings.TrimSpace(c.DefaultNotes) != ""
+}
+
+// MaxCustomerNoteLength is the longest note a customer may leave with "I have paid".
+const MaxCustomerNoteLength = 1000
+
+// MarkPaidByCustomer records that the customer says they paid (M42), with an optional
+// note. Only an issued, unpaid invoice may be marked; the first mark stays (it reports
+// whether this call changed anything). The invoice stays unpaid until the business marks it.
+func (inv *Invoice) MarkPaidByCustomer(note string, now time.Time) (bool, error) {
+	if !inv.IsOpen() {
+		return false, ErrInvalidTransition
+	}
+	if !inv.CustomerPaidAt.IsZero() {
+		return false, nil
+	}
+	note = strings.TrimSpace(note)
+	if utf8.RuneCountInString(note) > MaxCustomerNoteLength {
+		return false, invalid("note", "max 1000 characters")
+	}
+	inv.CustomerPaidAt, inv.CustomerPaidNote, inv.UpdatedAt = now, note, now
+	return true, nil
 }

@@ -149,6 +149,7 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) (err erro
 	mail := ports.Mail{
 		MessageID: m.ID, To: m.To, CC: m.CC, ReplyTo: doc.Business.Email,
 		Subject: m.Subject, Body: m.Body,
+		HTMLBody:    domain.InvoiceEmailHTML(m.Body, doc.Business.Name), // "" without the "I have paid" link
 		Attachments: []ports.Attachment{{Filename: PDFFilename(doc.Invoice), ContentType: "application/pdf", Data: pdf}},
 	}
 	if err := s.mailer.Send(ctx, mail); err != nil {

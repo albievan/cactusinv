@@ -330,6 +330,13 @@ type InvoiceRepository interface {
 	ResetExported(ctx context.Context) error
 	// CountCreatedSince counts invoices created after t.
 	CountCreatedSince(ctx context.Context, t time.Time) (int, error)
+	// SetCustomerPaid saves inv's CustomerPaidAt and CustomerPaidNote if inv.Version
+	// matches (ErrConflict otherwise), then increments inv.Version (M42).
+	SetCustomerPaid(ctx context.Context, inv *domain.Invoice) error
+	// AddResponseToken stores the SHA-256 (hex) of an invoice e-mail's link token (M42).
+	AddResponseToken(ctx context.Context, invoiceID, tokenHash string, now time.Time) error
+	// InvoiceIDByResponseToken returns the invoice a token hash belongs to (ErrNotFound).
+	InvoiceIDByResponseToken(ctx context.Context, tokenHash string) (string, error)
 }
 
 // MonthTotal is one currency's total for one month ("2026-10").

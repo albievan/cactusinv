@@ -212,6 +212,8 @@ type Invoice struct {
 	OverdueAt         sql.NullTime
 	BankCountry       string
 	Notes             string
+	CustomerPaidAt    sql.NullTime
+	CustomerPaidNote  string
 }
 
 type InvoiceLine struct {
@@ -223,6 +225,12 @@ type InvoiceLine struct {
 	UnitPriceMinor int64
 	DiscountBp     int32
 	AmountMinor    int64
+}
+
+type InvoiceResponseToken struct {
+	TokenHash string
+	InvoiceID string
+	CreatedAt time.Time
 }
 
 type InvoiceSequence struct {
