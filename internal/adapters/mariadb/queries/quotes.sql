@@ -5,6 +5,7 @@ WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(adhoc_customer_id) = '' OR adhoc_customer_id = sqlc.arg(adhoc_customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
   AND (sqlc.arg(expired) = FALSE OR (status IN ('draft', 'sent') AND valid_until < sqlc.arg(today)))
+  AND (sqlc.arg(answered_by) = '' OR answered_by = sqlc.arg(answered_by))
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?;
 
@@ -14,7 +15,8 @@ WHERE (sqlc.arg(status) = '' OR status = sqlc.arg(status))
   AND (sqlc.arg(customer_id) = '' OR customer_id = sqlc.arg(customer_id))
   AND (sqlc.arg(adhoc_customer_id) = '' OR adhoc_customer_id = sqlc.arg(adhoc_customer_id))
   AND (sqlc.arg(query) = '' OR number LIKE CONCAT('%', sqlc.arg(query), '%') OR bill_to_name LIKE CONCAT('%', sqlc.arg(query), '%'))
-  AND (sqlc.arg(expired) = FALSE OR (status IN ('draft', 'sent') AND valid_until < sqlc.arg(today)));
+  AND (sqlc.arg(expired) = FALSE OR (status IN ('draft', 'sent') AND valid_until < sqlc.arg(today)))
+  AND (sqlc.arg(answered_by) = '' OR answered_by = sqlc.arg(answered_by));
 
 -- name: GetQuote :one
 SELECT * FROM quotes WHERE id = ?;
@@ -26,14 +28,14 @@ SELECT * FROM quotes WHERE invoice_id = ?;
 INSERT INTO quotes (id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until,
     sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp,
     subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at,
-    decline_reason, converted_at, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
+    decline_reason, answered_by, renewed_from, converted_at, created_at, updated_at, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1);
 
 -- name: UpdateQuote :execrows
 UPDATE quotes SET status = ?, customer_id = ?, issue_date = ?, valid_until = ?, sales_person = ?, reference = ?,
     bill_to_name = ?, bill_to_address = ?, bill_to_attention = ?, notes = ?, terms = ?, tax_rate_bp = ?,
     subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, invoice_id = ?, sent_at = ?,
-    accepted_at = ?, declined_at = ?, decline_reason = ?, converted_at = ?, updated_at = ?, version = version + 1
+    accepted_at = ?, declined_at = ?, decline_reason = ?, answered_by = ?, converted_at = ?, updated_at = ?, version = version + 1
 WHERE id = ? AND version = ?;
 
 -- name: DeleteQuote :execrows
@@ -88,12 +90,12 @@ DELETE FROM adhoc_customers WHERE id = ?;
 SELECT * FROM quote_settings WHERE id = 1;
 
 -- name: InsertQuoteSettings :exec
-INSERT INTO quote_settings (id, valid_days, number_format, email_subject, email_body, terms, version, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, 1, ?);
+INSERT INTO quote_settings (id, valid_days, number_format, email_subject, email_body, terms, public_url, version, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, 1, ?);
 
 -- name: UpdateQuoteSettings :execrows
 UPDATE quote_settings SET valid_days = ?, number_format = ?, email_subject = ?, email_body = ?, terms = ?,
-    version = version + 1, updated_at = ?
+    public_url = ?, version = version + 1, updated_at = ?
 WHERE id = 1 AND version = ?;
 
 -- name: LockQuoteSequence :one
@@ -105,3 +107,9 @@ SELECT next_value FROM invoice_sequences WHERE name = 'quote';
 -- name: SetQuoteSequence :exec
 INSERT INTO invoice_sequences (name, next_value) VALUES ('quote', ?)
 ON DUPLICATE KEY UPDATE next_value = VALUES(next_value);
+
+-- name: InsertQuoteResponseToken :exec
+INSERT INTO quote_response_tokens (token_hash, quote_id, created_at) VALUES (?, ?, ?);
+
+-- name: GetQuoteIDByResponseToken :one
+SELECT quote_id FROM quote_response_tokens WHERE token_hash = ?;

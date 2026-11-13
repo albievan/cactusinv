@@ -271,27 +271,32 @@ func (s *Service) DeleteQuote(ctx context.Context, id string) error {
 	}))
 }
 
-// AcceptQuote records that the customer accepted.
+// AcceptQuote records that the customer accepted (staff in the app). An expired quote
+// cannot be accepted: it is renewed instead (M41).
 func (s *Service) AcceptQuote(ctx context.Context, id string) (*domain.Quote, error) {
-	return s.quoteTransition(ctx, "app.AcceptQuote", id, "accepted", "", func(q *domain.Quote) error {
-		return q.Accept(s.now())
+	return s.quoteTransition(ctx, "app.AcceptQuote", id, "accepted", "", func(q *domain.Quote, today domain.Date) error {
+		return q.Accept(today, domain.AnsweredByStaff, s.now())
 	})
 }
 
-// DeclineQuote records that the customer turned the quote down.
+// DeclineQuote records that the customer turned the quote down (staff in the app).
 func (s *Service) DeclineQuote(ctx context.Context, id, reason string) (*domain.Quote, error) {
-	return s.quoteTransition(ctx, "app.DeclineQuote", id, "declined", strings.TrimSpace(reason), func(q *domain.Quote) error {
-		return q.Decline(reason, s.now())
+	return s.quoteTransition(ctx, "app.DeclineQuote", id, "declined", strings.TrimSpace(reason), func(q *domain.Quote, _ domain.Date) error {
+		return q.Decline(reason, domain.AnsweredByStaff, s.now())
 	})
 }
 
-func (s *Service) quoteTransition(ctx context.Context, op, id, event, detail string, apply func(*domain.Quote) error) (*domain.Quote, error) {
+func (s *Service) quoteTransition(ctx context.Context, op, id, event, detail string, apply func(*domain.Quote, domain.Date) error) (*domain.Quote, error) {
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
 		q, err := r.Quotes.Get(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := apply(q); err != nil {
+		b, err := s.business(ctx, r)
+		if err != nil {
+			return err
+		}
+		if err := apply(q, s.today(b)); err != nil {
 			return err
 		}
 		if err := r.Quotes.Update(ctx, q); err != nil {
@@ -326,7 +331,11 @@ func (s *Service) ConvertQuote(ctx context.Context, id string) (*domain.Invoice,
 		if err := s.adoptCustomer(ctx, r, q); err != nil {
 			return err
 		}
-		if err := q.CanConvert(); err != nil {
+		b, err := s.business(ctx, r)
+		if err != nil {
+			return err
+		}
+		if err := q.CanConvert(s.today(b)); err != nil {
 			return err
 		}
 		c, err := r.Customers.Get(ctx, q.CustomerID)
@@ -334,10 +343,6 @@ func (s *Service) ConvertQuote(ctx context.Context, id string) (*domain.Invoice,
 			return err
 		}
 		if _, err := activeCurrency(ctx, r, c.Currency); err != nil {
-			return err
-		}
-		b, err := s.business(ctx, r)
-		if err != nil {
 			return err
 		}
 		content, err := q.InvoiceContent(c, s.today(b))
@@ -354,7 +359,7 @@ func (s *Service) ConvertQuote(ctx context.Context, id string) (*domain.Invoice,
 		if err := s.event(ctx, r, invID, "created", "from quote "+q.Number); err != nil {
 			return err
 		}
-		if err := q.Convert(invID, s.now()); err != nil {
+		if err := q.Convert(invID, s.today(b), s.now()); err != nil {
 			return err
 		}
 		if err := r.Quotes.Update(ctx, q); err != nil {
@@ -465,6 +470,13 @@ func (s *Service) SendQuote(ctx context.Context, id string, in SendInput) (*doma
 		if !q.CanSend() {
 			return domain.ErrInvalidTransition
 		}
+		b, err := s.business(ctx, r)
+		if err != nil {
+			return err
+		}
+		if q.Expired(s.today(b)) {
+			return &domain.ValidationError{Field: "validUntil", Reason: "the quote expired on " + q.ValidUntil.String() + ": renew it and send the new quote"}
+		}
 		to, cc := in.To, in.CC
 		if len(to) == 0 {
 			addr, ccs, err := quoteRecipients(ctx, r, q)
@@ -475,10 +487,6 @@ func (s *Service) SendQuote(ctx context.Context, id string, in SendInput) (*doma
 			if len(cc) == 0 {
 				cc = ccs
 			}
-		}
-		b, err := s.business(ctx, r)
-		if err != nil {
-			return err
 		}
 		qs, err := s.quoteSettings(ctx, r)
 		if err != nil {
@@ -496,8 +504,27 @@ func (s *Service) SendQuote(ctx context.Context, id string, in SendInput) (*doma
 		if body == "" {
 			body = qs.EmailBody
 		}
+		text := domain.RenderTemplate(body, data)
+		// The customer's Accept and Decline links (M41), while the quote can still be answered,
+		// at the address Settings → Quotes names, else the one it was sent from.
+		base := qs.PublicURL
+		if base == "" {
+			if base, err = domain.ParsePublicURL(in.LinkBase); err != nil {
+				return err
+			}
+		}
+		if base != "" && (q.Status == domain.QuoteDraft || q.Status == domain.QuoteSent) {
+			token, err := newToken()
+			if err != nil {
+				return err
+			}
+			if err := r.Quotes.AddResponseToken(ctx, q.ID, HashToken(token), s.now()); err != nil {
+				return err
+			}
+			text = domain.NewQuoteResponseLinks(base, token).AppendTo(text)
+		}
 		m, err := domain.NewEmailMessage(s.ids.NewID(), "", to, cc, domain.SubjectLine(subject, data),
-			domain.RenderTemplate(body, data), in.SendAt, s.now(), in.IdempotencyKey)
+			text, in.SendAt, s.now(), in.IdempotencyKey)
 		if err != nil {
 			return err
 		}
@@ -557,6 +584,7 @@ func (s *Service) deliverQuote(ctx context.Context, m *domain.EmailMessage) erro
 	}
 	if err := s.mailer.Send(ctx, ports.Mail{
 		MessageID: m.ID, To: m.To, CC: m.CC, ReplyTo: doc.Business.Email, Subject: m.Subject, Body: m.Body,
+		HTMLBody:    domain.QuoteEmailHTML(m.Body, doc.Business.Name), // "" without response links
 		Attachments: []ports.Attachment{{Filename: QuoteFilename(doc.Quote), ContentType: "application/pdf", Data: pdf}},
 	}); err != nil {
 		return err

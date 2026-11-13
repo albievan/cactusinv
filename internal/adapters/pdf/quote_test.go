@@ -139,9 +139,9 @@ func TestQuoteStatusAndPages(t *testing.T) {
 		apply func(*domain.Quote)
 		want  string
 	}{
-		{func(q *domain.Quote) { _ = q.Accept(time.Now()) }, "ACCEPTED"},
-		{func(q *domain.Quote) { _ = q.Decline("", time.Now()) }, "DECLINED"},
-		{func(q *domain.Quote) { q.CustomerID = "c"; _ = q.Convert("i", time.Now()) }, "INVOICED"},
+		{func(q *domain.Quote) { _ = q.Accept(q.IssueDate, domain.AnsweredByStaff, time.Now()) }, "ACCEPTED"},
+		{func(q *domain.Quote) { _ = q.Decline("", domain.AnsweredByStaff, time.Now()) }, "DECLINED"},
+		{func(q *domain.Quote) { q.CustomerID = "c"; _ = q.Convert("i", q.IssueDate, time.Now()) }, "INVOICED"},
 	} {
 		d := quoteDoc(t, 1)
 		tc.apply(d.Quote)

@@ -28,7 +28,7 @@ func (r quotes) List(_ context.Context, f ports.QuoteFilter) ([]domain.Quote, in
 		for _, q := range st.quotes {
 			if (f.Status != "" && q.Status != f.Status) || (f.CustomerID != "" && q.CustomerID != f.CustomerID) ||
 				(f.AdhocCustomerID != "" && q.AdhocCustomerID != f.AdhocCustomerID) ||
-				(!contains(q.Number, f.Query) && !contains(q.BillTo.Name, f.Query)) || (f.Expired && !q.Expired(f.Today)) {
+				(!contains(q.Number, f.Query) && !contains(q.BillTo.Name, f.Query)) || (f.Expired && !q.Expired(f.Today)) || (f.AnsweredBy != "" && q.AnsweredBy != f.AnsweredBy) {
 				continue
 			}
 			q.Lines = nil
@@ -134,6 +134,34 @@ func (r quotes) SetCustomerForAdhoc(_ context.Context, adhocID, customerID strin
 		}
 		return nil
 	})
+}
+
+func (r quotes) AddResponseToken(_ context.Context, quoteID, tokenHash string, _ time.Time) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.quotes[quoteID]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, dup := st.quoteTokens[tokenHash]; dup {
+			return domain.ErrConflict
+		}
+		st.quoteTokens[tokenHash] = quoteID
+		return nil
+	})
+}
+
+func (r quotes) QuoteIDByResponseToken(_ context.Context, tokenHash string) (string, error) {
+	var id string
+	err := r.s.do(func(st *state) error {
+		var ok bool
+		if id, ok = st.quoteTokens[tokenHash]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, ok := st.quotes[id]; !ok { // deleted with its quote (ON DELETE CASCADE)
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+	return id, err
 }
 
 func (r quotes) CountForAdhoc(_ context.Context, adhocID string) (int, error) {

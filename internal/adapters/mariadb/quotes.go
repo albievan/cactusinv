@@ -21,6 +21,7 @@ func toQuote(r sqlcgen.Quote) *domain.Quote {
 		Totals:    domain.Totals{Subtotal: r.SubtotalMinor, Discount: r.DiscountMinor, Tax: r.TaxMinor, Total: r.TotalMinor},
 		InvoiceID: r.InvoiceID.String, SentAt: fromNullTime(r.SentAt), AcceptedAt: fromNullTime(r.AcceptedAt),
 		DeclinedAt: fromNullTime(r.DeclinedAt), DeclineReason: r.DeclineReason, ConvertedAt: fromNullTime(r.ConvertedAt),
+		AnsweredBy: domain.QuoteAnswerer(r.AnsweredBy), RenewedFrom: r.RenewedFrom.String,
 		CreatedAt: r.CreatedAt.UTC(), UpdatedAt: r.UpdatedAt.UTC(), Version: int(r.Version),
 	}
 }
@@ -38,14 +39,14 @@ func (r quoteRepo) List(ctx context.Context, f ports.QuoteFilter) ([]domain.Quot
 	p := f.Page.Normalize()
 	rows, err := r.q.ListQuotes(ctx, sqlcgen.ListQuotesParams{
 		Status: string(f.Status), CustomerID: filter(f.CustomerID), AdhocCustomerID: filter(f.AdhocCustomerID),
-		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today), Limit: i32(p.Limit), Offset: i32(p.Offset),
+		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today), AnsweredBy: string(f.AnsweredBy), Limit: i32(p.Limit), Offset: i32(p.Offset),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
 	}
 	total, err := r.q.CountQuotes(ctx, sqlcgen.CountQuotesParams{
 		Status: string(f.Status), CustomerID: filter(f.CustomerID), AdhocCustomerID: filter(f.AdhocCustomerID),
-		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today),
+		Query: likeEscape(f.Query), Expired: f.Expired, Today: quoteToday(f.Today), AnsweredBy: string(f.AnsweredBy),
 	})
 	if err != nil {
 		return nil, 0, mapErr(err)
@@ -97,7 +98,8 @@ func (r quoteRepo) Create(ctx context.Context, q *domain.Quote) error {
 		Notes: q.Notes, Terms: q.Terms, TaxRateBp: i32(int(q.TaxRate)), SubtotalMinor: q.Totals.Subtotal,
 		DiscountMinor: q.Totals.Discount, TaxMinor: q.Totals.Tax, TotalMinor: q.Totals.Total,
 		InvoiceID: nullString(q.InvoiceID), SentAt: nullTime(q.SentAt), AcceptedAt: nullTime(q.AcceptedAt),
-		DeclinedAt: nullTime(q.DeclinedAt), DeclineReason: q.DeclineReason, ConvertedAt: nullTime(q.ConvertedAt),
+		DeclinedAt: nullTime(q.DeclinedAt), DeclineReason: q.DeclineReason, AnsweredBy: string(q.AnsweredBy),
+		RenewedFrom: nullString(q.RenewedFrom), ConvertedAt: nullTime(q.ConvertedAt),
 		CreatedAt: q.CreatedAt.UTC(), UpdatedAt: q.UpdatedAt.UTC(),
 	})
 	if err != nil {
@@ -115,8 +117,8 @@ func (r quoteRepo) Update(ctx context.Context, q *domain.Quote) error {
 		Notes: q.Notes, Terms: q.Terms, TaxRateBp: i32(int(q.TaxRate)), SubtotalMinor: q.Totals.Subtotal,
 		DiscountMinor: q.Totals.Discount, TaxMinor: q.Totals.Tax, TotalMinor: q.Totals.Total,
 		InvoiceID: nullString(q.InvoiceID), SentAt: nullTime(q.SentAt), AcceptedAt: nullTime(q.AcceptedAt),
-		DeclinedAt: nullTime(q.DeclinedAt), DeclineReason: q.DeclineReason, ConvertedAt: nullTime(q.ConvertedAt),
-		UpdatedAt: q.UpdatedAt.UTC(), ID: q.ID, Version: i32(q.Version),
+		DeclinedAt: nullTime(q.DeclinedAt), DeclineReason: q.DeclineReason, AnsweredBy: string(q.AnsweredBy),
+		ConvertedAt: nullTime(q.ConvertedAt), UpdatedAt: q.UpdatedAt.UTC(), ID: q.ID, Version: i32(q.Version),
 	})
 	if err := affected(n, err, domain.ErrConflict); err != nil {
 		return err
@@ -153,6 +155,15 @@ func (r quoteRepo) SetCustomerForAdhoc(ctx context.Context, adhocID, customerID 
 	return mapErr(r.q.SetQuotesCustomer(ctx, sqlcgen.SetQuotesCustomerParams{
 		CustomerID: nullString(customerID), UpdatedAt: now.UTC(), AdhocCustomerID: nullString(adhocID),
 	}))
+}
+
+func (r quoteRepo) AddResponseToken(ctx context.Context, quoteID, tokenHash string, now time.Time) error {
+	return mapErr(r.q.InsertQuoteResponseToken(ctx, sqlcgen.InsertQuoteResponseTokenParams{TokenHash: tokenHash, QuoteID: quoteID, CreatedAt: now.UTC()}))
+}
+
+func (r quoteRepo) QuoteIDByResponseToken(ctx context.Context, tokenHash string) (string, error) {
+	id, err := r.q.GetQuoteIDByResponseToken(ctx, tokenHash)
+	return id, mapErr(err)
 }
 
 func (r quoteRepo) CountForAdhoc(ctx context.Context, adhocID string) (int, error) {
@@ -228,7 +239,7 @@ func (r quoteSettingsRepo) Get(ctx context.Context) (domain.QuoteSettings, error
 	}
 	return domain.QuoteSettings{
 		ValidDays: int(row.ValidDays), NumberFormat: row.NumberFormat, EmailSubject: row.EmailSubject,
-		EmailBody: row.EmailBody, Terms: row.Terms, Version: int(row.Version),
+		EmailBody: row.EmailBody, Terms: row.Terms, PublicURL: row.PublicUrl, Version: int(row.Version),
 	}, nil
 }
 
@@ -237,12 +248,12 @@ func (r quoteSettingsRepo) Save(ctx context.Context, s domain.QuoteSettings) err
 	if s.Version == 0 {
 		return mapErr(r.q.InsertQuoteSettings(ctx, sqlcgen.InsertQuoteSettingsParams{
 			ValidDays: i32(s.ValidDays), NumberFormat: s.NumberFormat, EmailSubject: s.EmailSubject,
-			EmailBody: s.EmailBody, Terms: s.Terms, UpdatedAt: now,
+			EmailBody: s.EmailBody, Terms: s.Terms, PublicUrl: s.PublicURL, UpdatedAt: now,
 		}))
 	}
 	n, err := r.q.UpdateQuoteSettings(ctx, sqlcgen.UpdateQuoteSettingsParams{
 		ValidDays: i32(s.ValidDays), NumberFormat: s.NumberFormat, EmailSubject: s.EmailSubject,
-		EmailBody: s.EmailBody, Terms: s.Terms, UpdatedAt: now, Version: i32(s.Version),
+		EmailBody: s.EmailBody, Terms: s.Terms, PublicUrl: s.PublicURL, UpdatedAt: now, Version: i32(s.Version),
 	})
 	return affected(n, err, domain.ErrConflict)
 }

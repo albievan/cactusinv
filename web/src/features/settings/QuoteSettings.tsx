@@ -63,6 +63,14 @@ function QuoteSettingsForm() {
           </Field>
         </div>
         <div className="w-100">
+          <Field
+            label="Address customers reach this app on"
+            hint={`The Accept and Decline buttons in quote e-mails open a page here, e.g. https://invoices.example.com. Empty = the address you send from (now ${window.location.origin}), which customers must be able to reach.`}
+          >
+            {(f) => <input id={f} type="url" inputMode="url" className="form-control" placeholder={window.location.origin} value={q.publicUrl ?? ''} onChange={(e) => set({ publicUrl: e.target.value })} />}
+          </Field>
+        </div>
+        <div className="w-100">
           <Field label="Quote terms" hint="Printed on every new quote, e.g. what the price includes or the deposit asked for.">
             {(f) => <textarea id={f} className="form-control" style={{ minHeight: 96 }} value={q.terms} onChange={(e) => set({ terms: e.target.value })} />}
           </Field>

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -29,8 +30,12 @@ type QuoteSettings struct {
 	EmailBody    string
 	// Terms are printed on every quote (e.g. what the price includes); a new quote starts
 	// with them and may change its own copy.
-	Terms   string
-	Version int
+	Terms string
+	// PublicURL is the address customers reach cactusInv on, for the Accept and Decline
+	// links in quote e-mails (M41), e.g. "https://invoices.example.com". Empty = the address
+	// the quote was sent from in the browser.
+	PublicURL string
+	Version   int
 }
 
 // DefaultQuoteSettings are the settings before any are saved.
@@ -70,7 +75,27 @@ func (q *QuoteSettings) Validate() error {
 	if len(q.Terms) > 4000 {
 		return invalid("terms", "max 4000 characters")
 	}
+	u, err := ParsePublicURL(q.PublicURL)
+	if err != nil {
+		return err
+	}
+	q.PublicURL = u
 	return nil
+}
+
+// ParsePublicURL checks an address customers reach cactusInv on: empty, or an absolute
+// http(s) URL with a host and no query, fragment or user info (at most 300 characters). It
+// returns it without a trailing slash.
+func ParsePublicURL(s string) (string, error) {
+	s = strings.TrimRight(strings.TrimSpace(s), "/")
+	if s == "" {
+		return "", nil
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(s) > 300 {
+		return "", invalid("publicUrl", "an address like https://invoices.example.com (http or https, no query)")
+	}
+	return s, nil
 }
 
 // ValidateQuoteNumberFormat checks a quote number template: it must contain {seq} and may

@@ -242,7 +242,8 @@ type QuoteFilter struct {
 	CustomerID      string
 	AdhocCustomerID string
 	Query           string
-	Expired         bool // only draft and sent quotes whose validity ended before Today
+	Expired         bool                 // only draft and sent quotes whose validity ended before Today
+	AnsweredBy      domain.QuoteAnswerer // only quotes answered by staff or by the customer (M41)
 	Today           domain.Date
 	Page            Page
 }
@@ -262,6 +263,10 @@ type QuoteRepository interface {
 	// they became.
 	SetCustomerForAdhoc(ctx context.Context, adhocID, customerID string, now time.Time) error
 	CountForAdhoc(ctx context.Context, adhocID string) (int, error)
+	// AddResponseToken stores the SHA-256 (hex) of a quote e-mail's response token (M41).
+	AddResponseToken(ctx context.Context, quoteID, tokenHash string, now time.Time) error
+	// QuoteIDByResponseToken returns the quote a token hash belongs to (ErrNotFound).
+	QuoteIDByResponseToken(ctx context.Context, tokenHash string) (string, error)
 }
 
 // AdhocCustomerFilter narrows the ad-hoc customer list.
@@ -520,12 +525,15 @@ type Attachment struct {
 
 // Mail is one outgoing e-mail.
 type Mail struct {
-	MessageID   string
-	To          []string
-	CC          []string
-	ReplyTo     string
-	Subject     string
-	Body        string
+	MessageID string
+	To        []string
+	CC        []string
+	ReplyTo   string
+	Subject   string
+	Body      string
+	// HTMLBody, when set, is sent beside Body as the HTML alternative (M41: the quote
+	// e-mail's Accept and Decline buttons). Body stays the plain-text version.
+	HTMLBody    string
 	Attachments []Attachment
 }
 

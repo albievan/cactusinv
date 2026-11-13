@@ -7,7 +7,7 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner, quoteStageLabels } from '../../components/ui'
-import { IconCheck, IconEdit, IconFilePdf, IconInvoice, IconPersonPlus, IconSend, IconTrash, IconBan } from '../../components/icons'
+import { IconCheck, IconEdit, IconFilePdf, IconInvoice, IconPersonPlus, IconRenew, IconSend, IconTrash, IconBan } from '../../components/icons'
 import { actionLabel } from '../invoices/InvoiceDetail'
 import { ConvertSheet } from './AdhocCustomers'
 
@@ -42,8 +42,11 @@ export function QuoteDetail() {
       setBusy(false)
     }
   }
-  const open = qt.status === 'draft' || qt.status === 'sent'
+  // An expired quote is not accepted, converted or sent again: it is renewed (M41).
+  const expired = qt.stage === 'expired'
+  const open = (qt.status === 'draft' || qt.status === 'sent') && !expired
   const canConvert = open || qt.status === 'accepted'
+  const byCustomer = qt.answeredBy === 'customer'
   const adhocOnly = !qt.customerId
   return (
     <Page title={qt.number} back="/quotes">
@@ -57,6 +60,7 @@ export function QuoteDetail() {
           </div>
           <div className="text-end">
             <Badge status={qt.stage} label={quoteStageLabels[qt.stage]} />
+            {byCustomer && <div className="mt-1 fs-8 fw-semibold text-success-emphasis">by the customer (e-mail link)</div>}
             <div className="mt-1 fs-4 fw-bold" style={tnum}>{formatMoney(qt.totals.total, qt.currency)}</div>
           </div>
         </div>
@@ -66,7 +70,13 @@ export function QuoteDetail() {
           {qt.reference && <div><dt className="fw-normal text-body-secondary">Reference</dt><dd className="mb-0">{qt.reference}</dd></div>}
           <div><dt className="fw-normal text-body-secondary" title="Printed on the PDF; it changes if anything printed changes.">Verification code</dt><dd className="mb-0 font-monospace">{qt.fingerprint}</dd></div>
         </dl>
-        {qt.status === 'declined' && qt.declineReason && <div className="small text-danger mt-2">Declined: {qt.declineReason}</div>}
+        {qt.status === 'declined' && qt.declineReason && <div className="small text-danger mt-2">Declined{byCustomer ? ' by the customer' : ''}: {qt.declineReason}</div>}
+        {qt.renewedFrom && <div className="small mt-2">Renews an expired quote: <Link to={`/quotes/${qt.renewedFrom}`}>open it</Link></div>}
+        {expired && (
+          <div className="small fw-semibold text-warning-emphasis mt-2">
+            This quote expired on {formatDate(qt.validUntil)}: it can no longer be accepted or turned into an invoice. Renew it to send a new one.
+          </div>
+        )}
         {qt.invoiceId && (
           <div className="small mt-2">
             Invoiced: <Can need="invoices.view"><Link to={`/invoices/${qt.invoiceId}`}>{data.invoiceNumber || 'draft invoice'}</Link></Can>
@@ -76,7 +86,23 @@ export function QuoteDetail() {
 
       <div className="mb-3 d-flex flex-wrap align-items-center gap-2">
         <a className="btn btn-sm btn-outline-primary" href={`/api/v1/quotes/${id}/pdf`} target="_blank" rel="noreferrer"><IconFilePdf width={15} /> PDF</a>
-        {qt.status !== 'declined' && qt.status !== 'converted' && (
+        {(expired || qt.status === 'declined') && (
+          <Can need="quotes.create">
+            <button className="btn btn-sm btn-primary" disabled={busy} onClick={async () => {
+              setBusy(true)
+              setActionError(null)
+              try {
+                const n = await unwrap(api.POST('/quotes/{id}/renew', path))
+                nav(`/quotes/${n.id}`)
+              } catch (e) {
+                setActionError(e as Error)
+              } finally {
+                setBusy(false)
+              }
+            }}><IconRenew width={15} /> Renew quote</button>
+          </Can>
+        )}
+        {qt.status !== 'declined' && qt.status !== 'converted' && !expired && (
           <Can need="quotes.send"><button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => setSendOpen(true)}><IconSend width={15} /> E-mail</button></Can>
         )}
         {open && <Can need="quotes.edit"><Link to={`/quotes/${id}/edit`} className="btn btn-sm btn-outline-primary"><IconEdit width={15} /> Edit</Link></Can>}
@@ -194,7 +220,8 @@ export function QuoteDetail() {
         needsAddress={adhocOnly && !data.adhocCustomer?.email}
         onClose={() => setSendOpen(false)}
         onSend={(body) => act(async () => {
-          await unwrap(api.POST('/quotes/{id}/send', { ...path, body, params: { path: { id }, header: { 'Idempotency-Key': idempotencyKey() } } }))
+          // The Accept and Decline links in the e-mail point here unless Settings → Quotes names an address.
+          await unwrap(api.POST('/quotes/{id}/send', { ...path, body: { ...body, linkBase: window.location.origin }, params: { path: { id }, header: { 'Idempotency-Key': idempotencyKey() } } }))
           setSendOpen(false)
         }, `${qt.number} queued to be e-mailed.`)}
       />
@@ -220,7 +247,7 @@ function SendQuoteSheet({ open, onClose, onSend, busy, needsAddress }: { open: b
   return (
     <Sheet title="E-mail quote" open={open} onClose={onClose}>
       <div className="vstack gap-3">
-        <p className="small text-body-secondary mb-0">Sent with the quote e-mail from Settings → Quotes; the PDF is attached and can be printed but not changed.</p>
+        <p className="small text-body-secondary mb-0">Sent with the quote e-mail from Settings → Quotes; the PDF is attached and can be printed but not changed. The e-mail has Accept and Decline buttons for the customer.</p>
         <div className="btn-group w-100" role="radiogroup">
           {(['now', 'later'] as const).map((w) => (
             <button key={w} role="radio" aria-checked={when === w} className={`btn btn-outline-primary${when === w ? ' active' : ''}`} onClick={() => setWhen(w)}>

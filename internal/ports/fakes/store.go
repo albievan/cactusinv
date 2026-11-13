@@ -79,6 +79,7 @@ type state struct {
 	adhoc       map[string]domain.AdhocCustomer
 	quoteSet    *domain.QuoteSettings
 	quoteSeq    int64
+	quoteTokens map[string]string // response token hash → quote ID
 }
 
 func newState() *state {
@@ -90,6 +91,7 @@ func newState() *state {
 		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
+		quoteTokens: map[string]string{},
 	}
 }
 
@@ -117,6 +119,7 @@ func (s *state) clone() *state {
 	c.backupRuns = slices.Clone(s.backupRuns)
 	c.quotes = maps.Clone(s.quotes) // stored quotes are cloned on the way in and out
 	c.adhoc = maps.Clone(s.adhoc)
+	c.quoteTokens = maps.Clone(s.quoteTokens)
 	if s.quoteSet != nil {
 		q := *s.quoteSet
 		c.quoteSet = &q

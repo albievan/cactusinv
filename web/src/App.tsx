@@ -21,6 +21,7 @@ import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
 import { QuoteList } from './features/quotes/QuoteList'
 import { QuoteEditor } from './features/quotes/QuoteEditor'
 import { QuoteDetail } from './features/quotes/QuoteDetail'
+import { QuoteResponsePage } from './features/quotes/QuoteResponsePage'
 import { AdhocCustomers } from './features/quotes/AdhocCustomers'
 import { QuoteSettingsPage } from './features/settings/QuoteSettings'
 
@@ -92,9 +93,11 @@ function SettingsHome() {
 export function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <Routes>
+        {/* The customer's answer to a quote e-mail (M41): no sign-in. */}
+        <Route path="/q/:token" element={<QuoteResponsePage />} />
+        <Route path="*" element={<AuthProvider><AppRoutes /></AuthProvider>} />
+      </Routes>
     </BrowserRouter>
   )
 }

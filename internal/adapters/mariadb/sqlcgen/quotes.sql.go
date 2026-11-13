@@ -41,6 +41,7 @@ WHERE (? = '' OR status = ?)
   AND (? = '' OR adhoc_customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
   AND (? = FALSE OR (status IN ('draft', 'sent') AND valid_until < ?))
+  AND (? = '' OR answered_by = ?)
 `
 
 type CountQuotesParams struct {
@@ -50,6 +51,7 @@ type CountQuotesParams struct {
 	Query           interface{}
 	Expired         interface{}
 	Today           time.Time
+	AnsweredBy      string
 }
 
 func (q *Queries) CountQuotes(ctx context.Context, arg CountQuotesParams) (int64, error) {
@@ -65,6 +67,8 @@ func (q *Queries) CountQuotes(ctx context.Context, arg CountQuotesParams) (int64
 		arg.Query,
 		arg.Expired,
 		arg.Today,
+		arg.AnsweredBy,
+		arg.AnsweredBy,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -141,7 +145,7 @@ func (q *Queries) GetAdhocCustomer(ctx context.Context, id string) (AdhocCustome
 }
 
 const getQuote = `-- name: GetQuote :one
-SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version FROM quotes WHERE id = ?
+SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version, answered_by, renewed_from FROM quotes WHERE id = ?
 `
 
 func (q *Queries) GetQuote(ctx context.Context, id string) (Quote, error) {
@@ -177,12 +181,14 @@ func (q *Queries) GetQuote(ctx context.Context, id string) (Quote, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Version,
+		&i.AnsweredBy,
+		&i.RenewedFrom,
 	)
 	return i, err
 }
 
 const getQuoteByInvoice = `-- name: GetQuoteByInvoice :one
-SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version FROM quotes WHERE invoice_id = ?
+SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version, answered_by, renewed_from FROM quotes WHERE invoice_id = ?
 `
 
 func (q *Queries) GetQuoteByInvoice(ctx context.Context, invoiceID sql.NullString) (Quote, error) {
@@ -218,12 +224,25 @@ func (q *Queries) GetQuoteByInvoice(ctx context.Context, invoiceID sql.NullStrin
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Version,
+		&i.AnsweredBy,
+		&i.RenewedFrom,
 	)
 	return i, err
 }
 
+const getQuoteIDByResponseToken = `-- name: GetQuoteIDByResponseToken :one
+SELECT quote_id FROM quote_response_tokens WHERE token_hash = ?
+`
+
+func (q *Queries) GetQuoteIDByResponseToken(ctx context.Context, tokenHash string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getQuoteIDByResponseToken, tokenHash)
+	var quote_id string
+	err := row.Scan(&quote_id)
+	return quote_id, err
+}
+
 const getQuoteSettings = `-- name: GetQuoteSettings :one
-SELECT id, valid_days, number_format, email_subject, email_body, terms, version, updated_at FROM quote_settings WHERE id = 1
+SELECT id, valid_days, number_format, email_subject, email_body, terms, version, updated_at, public_url FROM quote_settings WHERE id = 1
 `
 
 func (q *Queries) GetQuoteSettings(ctx context.Context) (QuoteSetting, error) {
@@ -238,6 +257,7 @@ func (q *Queries) GetQuoteSettings(ctx context.Context) (QuoteSetting, error) {
 		&i.Terms,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.PublicUrl,
 	)
 	return i, err
 }
@@ -285,8 +305,8 @@ const insertQuote = `-- name: InsertQuote :exec
 INSERT INTO quotes (id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until,
     sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp,
     subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at,
-    decline_reason, converted_at, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    decline_reason, answered_by, renewed_from, converted_at, created_at, updated_at, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 `
 
 type InsertQuoteParams struct {
@@ -315,6 +335,8 @@ type InsertQuoteParams struct {
 	AcceptedAt      sql.NullTime
 	DeclinedAt      sql.NullTime
 	DeclineReason   string
+	AnsweredBy      string
+	RenewedFrom     sql.NullString
 	ConvertedAt     sql.NullTime
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
@@ -347,6 +369,8 @@ func (q *Queries) InsertQuote(ctx context.Context, arg InsertQuoteParams) error 
 		arg.AcceptedAt,
 		arg.DeclinedAt,
 		arg.DeclineReason,
+		arg.AnsweredBy,
+		arg.RenewedFrom,
 		arg.ConvertedAt,
 		arg.CreatedAt,
 		arg.UpdatedAt,
@@ -384,9 +408,24 @@ func (q *Queries) InsertQuoteLine(ctx context.Context, arg InsertQuoteLineParams
 	return err
 }
 
+const insertQuoteResponseToken = `-- name: InsertQuoteResponseToken :exec
+INSERT INTO quote_response_tokens (token_hash, quote_id, created_at) VALUES (?, ?, ?)
+`
+
+type InsertQuoteResponseTokenParams struct {
+	TokenHash string
+	QuoteID   string
+	CreatedAt time.Time
+}
+
+func (q *Queries) InsertQuoteResponseToken(ctx context.Context, arg InsertQuoteResponseTokenParams) error {
+	_, err := q.db.ExecContext(ctx, insertQuoteResponseToken, arg.TokenHash, arg.QuoteID, arg.CreatedAt)
+	return err
+}
+
 const insertQuoteSettings = `-- name: InsertQuoteSettings :exec
-INSERT INTO quote_settings (id, valid_days, number_format, email_subject, email_body, terms, version, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, 1, ?)
+INSERT INTO quote_settings (id, valid_days, number_format, email_subject, email_body, terms, public_url, version, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, 1, ?)
 `
 
 type InsertQuoteSettingsParams struct {
@@ -395,6 +434,7 @@ type InsertQuoteSettingsParams struct {
 	EmailSubject string
 	EmailBody    string
 	Terms        string
+	PublicUrl    string
 	UpdatedAt    time.Time
 }
 
@@ -405,6 +445,7 @@ func (q *Queries) InsertQuoteSettings(ctx context.Context, arg InsertQuoteSettin
 		arg.EmailSubject,
 		arg.EmailBody,
 		arg.Terms,
+		arg.PublicUrl,
 		arg.UpdatedAt,
 	)
 	return err
@@ -506,12 +547,13 @@ func (q *Queries) ListQuoteLines(ctx context.Context, quoteID string) ([]QuoteLi
 }
 
 const listQuotes = `-- name: ListQuotes :many
-SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version FROM quotes
+SELECT id, number, status, customer_id, adhoc_customer_id, currency_code, issue_date, valid_until, sales_person, reference, bill_to_name, bill_to_address, bill_to_attention, notes, terms, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, invoice_id, sent_at, accepted_at, declined_at, decline_reason, converted_at, created_at, updated_at, version, answered_by, renewed_from FROM quotes
 WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR adhoc_customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
   AND (? = FALSE OR (status IN ('draft', 'sent') AND valid_until < ?))
+  AND (? = '' OR answered_by = ?)
 ORDER BY created_at DESC, id DESC
 LIMIT ? OFFSET ?
 `
@@ -523,6 +565,7 @@ type ListQuotesParams struct {
 	Query           interface{}
 	Expired         interface{}
 	Today           time.Time
+	AnsweredBy      string
 	Limit           int32
 	Offset          int32
 }
@@ -540,6 +583,8 @@ func (q *Queries) ListQuotes(ctx context.Context, arg ListQuotesParams) ([]Quote
 		arg.Query,
 		arg.Expired,
 		arg.Today,
+		arg.AnsweredBy,
+		arg.AnsweredBy,
 		arg.Limit,
 		arg.Offset,
 	)
@@ -580,6 +625,8 @@ func (q *Queries) ListQuotes(ctx context.Context, arg ListQuotesParams) ([]Quote
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Version,
+			&i.AnsweredBy,
+			&i.RenewedFrom,
 		); err != nil {
 			return nil, err
 		}
@@ -688,7 +735,7 @@ const updateQuote = `-- name: UpdateQuote :execrows
 UPDATE quotes SET status = ?, customer_id = ?, issue_date = ?, valid_until = ?, sales_person = ?, reference = ?,
     bill_to_name = ?, bill_to_address = ?, bill_to_attention = ?, notes = ?, terms = ?, tax_rate_bp = ?,
     subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, invoice_id = ?, sent_at = ?,
-    accepted_at = ?, declined_at = ?, decline_reason = ?, converted_at = ?, updated_at = ?, version = version + 1
+    accepted_at = ?, declined_at = ?, decline_reason = ?, answered_by = ?, converted_at = ?, updated_at = ?, version = version + 1
 WHERE id = ? AND version = ?
 `
 
@@ -714,6 +761,7 @@ type UpdateQuoteParams struct {
 	AcceptedAt      sql.NullTime
 	DeclinedAt      sql.NullTime
 	DeclineReason   string
+	AnsweredBy      string
 	ConvertedAt     sql.NullTime
 	UpdatedAt       time.Time
 	ID              string
@@ -743,6 +791,7 @@ func (q *Queries) UpdateQuote(ctx context.Context, arg UpdateQuoteParams) (int64
 		arg.AcceptedAt,
 		arg.DeclinedAt,
 		arg.DeclineReason,
+		arg.AnsweredBy,
 		arg.ConvertedAt,
 		arg.UpdatedAt,
 		arg.ID,
@@ -756,7 +805,7 @@ func (q *Queries) UpdateQuote(ctx context.Context, arg UpdateQuoteParams) (int64
 
 const updateQuoteSettings = `-- name: UpdateQuoteSettings :execrows
 UPDATE quote_settings SET valid_days = ?, number_format = ?, email_subject = ?, email_body = ?, terms = ?,
-    version = version + 1, updated_at = ?
+    public_url = ?, version = version + 1, updated_at = ?
 WHERE id = 1 AND version = ?
 `
 
@@ -766,6 +815,7 @@ type UpdateQuoteSettingsParams struct {
 	EmailSubject string
 	EmailBody    string
 	Terms        string
+	PublicUrl    string
 	UpdatedAt    time.Time
 	Version      int32
 }
@@ -777,6 +827,7 @@ func (q *Queries) UpdateQuoteSettings(ctx context.Context, arg UpdateQuoteSettin
 		arg.EmailSubject,
 		arg.EmailBody,
 		arg.Terms,
+		arg.PublicUrl,
 		arg.UpdatedAt,
 		arg.Version,
 	)

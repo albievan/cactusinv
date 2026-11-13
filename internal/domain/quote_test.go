@@ -95,7 +95,7 @@ func TestQuoteLifecycle(t *testing.T) {
 	if err := q.MarkSent(later.Add(2 * time.Hour)); err != nil || !q.SentAt.Equal(later) {
 		t.Fatalf("second send: %v, sentAt %v", err, q.SentAt)
 	}
-	if err := q.Accept(later); err != nil || q.Status != QuoteAccepted {
+	if err := q.Accept(q.IssueDate, AnsweredByStaff, later); err != nil || q.Status != QuoteAccepted || q.AnsweredBy != AnsweredByStaff {
 		t.Fatalf("accept: %v", err)
 	}
 	if q.Editable() || !errors.Is(q.Update(quoteContent(), later), ErrInvalidTransition) {
@@ -104,13 +104,13 @@ func TestQuoteLifecycle(t *testing.T) {
 	if err := q.MarkSent(later); err != nil || q.Status != QuoteAccepted {
 		t.Fatalf("an accepted quote may be e-mailed again and stays accepted: %v %s", err, q.Status)
 	}
-	if !errors.Is(q.Accept(later), ErrInvalidTransition) {
+	if !errors.Is(q.Accept(q.IssueDate, AnsweredByStaff, later), ErrInvalidTransition) {
 		t.Fatal("accepted twice")
 	}
-	if err := q.Convert("inv1", later); err != nil || q.Status != QuoteConverted || q.InvoiceID != "inv1" {
+	if err := q.Convert("inv1", q.IssueDate, later); err != nil || q.Status != QuoteConverted || q.InvoiceID != "inv1" {
 		t.Fatalf("convert: %v %+v", err, q)
 	}
-	if !errors.Is(q.Convert("inv2", later), ErrInvalidTransition) || !errors.Is(q.Decline("", later), ErrInvalidTransition) || q.CanSend() {
+	if !errors.Is(q.Convert("inv2", q.IssueDate, later), ErrInvalidTransition) || !errors.Is(q.Decline("", AnsweredByStaff, later), ErrInvalidTransition) || q.CanSend() {
 		t.Fatal("a converted quote is final")
 	}
 	if err := q.InvoiceDeleted(later); err != nil || q.Status != QuoteAccepted || q.InvoiceID != "" || !q.ConvertedAt.IsZero() {
@@ -121,13 +121,13 @@ func TestQuoteLifecycle(t *testing.T) {
 	}
 
 	d := newTestQuote(t, QuoteFor{CustomerID: "c1", Currency: "ZAR"})
-	if err := d.Decline(strings.Repeat("x", 501), later); err == nil {
+	if err := d.Decline(strings.Repeat("x", 501), AnsweredByStaff, later); err == nil {
 		t.Fatal("a long reason was accepted")
 	}
-	if err := d.Decline(" too dear ", later); err != nil || d.Status != QuoteDeclined || d.DeclineReason != "too dear" {
+	if err := d.Decline(" too dear ", AnsweredByCustomer, later); err != nil || d.Status != QuoteDeclined || d.DeclineReason != "too dear" || d.AnsweredBy != AnsweredByCustomer {
 		t.Fatalf("decline: %v %+v", err, d)
 	}
-	if !errors.Is(d.Accept(later), ErrInvalidTransition) || !errors.Is(d.MarkSent(later), ErrInvalidTransition) || !errors.Is(d.CanConvert(), ErrInvalidTransition) {
+	if !errors.Is(d.Accept(d.IssueDate, AnsweredByStaff, later), ErrInvalidTransition) || !errors.Is(d.MarkSent(later), ErrInvalidTransition) || !errors.Is(d.CanConvert(d.IssueDate), ErrInvalidTransition) {
 		t.Fatal("a declined quote is final")
 	}
 }
@@ -140,7 +140,7 @@ func TestQuoteStage(t *testing.T) {
 	if q.Stage(q.ValidUntil.AddDays(1)) != QuoteStageExpired {
 		t.Fatal("expired the day after")
 	}
-	_ = q.Accept(quoteNow)
+	_ = q.Accept(q.IssueDate, AnsweredByStaff, quoteNow)
 	if q.Stage(q.ValidUntil.AddDays(1)) != QuoteStageAccepted {
 		t.Fatal("an accepted quote does not expire")
 	}
@@ -310,5 +310,44 @@ func TestQuoteFingerprint(t *testing.T) {
 		if other.Fingerprint() == fp {
 			t.Errorf("%s: the code did not change", name)
 		}
+	}
+}
+
+// An expired quote cannot be accepted or converted; it is renewed into a new one (M41).
+func TestExpiredQuoteIsRenewedNotAccepted(t *testing.T) {
+	q := newTestQuote(t, QuoteFor{CustomerID: "c1", Currency: "ZAR"})
+	after := q.ValidUntil.AddDays(1)
+	if err := q.Accept(after, AnsweredByCustomer, quoteNow); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("accepted after its validity: %v", err)
+	}
+	if err := q.CanConvert(after); err == nil || !strings.Contains(err.Error(), "renew") {
+		t.Fatalf("converted after its validity: %v", err)
+	}
+	if err := q.Convert("i", after, quoteNow); err == nil {
+		t.Fatal("converted after its validity")
+	}
+	if _, err := q.RenewalContent(q.ValidUntil, 30, q.ValidUntil); err == nil {
+		t.Fatal("a quote still open was renewed")
+	}
+	c, err := q.RenewalContent(after, 14, after)
+	if err != nil || c.IssueDate != after || c.ValidUntil != after.AddDays(14) || len(c.Lines) != len(q.Lines) || c.Terms != q.Terms {
+		t.Fatalf("renewal = %+v %v", c, err)
+	}
+	c.Lines[0].Quantity++
+	if q.Lines[0].Quantity == c.Lines[0].Quantity {
+		t.Fatal("the renewal shares the old quote's lines")
+	}
+	// Accepted in time: still convertible after the date.
+	if err := q.Accept(q.ValidUntil, AnsweredByCustomer, quoteNow); err != nil || q.AnsweredBy != AnsweredByCustomer {
+		t.Fatalf("accept on the last day: %v", err)
+	}
+	if err := q.CanConvert(after); err != nil {
+		t.Fatalf("an accepted quote converts after its date: %v", err)
+	}
+	// A declined one may be renewed at any time.
+	d := newTestQuote(t, QuoteFor{CustomerID: "c1", Currency: "ZAR"})
+	_ = d.Decline("", AnsweredByStaff, quoteNow)
+	if _, err := d.RenewalContent(d.IssueDate, 30, d.IssueDate); err != nil {
+		t.Fatalf("renew a declined quote: %v", err)
 	}
 }

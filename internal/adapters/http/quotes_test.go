@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"context"
 	"io"
+	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -157,5 +159,84 @@ func TestQuotePermissions(t *testing.T) {
 	sales := domain.AccessFor([]domain.Group{{ID: "g", Name: "Sales", Permissions: []domain.Permission{domain.PermQuotesCreate}}})
 	if app.SessionAllows(domain.User{Access: sales}, "getquotesettings") != nil || app.SessionAllows(domain.User{Access: sales}, "updatequotesettings") == nil {
 		t.Fatal("a quote writer reads the quote defaults but does not change them")
+	}
+}
+
+// The customer's quote page (M41): reached with the e-mail's token and no session;
+// opening it changes nothing; the answer needs the CSRF header like every POST.
+func TestCustomerAnswersAQuoteOverHTTP(t *testing.T) {
+	c, _, _, svc := newServer(t)
+	c.login()
+	ctx := context.Background()
+	if _, err := svc.CreateCurrency(ctx, "ZAR", "Rand", "R", 2, true); err != nil {
+		t.Fatal(err)
+	}
+	prod, err := svc.CreateProduct(ctx, domain.Product{SKU: "WEB", Name: "Website", Description: "Website build", Prices: map[domain.CurrencyCode]int64{"ZAR": 1500000}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var adhoc httpapi.AdhocCustomer
+	c.ok(c.do("POST", "/api/v1/adhoc-customers", obj{"name": "Prospect Ltd", "email": "p@prospect.example", "attention": "", "address": "", "phone": "", "taxNumber": "", "currency": "ZAR", "version": 0}, &adhoc), 201, "ad-hoc")
+	var q httpapi.Quote
+	c.ok(c.do("POST", "/api/v1/quotes", obj{"adhocCustomerId": adhoc.Id, "lines": []obj{{"productId": prod.ID, "quantity": "1"}}}, &q), 201, "quote")
+	var m httpapi.EmailMessage
+	c.ok(c.do("POST", "/api/v1/quotes/"+q.Id+"/send", obj{"linkBase": "https://inv.example.com"}, &m), 202, "send")
+	match := regexp.MustCompile(`/q/([A-Za-z0-9_-]{43})\?answer=accept`).FindStringSubmatch(m.Body)
+	if match == nil {
+		t.Fatalf("no link in %q", m.Body)
+	}
+	token := match[1]
+
+	anon := &client{t: t, srv: c.srv, http: &http.Client{}} // no session cookie
+	var r httpapi.QuoteResponse
+	anon.ok(anon.do("GET", "/api/v1/public/quotes/"+token, nil, &r), 200, "page")
+	if r.Number != q.Number || !r.CanAnswer || r.Total != "15000.00" || r.Stage != "sent" || len(r.Lines) != 1 || r.BusinessName == "" {
+		t.Fatalf("page = %+v", r)
+	}
+	var p httpapi.Problem
+	anon.ok(anon.do("GET", "/api/v1/public/quotes/"+strings.Repeat("A", 43), nil, &p), 404, "unknown token")
+	anon.ok(anon.do("GET", "/api/v1/public/quotes/short", nil, &p), 404, "malformed token")
+	anon.ok(anon.do("GET", "/api/v1/quotes/"+q.Id, nil, &p), 401, "the rest still needs a session")
+	anon.ok(anon.do("POST", "/api/v1/public/quotes/"+token+"/response", obj{"answer": "maybe"}, &p), 422, "bad answer")
+
+	// Without the CSRF header the answer is refused.
+	req, _ := http.NewRequestWithContext(ctx, "POST", c.srv.URL+"/api/v1/public/quotes/"+token+"/response", strings.NewReader(`{"answer":"accept"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 403 {
+		t.Fatalf("no CSRF header: %d", resp.StatusCode)
+	}
+
+	anon.ok(anon.do("POST", "/api/v1/public/quotes/"+token+"/response", obj{"answer": "accept"}, &r), 200, "accept")
+	if r.CanAnswer || r.Stage != "accepted" || r.AnsweredBy != "customer" {
+		t.Fatalf("after accepting = %+v", r)
+	}
+	pdf, err := anon.get("/api/v1/public/quotes/" + token + "/pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdf.Body.Close()
+	if pdf.StatusCode != 200 || pdf.Header.Get("Content-Type") != "application/pdf" {
+		t.Fatalf("pdf = %d %s", pdf.StatusCode, pdf.Header.Get("Content-Type"))
+	}
+
+	// Staff see who answered, and can filter on it.
+	var d httpapi.QuoteDetail
+	c.ok(c.do("GET", "/api/v1/quotes/"+q.Id, nil, &d), 200, "get")
+	if d.Quote.AnsweredBy != "customer" || d.Quote.Status != "accepted" {
+		t.Fatalf("staff view = %+v", d.Quote)
+	}
+	var list httpapi.QuoteList
+	c.ok(c.do("GET", "/api/v1/quotes?answeredBy=customer", nil, &list), 200, "filter")
+	if list.Total != 1 || list.Items[0].AnsweredBy != "customer" {
+		t.Fatalf("answered by customers = %+v", list)
+	}
+	c.ok(c.do("GET", "/api/v1/quotes?answeredBy=staff", nil, &list), 200, "filter staff")
+	if list.Total != 0 {
+		t.Fatalf("answered by staff = %d", list.Total)
 	}
 }

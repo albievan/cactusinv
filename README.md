@@ -106,8 +106,17 @@ Released into the public domain — see [LICENSE](LICENSE).
   holds the quote number format, the **quote e-mail** (subject and body with
   `{{quote_number}}`, `{{valid_until}}`, `{{total}}`, …) and the terms printed on every new
   quote. **E-mail** sends it through the same outbox as invoices (now or later, retried,
-  cancellable), with the PDF attached. Mark it **Accepted** or **Declined**; a draft or sent
-  quote past its date shows as *Expired*. **Make customer** turns an ad-hoc customer into a
+  cancellable), with the PDF attached. The e-mail has **Accept quote** and **Decline quote**
+  buttons (the plain-text version shows the links): each opens a page where the customer, without
+  signing in, sees the quote and its PDF and confirms with one click (and may give a reason for
+  declining); the quote is then accepted or declined **by the customer**, shown on the quote
+  and under the Quotes filters *Accepted by customer*, *Declined by customer* and *All customer
+  answers*. The links point at **Settings → Quotes → Address customers reach this app on**, or,
+  if that is empty, at the address the quote was sent from. Staff can still mark a quote
+  **Accepted** or **Declined**. A draft or sent quote past its date shows as *Expired*: it can
+  no longer be accepted, converted or e-mailed; **Renew quote** makes a new draft with the same
+  customer, lines, prices and terms, its own number, dated today — e-mail that one (a declined
+  quote can be renewed too). **Make customer** turns an ad-hoc customer into a
   real one (an invoice code, e-mail address and payment terms are added); their quotes move to
   the new customer. **Convert to invoice** then makes a draft invoice with the quoted products,
   prices, VAT and notes, to check and issue as usual (deleting that draft makes the quote

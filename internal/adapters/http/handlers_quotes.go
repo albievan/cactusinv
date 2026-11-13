@@ -34,6 +34,7 @@ func toAPIQuote(q *domain.Quote, mu minorUnits, today domain.Date) Quote {
 		},
 		Fingerprint: q.Fingerprint(), InvoiceId: q.InvoiceID, SentAt: timePtr(q.SentAt), AcceptedAt: timePtr(q.AcceptedAt),
 		DeclinedAt: timePtr(q.DeclinedAt), DeclineReason: q.DeclineReason, ConvertedAt: timePtr(q.ConvertedAt),
+		AnsweredBy: QuoteAnsweredBy(q.AnsweredBy), RenewedFrom: q.RenewedFrom,
 		CreatedAt: q.CreatedAt.UTC(), UpdatedAt: q.UpdatedAt.UTC(), Version: q.Version,
 	}
 }
@@ -61,7 +62,7 @@ func (h *handlers) ListQuotes(ctx context.Context, req ListQuotesRequestObject) 
 	p := req.Params
 	qs, total, err := h.svc.ListQuotes(ctx, ports.QuoteFilter{
 		Status: domain.QuoteStatus(p.Status), Expired: p.Expired, CustomerID: p.CustomerId, AdhocCustomerID: p.AdhocCustomerId,
-		Query: p.Q, Page: page(p.Limit, p.Offset),
+		AnsweredBy: domain.QuoteAnswerer(p.AnsweredBy), Query: p.Q, Page: page(p.Limit, p.Offset),
 	})
 	if err != nil {
 		return nil, err
@@ -224,7 +225,7 @@ func (h *handlers) ConvertQuote(ctx context.Context, req ConvertQuoteRequestObje
 func (h *handlers) SendQuote(ctx context.Context, req SendQuoteRequestObject) (SendQuoteResponseObject, error) {
 	in := app.SendInput{IdempotencyKey: req.Params.IdempotencyKey}
 	if b := req.Body; b != nil {
-		in.To, in.CC, in.Subject, in.Body = b.To, b.Cc, b.Subject, b.Body
+		in.To, in.CC, in.Subject, in.Body, in.LinkBase = b.To, b.Cc, b.Subject, b.Body, b.LinkBase
 		if b.SendAt != nil {
 			in.SendAt = b.SendAt.UTC()
 		}
@@ -244,6 +245,82 @@ func (h *handlers) GetQuotePdf(ctx context.Context, req GetQuotePdfRequestObject
 	return GetQuotePdf200ApplicationpdfResponse{
 		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
 		Headers: GetQuotePdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
+	}, nil
+}
+
+func (h *handlers) RenewQuote(ctx context.Context, req RenewQuoteRequestObject) (RenewQuoteResponseObject, error) {
+	mu, today, err := h.invoiceView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q, err := h.svc.RenewQuote(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	return RenewQuote201JSONResponse(toAPIQuote(q, mu, today)), nil
+}
+
+// ---- the customer's answer through a quote e-mail link (M41; no session) ----
+
+func (h *handlers) toQuoteResponse(ctx context.Context, v app.QuoteResponseView) (QuoteResponse, error) {
+	mu, err := h.units(ctx)
+	if err != nil {
+		return QuoteResponse{}, err
+	}
+	q, c := v.Quote, v.Quote.Currency
+	lines := make([]struct {
+		Amount      string `json:"amount"`
+		Description string `json:"description"`
+		Quantity    string `json:"quantity"`
+	}, len(q.Lines))
+	for i, l := range q.Lines {
+		lines[i].Description, lines[i].Quantity, lines[i].Amount = l.Description, l.Quantity.String(), mu.format(l.Amount(), c)
+	}
+	return QuoteResponse{
+		Number: q.Number, BusinessName: v.Business.Name, BusinessEmail: v.Business.Email, BillToName: q.BillTo.Name,
+		Currency: string(c), IssueDate: toAPIDate(q.IssueDate), ValidUntil: toAPIDate(q.ValidUntil),
+		Total: mu.format(q.Totals.Total, c), Stage: QuoteStage(v.Stage), Expired: v.Expired,
+		CanAnswer:  !v.Expired && (q.Status == domain.QuoteDraft || q.Status == domain.QuoteSent),
+		AnsweredBy: QuoteResponseAnsweredBy(q.AnsweredBy), DeclineReason: q.DeclineReason, Lines: lines,
+	}, nil
+}
+
+func (h *handlers) GetQuoteResponse(ctx context.Context, req GetQuoteResponseRequestObject) (GetQuoteResponseResponseObject, error) {
+	v, err := h.svc.GetQuoteResponse(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.toQuoteResponse(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	return GetQuoteResponse200JSONResponse(out), nil
+}
+
+func (h *handlers) RespondToQuote(ctx context.Context, req RespondToQuoteRequestObject) (RespondToQuoteResponseObject, error) {
+	answer, err := domain.ParseQuoteAnswer(string(req.Body.Answer))
+	if err != nil {
+		return nil, err
+	}
+	v, err := h.svc.RespondToQuote(ctx, req.Token, answer, req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.toQuoteResponse(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	return RespondToQuote200JSONResponse(out), nil
+}
+
+func (h *handlers) GetQuoteResponsePdf(ctx context.Context, req GetQuoteResponsePdfRequestObject) (GetQuoteResponsePdfResponseObject, error) {
+	pdf, name, err := h.svc.QuoteResponsePDF(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	return GetQuoteResponsePdf200ApplicationpdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: GetQuoteResponsePdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
 	}, nil
 }
 
@@ -312,7 +389,7 @@ func toAPIQuoteSettings(v app.QuoteSettingsView) QuoteSettings {
 	s := v.Settings
 	return QuoteSettings{
 		ValidDays: s.ValidDays, NumberFormat: s.NumberFormat, EmailSubject: s.EmailSubject, EmailBody: s.EmailBody,
-		Terms: s.Terms, NextSequence: v.NextSequence, Version: s.Version,
+		Terms: s.Terms, PublicUrl: s.PublicURL, NextSequence: v.NextSequence, Version: s.Version,
 	}
 }
 
@@ -328,7 +405,7 @@ func (h *handlers) UpdateQuoteSettings(ctx context.Context, req UpdateQuoteSetti
 	b := req.Body
 	v, err := h.svc.UpdateQuoteSettings(ctx, domain.QuoteSettings{
 		ValidDays: b.ValidDays, NumberFormat: b.NumberFormat, EmailSubject: b.EmailSubject, EmailBody: b.EmailBody,
-		Terms: b.Terms, Version: b.Version,
+		Terms: b.Terms, PublicURL: b.PublicUrl, Version: b.Version,
 	}, b.NextSequence)
 	if err != nil {
 		return nil, err

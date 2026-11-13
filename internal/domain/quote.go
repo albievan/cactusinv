@@ -49,10 +49,15 @@ type Quote struct {
 	AcceptedAt      time.Time
 	DeclinedAt      time.Time
 	DeclineReason   string
-	ConvertedAt     time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	Version         int
+	// AnsweredBy is who recorded the acceptance or decline (M41): staff in the app or the
+	// customer through the link in the quote e-mail; "" while unanswered.
+	AnsweredBy QuoteAnswerer
+	// RenewedFrom is the expired quote this one was made from (M41), "" for a new quote.
+	RenewedFrom string
+	ConvertedAt time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Version     int
 }
 
 // QuoteContent is everything a user can edit on a quote.
@@ -199,19 +204,39 @@ func (q *Quote) MarkSent(now time.Time) error {
 	return nil
 }
 
-// Accept records that the customer accepted the quote.
-func (q *Quote) Accept(now time.Time) error {
+// QuoteAnswerer is who recorded a quote's acceptance or decline.
+type QuoteAnswerer string
+
+// Who answered a quote.
+const (
+	AnsweredByStaff    QuoteAnswerer = "staff"
+	AnsweredByCustomer QuoteAnswerer = "customer"
+)
+
+// quoteExpired refuses to accept or convert a quote past its validity (M41): it must be
+// renewed (RenewalContent) and sent again.
+func quoteExpired(q *Quote) error {
+	return invalid("validUntil", "the quote expired on "+q.ValidUntil.String()+": renew it and send the new quote")
+}
+
+// Accept records that the customer accepted the quote, as recorded by by. A quote past its
+// validity cannot be accepted (M41).
+func (q *Quote) Accept(today Date, by QuoteAnswerer, now time.Time) error {
 	if q.Status != QuoteDraft && q.Status != QuoteSent {
 		return ErrInvalidTransition
 	}
+	if q.Expired(today) {
+		return quoteExpired(q)
+	}
 	q.Status = QuoteAccepted
 	q.AcceptedAt = now
+	q.AnsweredBy = by
 	q.UpdatedAt = now
 	return nil
 }
 
-// Decline records that the customer turned the quote down.
-func (q *Quote) Decline(reason string, now time.Time) error {
+// Decline records that the customer turned the quote down, as recorded by by.
+func (q *Quote) Decline(reason string, by QuoteAnswerer, now time.Time) error {
 	if q.Status != QuoteDraft && q.Status != QuoteSent && q.Status != QuoteAccepted {
 		return ErrInvalidTransition
 	}
@@ -222,15 +247,20 @@ func (q *Quote) Decline(reason string, now time.Time) error {
 	q.Status = QuoteDeclined
 	q.DeclineReason = reason
 	q.DeclinedAt = now
+	q.AnsweredBy = by
 	q.UpdatedAt = now
 	return nil
 }
 
-// CanConvert reports whether an invoice may be made from the quote: it must be for a
-// customer (an ad-hoc customer is made a customer first) and not declined or converted.
-func (q *Quote) CanConvert() error {
+// CanConvert reports whether an invoice may be made from the quote today: it must be for a
+// customer (an ad-hoc customer is made a customer first), not declined or converted, and
+// not expired (M41; an accepted quote was answered in time and stays convertible).
+func (q *Quote) CanConvert(today Date) error {
 	if q.Status != QuoteDraft && q.Status != QuoteSent && q.Status != QuoteAccepted {
 		return ErrInvalidTransition
+	}
+	if q.Expired(today) {
+		return quoteExpired(q)
 	}
 	if q.CustomerID == "" {
 		return invalid("customerId", "the quote is for an ad-hoc customer: make them a customer first")
@@ -242,7 +272,7 @@ func (q *Quote) CanConvert() error {
 // quote's lines, prices, VAT, notes, sales person and reference, addressed as the
 // customer's invoices are.
 func (q *Quote) InvoiceContent(c Customer, issue Date) (DraftContent, error) {
-	if err := q.CanConvert(); err != nil {
+	if err := q.CanConvert(issue); err != nil {
 		return DraftContent{}, err
 	}
 	if c.ID != q.CustomerID {
@@ -259,9 +289,9 @@ func (q *Quote) InvoiceContent(c Customer, issue Date) (DraftContent, error) {
 	return content, nil
 }
 
-// Convert records the invoice made from the quote.
-func (q *Quote) Convert(invoiceID string, now time.Time) error {
-	if err := q.CanConvert(); err != nil {
+// Convert records the invoice made from the quote on today.
+func (q *Quote) Convert(invoiceID string, today Date, now time.Time) error {
+	if err := q.CanConvert(today); err != nil {
 		return err
 	}
 	q.Status = QuoteConverted
@@ -357,4 +387,18 @@ func QuoteTemplateData(q *Quote, cur Currency, business BusinessProfile) Templat
 		IssueDate:    q.IssueDate.Long(),
 		BusinessName: business.Name,
 	}
+}
+
+// RenewalContent is the content of a new quote made from this expired (or declined) one
+// (M41): the same lines, prices, VAT, people, notes and terms, issued on issue and valid
+// for validDays. The new quote gets its own number and is sent as any other.
+func (q *Quote) RenewalContent(issue Date, validDays int, today Date) (QuoteContent, error) {
+	if !q.Expired(today) && q.Status != QuoteDeclined {
+		return QuoteContent{}, invalid("status", "only an expired or declined quote is renewed; this one can still be answered")
+	}
+	c := q.Content()
+	c.IssueDate = issue
+	c.ValidUntil = issue.AddDays(validDays)
+	c.Lines = slices.Clone(q.Lines)
+	return c, nil
 }

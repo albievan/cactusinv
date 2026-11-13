@@ -856,6 +856,7 @@ paths:
       parameters:
         - { name: status, in: query, schema: { $ref: '#/components/schemas/QuoteStatus' } }
         - { name: expired, in: query, description: Only draft and sent quotes past their validity., schema: { type: boolean } }
+        - { name: answeredBy, in: query, description: 'Only quotes answered by staff or by the customer through the e-mail link (M41).', schema: { type: string, enum: [staff, customer] } }
         - { name: customerId, in: query, schema: { type: string } }
         - { name: adhocCustomerId, in: query, schema: { type: string } }
         - { $ref: '#/components/parameters/Query' }
@@ -998,6 +999,78 @@ paths:
       responses:
         '200':
           description: The quote as a PDF that a reader lets you print but not change, fill, annotate or copy from.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+  /quotes/{id}/renew:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [quotes]
+      operationId: renewQuote
+      description: A new draft quote from an expired or declined one (M41) - the same customer, lines, prices, notes and terms, dated today with its own number.
+      responses:
+        '201':
+          description: The new quote.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Quote' }
+        default: { $ref: '#/components/responses/Problem' }
+
+  # The customer's answer through the links in a quote e-mail (M41): no sign-in; the
+  # e-mail's random token is the only key, and opening the page changes nothing.
+  /public/quotes/{token}:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getQuoteResponse
+      security: []
+      responses:
+        '200':
+          description: The quote the link is for.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/quotes/{token}/response:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    post:
+      tags: [public]
+      operationId: respondToQuote
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer: { type: string, enum: [accept, decline] }
+                reason: { type: string, maxLength: 500, description: Why the customer declines (optional). }
+      responses:
+        '200':
+          description: Recorded (or already so).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuoteResponse' }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/quotes/{token}/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getQuoteResponsePdf
+      security: []
+      responses:
+        '200':
+          description: The quote as a PDF.
           headers:
             Content-Disposition:
               schema: { type: string }
@@ -1722,6 +1795,12 @@ paths:
 
 components:
   parameters:
+    ResponseToken:
+      name: token
+      in: path
+      required: true
+      description: The random token from a quote e-mail's link (43 characters).
+      schema: { type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$' }
     Id:
       name: id
       in: path
@@ -2467,6 +2546,7 @@ components:
         emailSubject: { type: string, maxLength: 300, description: 'Placeholders: {{quote_number}}, {{customer_name}}, {{attention}}, {{total}}, {{valid_until}}, {{date}}, {{business_name}}.' }
         emailBody: { type: string, maxLength: 10000 }
         terms: { type: string, maxLength: 4000, description: Printed on every new quote (each quote keeps its own copy). }
+        publicUrl: { type: string, maxLength: 300, description: 'The address customers reach cactusInv on, for the Accept and Decline links in quote e-mails (M41); empty = the address the quote is sent from.' }
         nextSequence: { type: integer, format: int64, description: Next quote sequence value; may only increase. }
         version: { type: integer }
     QuoteInput:
@@ -2526,6 +2606,8 @@ components:
         acceptedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         declinedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         declineReason: { type: string }
+        answeredBy: { type: string, enum: [staff, customer], description: 'Who recorded the acceptance or decline (M41); absent while unanswered.' }
+        renewedFrom: { type: string, description: The expired quote this one was made from (M41). }
         convertedAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -2596,6 +2678,7 @@ components:
         subject: { type: string, maxLength: 300 }
         body: { type: string, maxLength: 20000 }
         sendAt: { type: string, format: date-time, description: Omit to send now., x-go-type-skip-optional-pointer: false }
+        linkBase: { type: string, maxLength: 300, description: 'Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).' }
 
     EmailStatus:
       type: string
@@ -2845,6 +2928,33 @@ components:
         upcomingRuns: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
         recentInvoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
         failedEmailCount: { type: integer }
+    QuoteResponse:
+      type: object
+      description: What the customer's page shows for a quote e-mail link (M41).
+      required: [number, businessName, businessEmail, billToName, currency, issueDate, validUntil, total, stage, expired, canAnswer, lines]
+      properties:
+        number: { type: string }
+        businessName: { type: string }
+        businessEmail: { type: string }
+        billToName: { type: string }
+        currency: { type: string }
+        issueDate: { type: string, format: date }
+        validUntil: { type: string, format: date }
+        total: { type: string }
+        stage: { $ref: '#/components/schemas/QuoteStage' }
+        expired: { type: boolean }
+        canAnswer: { type: boolean, description: Whether the customer may still accept or decline it. }
+        answeredBy: { type: string, enum: [staff, customer] }
+        declineReason: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            required: [description, quantity, amount]
+            properties:
+              description: { type: string }
+              quantity: { type: string }
+              amount: { type: string }
     QuoteStats:
       type: object
       description: The quotes in one currency (amounts are quote totals in that currency).

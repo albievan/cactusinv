@@ -762,6 +762,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/quotes/{id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description A new draft quote from an expired or declined one (M41) - the same customer, lines, prices, notes and terms, dated today with its own number. */
+        post: operations["renewQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/quotes/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getQuoteResponse"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/quotes/{token}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["respondToQuote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/quotes/{token}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getQuoteResponsePdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/adhoc-customers": {
         parameters: {
             query?: never;
@@ -2058,6 +2134,8 @@ export interface components {
             emailBody: string;
             /** @description Printed on every new quote (each quote keeps its own copy). */
             terms: string;
+            /** @description The address customers reach cactusInv on, for the Accept and Decline links in quote e-mails (M41); empty = the address the quote is sent from. */
+            publicUrl?: string;
             /**
              * Format: int64
              * @description Next quote sequence value; may only increase.
@@ -2119,6 +2197,13 @@ export interface components {
             /** Format: date-time */
             declinedAt?: string;
             declineReason?: string;
+            /**
+             * @description Who recorded the acceptance or decline (M41); absent while unanswered.
+             * @enum {string}
+             */
+            answeredBy?: "staff" | "customer";
+            /** @description The expired quote this one was made from (M41). */
+            renewedFrom?: string;
             /** Format: date-time */
             convertedAt?: string;
             /** Format: date-time */
@@ -2186,6 +2271,8 @@ export interface components {
              * @description Omit to send now.
              */
             sendAt?: string;
+            /** @description Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41). */
+            linkBase?: string;
         };
         /** @enum {string} */
         EmailStatus: "pending" | "sending" | "sent" | "failed" | "cancelled";
@@ -2426,6 +2513,31 @@ export interface components {
             recentInvoices: components["schemas"]["Invoice"][];
             failedEmailCount: number;
         };
+        /** @description What the customer's page shows for a quote e-mail link (M41). */
+        QuoteResponse: {
+            number: string;
+            businessName: string;
+            businessEmail: string;
+            billToName: string;
+            currency: string;
+            /** Format: date */
+            issueDate: string;
+            /** Format: date */
+            validUntil: string;
+            total: string;
+            stage: components["schemas"]["QuoteStage"];
+            expired: boolean;
+            /** @description Whether the customer may still accept or decline it. */
+            canAnswer: boolean;
+            /** @enum {string} */
+            answeredBy?: "staff" | "customer";
+            declineReason?: string;
+            lines: {
+                description: string;
+                quantity: string;
+                amount: string;
+            }[];
+        };
         /** @description The quotes in one currency (amounts are quote totals in that currency). */
         QuoteStats: {
             currency: string;
@@ -2582,6 +2694,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description The random token from a quote e-mail's link (43 characters). */
+        ResponseToken: string;
         Id: string;
         Query: string;
         IncludeInactive: boolean;
@@ -3914,6 +4028,8 @@ export interface operations {
                 status?: components["schemas"]["QuoteStatus"];
                 /** @description Only draft and sent quotes past their validity. */
                 expired?: boolean;
+                /** @description Only quotes answered by staff or by the customer through the e-mail link (M41). */
+                answeredBy?: "staff" | "customer";
                 customerId?: string;
                 adhocCustomerId?: string;
                 q?: components["parameters"]["Query"];
@@ -4148,6 +4264,111 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The quote as a PDF that a reader lets you print but not change, fill, annotate or copy from. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    renewQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new quote. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getQuoteResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quote the link is for. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    respondToQuote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    answer: "accept" | "decline";
+                    /** @description Why the customer declines (optional). */
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Recorded (or already so). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteResponse"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getQuoteResponsePdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The quote as a PDF. */
             200: {
                 headers: {
                     "Content-Disposition"?: string;

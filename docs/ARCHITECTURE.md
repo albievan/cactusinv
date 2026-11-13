@@ -252,6 +252,24 @@ QuoteSettings { valid_days, number_format ({seq} {dd} {mm} {yy} {yyyy}), email s
   copy, editing tools can ignore it), so each quote also
   prints `Quote.Fingerprint()` (SHA-256 over the printed content, 12 hex digits), shown in
   the app, to check a returned PDF. Invoices and statements are not encrypted.
+- Customer answers (M41): `SendQuote` (while draft or sent, with an address from
+  `QuoteSettings.public_url` or the request's `linkBase`) creates a 32-byte random token,
+  stores its SHA-256 in `quote_response_tokens` and appends Accept and Decline links
+  (`<address>/q/<token>?answer=…`) to the e-mail text; `deliverQuote` sends an HTML
+  alternative with two buttons (`domain.QuoteEmailHTML`, only for links this app wrote) beside
+  the text (`ports.Mail.HTMLBody`, `multipart/alternative` in `multipart/mixed`). The web app's
+  `/q/:token` page (outside sign-in) reads `GET /public/quotes/{token}` and posts the answer to
+  `POST /public/quotes/{token}/response` (the CSRF header like every POST); opening a link
+  changes nothing, because mail scanners open links. `RespondToQuote` runs as
+  `ActorCustomerLink`, sets `answered_by = customer`; the same answer again is no change, a
+  different one after an answer is refused. Every e-mail has its own token; a token stops
+  answering once the quote is answered or expired. `GET /public/quotes/{token}/pdf` serves
+  the PDF. `/api/v1/public/` skips the session check; the app treats the token as the only key
+  (unknown and malformed tokens are the same 404).
+- Expiry (M41): `Quote.Accept`, `CanConvert` and `SendQuote` refuse a draft or sent quote past
+  `valid_until`; an accepted quote stays convertible. `RenewQuote` (`quotes.create`) makes a
+  new draft from an expired or declined one (`Quote.RenewalContent`: same lines and prices,
+  dated today, valid for `valid_days`), with `renewed_from` pointing back.
 - Permissions: `quotes.view|create|edit|delete|send|outcome|convert`,
   `settings.quotes.view`, `settings.quotes` (ADR-012 catalogue).
 

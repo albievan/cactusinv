@@ -20,12 +20,12 @@ import (
 // backedUpTables is every table a backup contains. A new table must be added here or to
 // domain's exclude list: TestSnapshotCoversEveryTable fails until someone decides.
 // headSchema is the newest migration.
-const headSchema = 24
+const headSchema = 25
 
 var backedUpTables = []string{
 	"access_group_members", "access_group_permissions", "access_groups", "adhoc_customers",
 	"audit_log", "bank_accounts", "business_profile", "currencies", "customers", "email_outbox", "invoice_lines",
-	"invoice_sequences", "invoices", "product_prices", "products", "quote_lines", "quote_settings", "quotes",
+	"invoice_sequences", "invoices", "product_prices", "products", "quote_lines", "quote_response_tokens", "quote_settings", "quotes",
 	"schedule_lines", "schedule_runs", "schedules", "smtp_settings", "users",
 }
 

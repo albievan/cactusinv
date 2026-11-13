@@ -4,6 +4,7 @@ package mariadb_test
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -46,7 +47,15 @@ func TestQuotesPersistence(t *testing.T) {
 		t.Fatalf("round trip = %+v", got)
 	}
 
-	m := must(e.svc.SendQuote(ctx, q.ID, app.SendInput{To: []string{"p@prospect.example"}, IdempotencyKey: "quote-k"}))
+	m := must(e.svc.SendQuote(ctx, q.ID, app.SendInput{To: []string{"p@prospect.example"}, IdempotencyKey: "quote-k", LinkBase: "https://inv.example.com"}))
+	// The e-mail's response token is stored as its hash and finds the quote (M41).
+	link := regexp.MustCompile(`/q/([A-Za-z0-9_-]{43})\?answer=accept`).FindStringSubmatch(m.Body)
+	if link == nil {
+		t.Fatalf("no link in %q", m.Body)
+	}
+	if v := must(e.svc.GetQuoteResponse(ctx, link[1])); v.Quote.ID != q.ID {
+		t.Fatalf("token → %s", v.Quote.ID)
+	}
 	if m2 := must(e.svc.SendQuote(ctx, q.ID, app.SendInput{IdempotencyKey: "quote-k"})); m2.ID != m.ID {
 		t.Fatal("idempotency key not honoured")
 	}
@@ -77,7 +86,12 @@ func TestQuotesPersistence(t *testing.T) {
 	if list, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{CustomerID: c.ID, Query: "Q26"})); n != 1 || list[0].ID != q.ID {
 		t.Fatalf("customer's quotes = %d", n)
 	}
-	must(e.svc.AcceptQuote(ctx, q.ID))
+	if v := must(e.svc.RespondToQuote(ctx, link[1], domain.QuoteAnswerAccept, "")); v.Quote.AnsweredBy != domain.AnsweredByCustomer {
+		t.Fatalf("answered by = %q", v.Quote.AnsweredBy)
+	}
+	if _, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{AnsweredBy: domain.AnsweredByCustomer})); n != 1 {
+		t.Fatalf("answered by customers = %d", n)
+	}
 	inv := must(e.svc.ConvertQuote(ctx, q.ID))
 	if inv.Totals != q.Totals || inv.Currency != "USD" || inv.Header.Job != "Site" {
 		t.Fatalf("invoice = %+v", inv)
@@ -100,9 +114,25 @@ func TestQuotesPersistence(t *testing.T) {
 	if list, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{Expired: true})); n != 1 || list[0].ID != q2.ID {
 		t.Fatalf("expired = %d", n)
 	}
+	if _, err := e.svc.AcceptQuote(ctx, q2.ID); err == nil {
+		t.Fatal("an expired quote was accepted")
+	}
+	// Renewed: a new number, dated today, pointing at the old one (M41).
+	r2 := must(e.svc.RenewQuote(ctx, q2.ID))
+	if got := must(e.svc.GetQuote(ctx, r2.ID)).Quote; got.RenewedFrom != q2.ID || got.Number == q2.Number || len(got.Lines) != 1 {
+		t.Fatalf("renewal = %+v", got)
+	}
 	must(e.svc.DeclineQuote(ctx, q2.ID, "no"))
 	if _, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{Status: domain.QuoteDeclined})); n != 1 {
 		t.Fatal("declined filter")
+	}
+	if _, n := must3(e.svc.ListQuotes(ctx, ports.QuoteFilter{AnsweredBy: domain.AnsweredByStaff})); n != 1 {
+		t.Fatal("answered by staff filter")
+	}
+	qs = must(e.svc.GetQuoteSettings(ctx))
+	qs.Settings.PublicURL = "https://public.example.com/"
+	if got := must(e.svc.UpdateQuoteSettings(ctx, qs.Settings, 0)); got.Settings.PublicURL != "https://public.example.com" {
+		t.Fatalf("public address = %q", got.Settings.PublicURL)
 	}
 	q3 := must(e.svc.CreateQuote(ctx, app.QuoteInput{CustomerID: e.customer.ID, Lines: []app.LineInput{{ProductID: e.integ.ID, Quantity: 1000}}}))
 	if err := e.svc.DeleteQuote(ctx, q3.ID); err != nil {

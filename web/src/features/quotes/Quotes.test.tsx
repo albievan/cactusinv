@@ -79,7 +79,7 @@ test('a quote for an ad-hoc customer: e-mail needs an address, and it becomes a 
   expect(within(dialog).getAllByRole('button', { name: 'Send now' }).at(-1)).toBeDisabled()
   await userEvent.type(within(dialog).getByLabelText('To'), 'thandi@prospect.example')
   await userEvent.click(within(dialog).getAllByRole('button', { name: 'Send now' }).at(-1)!)
-  await vi.waitFor(() => expect(sent).toEqual([{ to: ['thandi@prospect.example'] }]))
+  await vi.waitFor(() => expect(sent).toEqual([{ to: ['thandi@prospect.example'], linkBase: window.location.origin }]))
 
   await userEvent.click(screen.getByRole('button', { name: 'Make customer' }))
   const conv = screen.getByRole('dialog', { name: 'Make Prospect Ltd a customer' })
@@ -134,4 +134,57 @@ test('Settings → Quotes saves the validity, numbers, e-mail and terms', async 
   await vi.waitFor(() => expect(saved).toHaveLength(1))
   expect(saved[0]).toMatchObject({ validDays: 45, numberFormat: 'Q-{seq}/{yy}', terms: 'Deposit 50%.', nextSequence: 0, version: 1 })
   expect(await screen.findByText('Saved.')).toBeInTheDocument()
+})
+
+test('the quote list filters the answers customers gave through the e-mail link', async () => {
+  const queries: string[] = []
+  mockFetch({
+    ...base,
+    'GET /api/v1/quotes': (req) => {
+      const q = new URL(req.url).searchParams
+      queries.push(`${q.get('status') ?? ''}|${q.get('answeredBy') ?? ''}`)
+      return json({ items: [quote({ status: 'accepted', stage: 'accepted', answeredBy: 'customer' })], total: 1 })()
+    },
+  })
+  window.history.pushState({}, '', '/quotes')
+  render(<App />)
+  const table = await screen.findByRole('table')
+  expect(within(table).getByText('by customer')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('tab', { name: 'Accepted by customer' }))
+  await vi.waitFor(() => expect(queries).toContain('accepted|customer'))
+  await userEvent.click(screen.getByRole('tab', { name: 'Declined by customer' }))
+  await vi.waitFor(() => expect(queries).toContain('declined|customer'))
+  await userEvent.click(screen.getByRole('tab', { name: 'All customer answers' }))
+  await vi.waitFor(() => expect(queries).toContain('|customer'))
+})
+
+test('an expired quote can only be renewed; the renewal opens', async () => {
+  let renewed = 0
+  mockFetch({
+    ...base,
+    'GET /api/v1/quotes/q1': json({ quote: quote({ stage: 'expired', customerId: 'c1' }), events: [], emails: [], adhocCustomer: adhoc }),
+    'GET /api/v1/quotes/q2': json({ quote: quote({ id: 'q2', number: 'Q-3/26', status: 'draft', stage: 'draft', customerId: 'c1', renewedFrom: 'q1' }), events: [], emails: [] }),
+    'POST /api/v1/quotes/q1/renew': () => { renewed++; return json(quote({ id: 'q2', number: 'Q-3/26', status: 'draft', stage: 'draft' }), 201)() },
+  })
+  window.history.pushState({}, '', '/quotes/q1')
+  render(<App />)
+  expect(await screen.findByText(/can no longer be accepted or turned into an invoice/)).toBeInTheDocument()
+  for (const name of [/E-mail/, /Accepted/, /Convert to invoice/, /^Edit/]) {
+    expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  }
+  await userEvent.click(screen.getByRole('button', { name: /Renew quote/ }))
+  expect(await screen.findByRole('heading', { name: 'Q-3/26' })).toBeInTheDocument()
+  expect(renewed).toBe(1)
+  expect(window.location.pathname).toBe('/quotes/q2')
+  expect(screen.getByRole('link', { name: 'open it' })).toHaveAttribute('href', '/quotes/q1')
+})
+
+test('a quote the customer accepted through the link says so', async () => {
+  mockFetch({
+    ...base,
+    'GET /api/v1/quotes/q1': json({ quote: quote({ status: 'accepted', stage: 'accepted', answeredBy: 'customer', customerId: 'c1' }), events: [], emails: [] }),
+  })
+  window.history.pushState({}, '', '/quotes/q1')
+  render(<App />)
+  expect(await screen.findByText('by the customer (e-mail link)')).toBeInTheDocument()
 })

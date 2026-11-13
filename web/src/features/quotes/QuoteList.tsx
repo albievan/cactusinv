@@ -18,8 +18,29 @@ const filters = [
   { key: 'converted', label: 'Invoiced' },
   { key: 'declined', label: 'Declined' },
   { key: 'expired', label: 'Expired' },
+  // How customers answered through the links in the quote e-mail (M41).
+  { key: 'customer-accepted', label: 'Accepted by customer' },
+  { key: 'customer-declined', label: 'Declined by customer' },
+  { key: 'customer', label: 'All customer answers' },
 ] as const
 type Filter = (typeof filters)[number]['key']
+
+/** The list query for a filter tab. */
+function filterQuery(f: Filter) {
+  switch (f) {
+    case 'all': return {}
+    case 'expired': return { expired: true }
+    case 'customer': return { answeredBy: 'customer' as const }
+    case 'customer-accepted': return { answeredBy: 'customer' as const, status: 'accepted' as const }
+    case 'customer-declined': return { answeredBy: 'customer' as const, status: 'declined' as const }
+    default: return { status: f }
+  }
+}
+
+/** ByCustomer marks a quote the customer answered through the e-mail link. */
+function ByCustomer({ show }: { show: boolean }) {
+  return show ? <span className="fs-8 fw-semibold text-success-emphasis text-nowrap">by customer</span> : null
+}
 
 export function QuoteList() {
   const [params, setParams] = useSearchParams()
@@ -32,8 +53,7 @@ export function QuoteList() {
         params: {
           query: {
             q: q || undefined,
-            status: filter === 'all' || filter === 'expired' ? undefined : filter,
-            expired: filter === 'expired' ? true : undefined,
+            ...filterQuery(filter),
             limit,
             offset,
           },
@@ -71,6 +91,7 @@ export function QuoteList() {
                     <div className="d-flex align-items-center gap-2">
                       <span className="fw-semibold text-primary-emphasis">{qt.number}</span>
                       <Badge status={qt.stage} label={quoteStageLabels[qt.stage]} />
+                      <ByCustomer show={qt.answeredBy === 'customer'} />
                     </div>
                     <div className="text-truncate small text-body-secondary">{qt.billTo.name}{qt.customerId ? '' : ' · ad-hoc'}</div>
                   </div>
@@ -102,7 +123,7 @@ export function QuoteList() {
                       <td>{qt.billTo.name}{!qt.customerId && <span className="badge rounded-pill ms-2 bg-body-secondary text-primary-emphasis border">ad-hoc</span>}</td>
                       <td className="text-nowrap">{formatDate(qt.issueDate)}</td>
                       <td className="text-nowrap">{formatDate(qt.validUntil)}</td>
-                      <td><Badge status={qt.stage} label={quoteStageLabels[qt.stage]} /></td>
+                      <td><div className="d-flex align-items-center gap-2"><Badge status={qt.stage} label={quoteStageLabels[qt.stage]} /><ByCustomer show={qt.answeredBy === 'customer'} /></div></td>
                       <td className="text-nowrap text-end fw-semibold" style={tnum}>{formatMoney(qt.totals.total, qt.currency)}</td>
                     </tr>
                   ))}

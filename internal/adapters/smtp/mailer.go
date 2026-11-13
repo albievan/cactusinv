@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -155,7 +156,8 @@ func helloName(from string) string {
 	return "localhost"
 }
 
-// Build renders a MIME message: a quoted-printable text body plus base64 attachments.
+// Build renders a MIME message: a quoted-printable text body (with an HTML alternative when
+// msg.HTMLBody is set) plus base64 attachments.
 // The Message-ID is derived from msg.MessageID (the outbox row) so a duplicate delivery
 // after a crash is recognisable (ADR-004).
 func Build(from *mail.Address, msg ports.Mail, now time.Time) ([]byte, error) {
@@ -184,22 +186,30 @@ func Build(from *mail.Address, msg ports.Mail, now time.Time) ([]byte, error) {
 	h("Content-Type", "multipart/mixed; boundary="+mw.Boundary())
 	buf.WriteString("\r\n")
 
-	part, err := mw.CreatePart(textproto.MIMEHeader{
-		"Content-Type":              {"text/plain; charset=utf-8"},
-		"Content-Transfer-Encoding": {"quoted-printable"},
-	})
-	if err != nil {
-		return nil, err
-	}
-	qp := quotedprintable.NewWriter(part)
-	// CRLF line ends (a body from the API or an import) first become LF, or every line
-	// break would be doubled.
-	body := strings.ReplaceAll(strings.ReplaceAll(msg.Body, "\r\n", "\n"), "\r", "\n")
-	if _, err := qp.Write([]byte(strings.ReplaceAll(body, "\n", "\r\n"))); err != nil {
-		return nil, err
-	}
-	if err := qp.Close(); err != nil {
-		return nil, err
+	if msg.HTMLBody == "" {
+		if err := textPart(mw, "text/plain", msg.Body); err != nil {
+			return nil, err
+		}
+	} else {
+		// Text and HTML as alternatives of one another, the attachments beside them.
+		boundary := multipart.NewWriter(io.Discard).Boundary()
+		part, err := mw.CreatePart(textproto.MIMEHeader{"Content-Type": {"multipart/alternative; boundary=" + boundary}})
+		if err != nil {
+			return nil, err
+		}
+		alt := multipart.NewWriter(part)
+		if err := alt.SetBoundary(boundary); err != nil {
+			return nil, err
+		}
+		if err := textPart(alt, "text/plain", msg.Body); err != nil {
+			return nil, err
+		}
+		if err := textPart(alt, "text/html", msg.HTMLBody); err != nil {
+			return nil, err
+		}
+		if err := alt.Close(); err != nil {
+			return nil, err
+		}
 	}
 	for _, a := range msg.Attachments {
 		name := mime.QEncoding.Encode("utf-8", a.Filename)
@@ -252,4 +262,22 @@ func unreachable(err error) error {
 		return err
 	}
 	return fmt.Errorf("%w (%w)", ports.ErrMailUnreachable, err)
+}
+
+// textPart writes text as a quoted-printable part of type typ (utf-8). CRLF line ends (a
+// body from the API or an import) first become LF, or every line break would be doubled.
+func textPart(w *multipart.Writer, typ, text string) error {
+	part, err := w.CreatePart(textproto.MIMEHeader{
+		"Content-Type":              {typ + "; charset=utf-8"},
+		"Content-Transfer-Encoding": {"quoted-printable"},
+	})
+	if err != nil {
+		return err
+	}
+	qp := quotedprintable.NewWriter(part)
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	if _, err := qp.Write([]byte(strings.ReplaceAll(text, "\n", "\r\n"))); err != nil {
+		return err
+	}
+	return qp.Close()
 }

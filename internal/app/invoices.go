@@ -447,6 +447,9 @@ type SendInput struct {
 	Body           string
 	SendAt         time.Time
 	IdempotencyKey string
+	// LinkBase is the address the request came from in the browser (quote e-mails' Accept
+	// and Decline links when Settings → Quotes names no public address; M41).
+	LinkBase string
 }
 
 // SendInvoice queues an e-mail of the invoice in the outbox (now or later). A draft is

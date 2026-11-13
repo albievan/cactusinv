@@ -276,6 +276,8 @@ type Quote struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	Version         int32
+	AnsweredBy      string
+	RenewedFrom     sql.NullString
 }
 
 type QuoteLine struct {
@@ -289,6 +291,12 @@ type QuoteLine struct {
 	AmountMinor    int64
 }
 
+type QuoteResponseToken struct {
+	TokenHash string
+	QuoteID   string
+	CreatedAt time.Time
+}
+
 type QuoteSetting struct {
 	ID           int8
 	ValidDays    int32
@@ -298,6 +306,7 @@ type QuoteSetting struct {
 	Terms        string
 	Version      int32
 	UpdatedAt    time.Time
+	PublicUrl    string
 }
 
 type Schedule struct {

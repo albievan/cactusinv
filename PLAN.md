@@ -776,10 +776,28 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 40.9 | Legacy `.sql.gz` restore removed (it was to stay one release after M14): `deploy.sh` refuses one with a pointer to 1.21.x; `backup cat-legacy`, `backup note-legacy-restore` and `NoteLegacyRestore` gone. Old dumps are still listed and pruned (they are plaintext) | done | `TestLegacyDumpCommandsAreGone`; ADR-007/009/010 notes |
 | 40.10 | Docs (README, ARCHITECTURE, ADRs), VERSION 1.22.0, gate, binaries, commit | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.4 %, app 84.0 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 116 tests, build OK; `make dist` 1.22.0 (build 44) |
 
+### M41 — Customers answer quotes from the e-mail; expired quotes are renewed (Albie, 2026-11-13) — v1.23.0
+
+> ".env leave as is, expired quote cannot be accepted or converted a new one can be generated from the old one and then emailed to activate it. in the quote email add two buttons one to accept the quote and one to decline the quote this must open a weblink and flag the quote as accepted or declined by customer and the filter in the quote page to show status of customer quotes. run the upgrade command for 10.101.18.101."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 41.1 | `.env` left as it is (owner's decision); the M40 guard keeps protecting the Mac's Docker install | done | — |
+| 41.2 | Expired quotes: `Quote.Accept`, `CanConvert`/`Convert` and `SendQuote` refuse a draft or sent quote past its validity ("renew it"); an accepted quote stays convertible. `RenewQuote` / **Renew quote** makes a new draft from an expired or declined quote (same customer, lines, prices, notes, terms; own number; dated today; `renewed_from`) | done | `TestExpiredQuoteIsRenewedNotAccepted`, `TestExpiredQuoteIsRenewed`; Vitest (only Renew offered; the renewal opens) |
+| 41.3 | Migration 00025: `quotes.answered_by` ('' / staff / customer, existing answers = staff), `quotes.renewed_from`, `quote_settings.public_url`, `quote_response_tokens` (SHA-256 only, cascade on delete; backed up) | done | integration (head schema 25, snapshot covers the table) |
+| 41.4 | Quote e-mail: a token per e-mail; Accept/Decline links in the text and as two buttons in an HTML alternative (`multipart/alternative`, PDF still attached); links point at Settings → Quotes' new public address, else the address it was sent from | done | domain (links, HTML escaping, only this app's links become buttons), smtp `TestHTMLAlternative`, app `TestQuoteLinkAddress` |
+| 41.5 | Customer page `/q/:token` (no sign-in): the quote, its PDF, one-click Accept or Decline (optional reason); opening changes nothing; expired / already answered / unknown links say so. `/api/v1/public/quotes/{token}`, `/response`, `/pdf` skip the session; CSRF header still required; recorded as "Customer (e-mail link)" with `answered_by = customer` | done | `TestCustomerAnswersThroughTheEmailLinks`, `TestCustomerDeclinesWithAReason`, http `TestCustomerAnswersAQuoteOverHTTP` (no cookie, 404 for unknown/malformed, 403 without CSRF, 401 elsewhere), Vitest `QuoteResponsePage.test.tsx` |
+| 41.6 | Quotes page: filters *Accepted by customer*, *Declined by customer*, *All customer answers* (`answeredBy`), "by customer" on rows and the quote page | done | Vitest; integration (filter on MariaDB) |
+| 41.7 | Docs, VERSION 1.23.0, gate, binaries, commit; upgrade 10.101.18.101 (backup first) | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.5 %, app 84.1 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 122 tests, build OK; `make dist` 1.23.0 (build 45) |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-13 | A quote e-mail's links open a confirmation page; nothing changes on a GET | mail scanners and link previews open links on their own and would otherwise accept or decline quotes |
+| 2026-11-13 | One random token per quote e-mail, stored only as SHA-256; every token of a quote works until it is answered or expires | a re-sent quote must not break the links in the earlier e-mail; a database read gives no usable link |
+| 2026-11-13 | Once answered, the customer cannot change the answer through the link | the business may already have acted on it; staff can still change it in the app |
+| 2026-11-13 | An expired quote is renewed into a new quote with its own number rather than extended | the expired quote and what was sent stay as they were; the new quote is sent and answered like any other |
 | 2026-11-13 | A new install's first password is generated, not `admin` (owner's decision) | a well-known first password is a window until someone signs in; the forced change at first sign-in stays |
 | 2026-11-13 | `/metrics` needs a bearer token; without one it does not exist (owner's decision) | request counts and outbox depth are not for anyone who can reach the server; Prometheus can send a bearer token |
 | 2026-11-13 | `deploy.sh` refuses to install or upgrade onto other data folders than the running install's | the committed `.env` names folders for another host; an install there would have started an empty database and new keys next to the real ones |

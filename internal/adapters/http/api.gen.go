@@ -256,6 +256,42 @@ func (e PaymentTermsKind) Valid() bool {
 	}
 }
 
+// Defines values for QuoteAnsweredBy.
+const (
+	QuoteAnsweredByCustomer QuoteAnsweredBy = "customer"
+	QuoteAnsweredByStaff    QuoteAnsweredBy = "staff"
+)
+
+// Valid indicates whether the value is a known member of the QuoteAnsweredBy enum.
+func (e QuoteAnsweredBy) Valid() bool {
+	switch e {
+	case QuoteAnsweredByCustomer:
+		return true
+	case QuoteAnsweredByStaff:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuoteResponseAnsweredBy.
+const (
+	QuoteResponseAnsweredByCustomer QuoteResponseAnsweredBy = "customer"
+	QuoteResponseAnsweredByStaff    QuoteResponseAnsweredBy = "staff"
+)
+
+// Valid indicates whether the value is a known member of the QuoteResponseAnsweredBy enum.
+func (e QuoteResponseAnsweredBy) Valid() bool {
+	switch e {
+	case QuoteResponseAnsweredByCustomer:
+		return true
+	case QuoteResponseAnsweredByStaff:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for QuoteStage.
 const (
 	QuoteStageAccepted  QuoteStage = "accepted"
@@ -565,6 +601,42 @@ func (e UpgradeJobState) Valid() bool {
 	case UpgradeJobStateInstalling:
 		return true
 	case UpgradeJobStateRestarting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RespondToQuoteJSONBodyAnswer.
+const (
+	Accept  RespondToQuoteJSONBodyAnswer = "accept"
+	Decline RespondToQuoteJSONBodyAnswer = "decline"
+)
+
+// Valid indicates whether the value is a known member of the RespondToQuoteJSONBodyAnswer enum.
+func (e RespondToQuoteJSONBodyAnswer) Valid() bool {
+	switch e {
+	case Accept:
+		return true
+	case Decline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListQuotesParamsAnsweredBy.
+const (
+	ListQuotesParamsAnsweredByCustomer ListQuotesParamsAnsweredBy = "customer"
+	ListQuotesParamsAnsweredByStaff    ListQuotesParamsAnsweredBy = "staff"
+)
+
+// Valid indicates whether the value is a known member of the ListQuotesParamsAnsweredBy enum.
+func (e ListQuotesParamsAnsweredBy) Valid() bool {
+	switch e {
+	case ListQuotesParamsAnsweredByCustomer:
+		return true
+	case ListQuotesParamsAnsweredByStaff:
 		return true
 	default:
 		return false
@@ -1324,13 +1396,16 @@ type ProductList struct {
 type Quote struct {
 	AcceptedAt      *time.Time `json:"acceptedAt,omitempty"`
 	AdhocCustomerId string     `json:"adhocCustomerId,omitempty"`
-	BillTo          Party      `json:"billTo"`
-	ConvertedAt     *time.Time `json:"convertedAt,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	Currency        string     `json:"currency"`
-	CustomerId      string     `json:"customerId,omitempty"`
-	DeclineReason   string     `json:"declineReason,omitempty"`
-	DeclinedAt      *time.Time `json:"declinedAt,omitempty"`
+
+	// AnsweredBy Who recorded the acceptance or decline (M41); absent while unanswered.
+	AnsweredBy    QuoteAnsweredBy `json:"answeredBy,omitempty"`
+	BillTo        Party           `json:"billTo"`
+	ConvertedAt   *time.Time      `json:"convertedAt,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	Currency      string          `json:"currency"`
+	CustomerId    string          `json:"customerId,omitempty"`
+	DeclineReason string          `json:"declineReason,omitempty"`
+	DeclinedAt    *time.Time      `json:"declinedAt,omitempty"`
 
 	// Fingerprint The verification code printed on the PDF; changes with any printed content.
 	Fingerprint string             `json:"fingerprint"`
@@ -1341,8 +1416,11 @@ type Quote struct {
 	Notes       string             `json:"notes"`
 	Number      string             `json:"number"`
 	Reference   string             `json:"reference"`
-	SalesPerson string             `json:"salesPerson"`
-	SentAt      *time.Time         `json:"sentAt,omitempty"`
+
+	// RenewedFrom The expired quote this one was made from (M41).
+	RenewedFrom string     `json:"renewedFrom,omitempty"`
+	SalesPerson string     `json:"salesPerson"`
+	SentAt      *time.Time `json:"sentAt,omitempty"`
 
 	// Stage The status, or expired for a draft or sent quote past its validity.
 	Stage      QuoteStage         `json:"stage"`
@@ -1356,6 +1434,9 @@ type Quote struct {
 	VatPercent Decimal `json:"vatPercent"`
 	Version    int     `json:"version"`
 }
+
+// QuoteAnsweredBy Who recorded the acceptance or decline (M41); absent while unanswered.
+type QuoteAnsweredBy string
 
 // QuoteDetail defines model for QuoteDetail.
 type QuoteDetail struct {
@@ -1402,6 +1483,35 @@ type QuoteList struct {
 	Total int     `json:"total"`
 }
 
+// QuoteResponse What the customer's page shows for a quote e-mail link (M41).
+type QuoteResponse struct {
+	AnsweredBy    QuoteResponseAnsweredBy `json:"answeredBy,omitempty"`
+	BillToName    string                  `json:"billToName"`
+	BusinessEmail string                  `json:"businessEmail"`
+	BusinessName  string                  `json:"businessName"`
+
+	// CanAnswer Whether the customer may still accept or decline it.
+	CanAnswer     bool               `json:"canAnswer"`
+	Currency      string             `json:"currency"`
+	DeclineReason string             `json:"declineReason,omitempty"`
+	Expired       bool               `json:"expired"`
+	IssueDate     openapi_types.Date `json:"issueDate"`
+	Lines         []struct {
+		Amount      string `json:"amount"`
+		Description string `json:"description"`
+		Quantity    string `json:"quantity"`
+	} `json:"lines"`
+	Number string `json:"number"`
+
+	// Stage The status, or expired for a draft or sent quote past its validity.
+	Stage      QuoteStage         `json:"stage"`
+	Total      string             `json:"total"`
+	ValidUntil openapi_types.Date `json:"validUntil"`
+}
+
+// QuoteResponseAnsweredBy defines model for QuoteResponse.AnsweredBy.
+type QuoteResponseAnsweredBy string
+
 // QuoteSettings defines model for QuoteSettings.
 type QuoteSettings struct {
 	EmailBody string `json:"emailBody"`
@@ -1416,6 +1526,9 @@ type QuoteSettings struct {
 	//
 	// Example: Q-{seq}/{yy}
 	NumberFormat string `json:"numberFormat"`
+
+	// PublicUrl The address customers reach cactusInv on, for the Accept and Decline links in quote e-mails (M41); empty = the address the quote is sent from.
+	PublicUrl string `json:"publicUrl,omitempty"`
 
 	// Terms Printed on every new quote (each quote keeps its own copy).
 	Terms string `json:"terms"`
@@ -1682,6 +1795,9 @@ type ScheduleStatus string
 type SendRequest struct {
 	Body string   `json:"body,omitempty"`
 	Cc   []string `json:"cc,omitempty"`
+
+	// LinkBase Quotes: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).
+	LinkBase string `json:"linkBase,omitempty"`
 
 	// SendAt Omit to send now.
 	SendAt  *time.Time `json:"sendAt,omitempty"`
@@ -2033,6 +2149,9 @@ type Offset = int
 // Query defines model for Query.
 type Query = string
 
+// ResponseToken defines model for ResponseToken.
+type ResponseToken = string
+
 // ListAdhocCustomersParams defines parameters for ListAdhocCustomers.
 type ListAdhocCustomersParams struct {
 	Q Query `form:"q,omitempty" json:"q,omitempty"`
@@ -2114,18 +2233,35 @@ type ListProductsParams struct {
 	Offset          Offset          `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
+// RespondToQuoteJSONBody defines parameters for RespondToQuote.
+type RespondToQuoteJSONBody struct {
+	Answer RespondToQuoteJSONBodyAnswer `json:"answer"`
+
+	// Reason Why the customer declines (optional).
+	Reason string `json:"reason,omitempty"`
+}
+
+// RespondToQuoteJSONBodyAnswer defines parameters for RespondToQuote.
+type RespondToQuoteJSONBodyAnswer string
+
 // ListQuotesParams defines parameters for ListQuotes.
 type ListQuotesParams struct {
 	Status QuoteStatus `form:"status,omitempty" json:"status,omitempty"`
 
 	// Expired Only draft and sent quotes past their validity.
-	Expired         bool   `form:"expired,omitempty" json:"expired,omitempty"`
-	CustomerId      string `form:"customerId,omitempty" json:"customerId,omitempty"`
-	AdhocCustomerId string `form:"adhocCustomerId,omitempty" json:"adhocCustomerId,omitempty"`
-	Q               Query  `form:"q,omitempty" json:"q,omitempty"`
-	Limit           Limit  `form:"limit,omitempty" json:"limit,omitempty"`
-	Offset          Offset `form:"offset,omitempty" json:"offset,omitempty"`
+	Expired bool `form:"expired,omitempty" json:"expired,omitempty"`
+
+	// AnsweredBy Only quotes answered by staff or by the customer through the e-mail link (M41).
+	AnsweredBy      ListQuotesParamsAnsweredBy `form:"answeredBy,omitempty" json:"answeredBy,omitempty"`
+	CustomerId      string                     `form:"customerId,omitempty" json:"customerId,omitempty"`
+	AdhocCustomerId string                     `form:"adhocCustomerId,omitempty" json:"adhocCustomerId,omitempty"`
+	Q               Query                      `form:"q,omitempty" json:"q,omitempty"`
+	Limit           Limit                      `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset          Offset                     `form:"offset,omitempty" json:"offset,omitempty"`
 }
+
+// ListQuotesParamsAnsweredBy defines parameters for ListQuotes.
+type ListQuotesParamsAnsweredBy string
 
 // SendQuoteParams defines parameters for SendQuote.
 type SendQuoteParams struct {
@@ -2233,6 +2369,9 @@ type CreateProductJSONRequestBody = Product
 
 // UpdateProductJSONRequestBody defines body for UpdateProduct for application/json ContentType.
 type UpdateProductJSONRequestBody = Product
+
+// RespondToQuoteJSONRequestBody defines body for RespondToQuote for application/json ContentType.
+type RespondToQuoteJSONRequestBody RespondToQuoteJSONBody
 
 // CreateQuoteJSONRequestBody defines body for CreateQuote for application/json ContentType.
 type CreateQuoteJSONRequestBody = QuoteInput
@@ -2477,6 +2616,15 @@ type ServerInterface interface {
 	// (PUT /products/{id})
 	UpdateProduct(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (GET /public/quotes/{token})
+	GetQuoteResponse(w http.ResponseWriter, r *http.Request, token ResponseToken)
+
+	// (GET /public/quotes/{token}/pdf)
+	GetQuoteResponsePdf(w http.ResponseWriter, r *http.Request, token ResponseToken)
+
+	// (POST /public/quotes/{token}/response)
+	RespondToQuote(w http.ResponseWriter, r *http.Request, token ResponseToken)
+
 	// (GET /quotes)
 	ListQuotes(w http.ResponseWriter, r *http.Request, params ListQuotesParams)
 
@@ -2503,6 +2651,9 @@ type ServerInterface interface {
 
 	// (GET /quotes/{id}/pdf)
 	GetQuotePdf(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /quotes/{id}/renew)
+	RenewQuote(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (POST /quotes/{id}/send)
 	SendQuote(w http.ResponseWriter, r *http.Request, id Id, params SendQuoteParams)
@@ -4351,6 +4502,84 @@ func (siw *ServerInterfaceWrapper) UpdateProduct(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// GetQuoteResponse operation middleware
+func (siw *ServerInterfaceWrapper) GetQuoteResponse(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetQuoteResponse(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetQuoteResponsePdf operation middleware
+func (siw *ServerInterfaceWrapper) GetQuoteResponsePdf(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetQuoteResponsePdf(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RespondToQuote operation middleware
+func (siw *ServerInterfaceWrapper) RespondToQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token ResponseToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", r.PathValue("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RespondToQuote(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListQuotes operation middleware
 func (siw *ServerInterfaceWrapper) ListQuotes(w http.ResponseWriter, r *http.Request) {
 
@@ -4382,6 +4611,19 @@ func (siw *ServerInterfaceWrapper) ListQuotes(w http.ResponseWriter, r *http.Req
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "expired"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "expired", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "answeredBy" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "answeredBy", r.URL.Query(), &params.AnsweredBy, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "answeredBy"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "answeredBy", Err: err})
 		}
 		return
 	}
@@ -4649,6 +4891,32 @@ func (siw *ServerInterfaceWrapper) GetQuotePdf(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetQuotePdf(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenewQuote operation middleware
+func (siw *ServerInterfaceWrapper) RenewQuote(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenewQuote(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5703,6 +5971,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/convert", wrapper.ConvertQuote)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/send", wrapper.SendQuote)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/quotes/{id}/pdf", wrapper.GetQuotePdf)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/quotes/{id}/renew", wrapper.RenewQuote)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/quotes/{token}", wrapper.GetQuoteResponse)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/public/quotes/{token}/response", wrapper.RespondToQuote)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/public/quotes/{token}/pdf", wrapper.GetQuoteResponsePdf)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/adhoc-customers", wrapper.ListAdhocCustomers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/adhoc-customers", wrapper.CreateAdhocCustomer)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/adhoc-customers/{id}", wrapper.DeleteAdhocCustomer)
@@ -8216,6 +8488,136 @@ func (response UpdateProductdefaultApplicationProblemPlusJSONResponse) VisitUpda
 	return err
 }
 
+type GetQuoteResponseRequestObject struct {
+	Token ResponseToken `json:"token"`
+}
+
+type GetQuoteResponseResponseObject interface {
+	VisitGetQuoteResponseResponse(w http.ResponseWriter) error
+}
+
+type GetQuoteResponse200JSONResponse QuoteResponse
+
+func (response GetQuoteResponse200JSONResponse) VisitGetQuoteResponseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuoteResponsedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetQuoteResponsedefaultApplicationProblemPlusJSONResponse) VisitGetQuoteResponseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetQuoteResponsePdfRequestObject struct {
+	Token ResponseToken `json:"token"`
+}
+
+type GetQuoteResponsePdfResponseObject interface {
+	VisitGetQuoteResponsePdfResponse(w http.ResponseWriter) error
+}
+
+type GetQuoteResponsePdf200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type GetQuoteResponsePdf200ApplicationpdfResponse struct {
+	Body          io.Reader
+	Headers       GetQuoteResponsePdf200ResponseHeaders
+	ContentLength int64
+}
+
+func (response GetQuoteResponsePdf200ApplicationpdfResponse) VisitGetQuoteResponsePdfResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/pdf")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type GetQuoteResponsePdfdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetQuoteResponsePdfdefaultApplicationProblemPlusJSONResponse) VisitGetQuoteResponsePdfResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RespondToQuoteRequestObject struct {
+	Token ResponseToken `json:"token"`
+	Body  *RespondToQuoteJSONRequestBody
+}
+
+type RespondToQuoteResponseObject interface {
+	VisitRespondToQuoteResponse(w http.ResponseWriter) error
+}
+
+type RespondToQuote200JSONResponse QuoteResponse
+
+func (response RespondToQuote200JSONResponse) VisitRespondToQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RespondToQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RespondToQuotedefaultApplicationProblemPlusJSONResponse) VisitRespondToQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListQuotesRequestObject struct {
 	Params ListQuotesParams
 }
@@ -8564,6 +8966,45 @@ type GetQuotePdfdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetQuotePdfdefaultApplicationProblemPlusJSONResponse) VisitGetQuotePdfResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewQuoteRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type RenewQuoteResponseObject interface {
+	VisitRenewQuoteResponse(w http.ResponseWriter) error
+}
+
+type RenewQuote201JSONResponse Quote
+
+func (response RenewQuote201JSONResponse) VisitRenewQuoteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenewQuotedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RenewQuotedefaultApplicationProblemPlusJSONResponse) VisitRenewQuoteResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -10545,6 +10986,15 @@ type StrictServerInterface interface {
 	// (PUT /products/{id})
 	UpdateProduct(ctx context.Context, request UpdateProductRequestObject) (UpdateProductResponseObject, error)
 
+	// (GET /public/quotes/{token})
+	GetQuoteResponse(ctx context.Context, request GetQuoteResponseRequestObject) (GetQuoteResponseResponseObject, error)
+
+	// (GET /public/quotes/{token}/pdf)
+	GetQuoteResponsePdf(ctx context.Context, request GetQuoteResponsePdfRequestObject) (GetQuoteResponsePdfResponseObject, error)
+
+	// (POST /public/quotes/{token}/response)
+	RespondToQuote(ctx context.Context, request RespondToQuoteRequestObject) (RespondToQuoteResponseObject, error)
+
 	// (GET /quotes)
 	ListQuotes(ctx context.Context, request ListQuotesRequestObject) (ListQuotesResponseObject, error)
 
@@ -10571,6 +11021,9 @@ type StrictServerInterface interface {
 
 	// (GET /quotes/{id}/pdf)
 	GetQuotePdf(ctx context.Context, request GetQuotePdfRequestObject) (GetQuotePdfResponseObject, error)
+
+	// (POST /quotes/{id}/renew)
+	RenewQuote(ctx context.Context, request RenewQuoteRequestObject) (RenewQuoteResponseObject, error)
 
 	// (POST /quotes/{id}/send)
 	SendQuote(ctx context.Context, request SendQuoteRequestObject) (SendQuoteResponseObject, error)
@@ -12383,6 +12836,91 @@ func (sh *strictHandler) UpdateProduct(w http.ResponseWriter, r *http.Request, i
 	}
 }
 
+// GetQuoteResponse operation middleware
+func (sh *strictHandler) GetQuoteResponse(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request GetQuoteResponseRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetQuoteResponse(ctx, request.(GetQuoteResponseRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetQuoteResponse")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetQuoteResponseResponseObject); ok {
+		if err := validResponse.VisitGetQuoteResponseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetQuoteResponsePdf operation middleware
+func (sh *strictHandler) GetQuoteResponsePdf(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request GetQuoteResponsePdfRequestObject
+
+	request.Token = token
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetQuoteResponsePdf(ctx, request.(GetQuoteResponsePdfRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetQuoteResponsePdf")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetQuoteResponsePdfResponseObject); ok {
+		if err := validResponse.VisitGetQuoteResponsePdfResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RespondToQuote operation middleware
+func (sh *strictHandler) RespondToQuote(w http.ResponseWriter, r *http.Request, token ResponseToken) {
+	var request RespondToQuoteRequestObject
+
+	request.Token = token
+
+	var body RespondToQuoteJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RespondToQuote(ctx, request.(RespondToQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RespondToQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RespondToQuoteResponseObject); ok {
+		if err := validResponse.VisitRespondToQuoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListQuotes operation middleware
 func (sh *strictHandler) ListQuotes(w http.ResponseWriter, r *http.Request, params ListQuotesParams) {
 	var request ListQuotesRequestObject
@@ -12632,6 +13170,32 @@ func (sh *strictHandler) GetQuotePdf(w http.ResponseWriter, r *http.Request, id 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetQuotePdfResponseObject); ok {
 		if err := validResponse.VisitGetQuotePdfResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenewQuote operation middleware
+func (sh *strictHandler) RenewQuote(w http.ResponseWriter, r *http.Request, id Id) {
+	var request RenewQuoteRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenewQuote(ctx, request.(RenewQuoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenewQuote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenewQuoteResponseObject); ok {
+		if err := validResponse.VisitRenewQuoteResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -148,6 +148,7 @@ func (h *handlers) ImportSettings(ctx context.Context, req ImportSettingsRequest
 	if q := b.QuoteSettings; q != nil && want(SettingsSectionQuoteSettings) {
 		f.QuoteSettings = &app.QuoteSettingsImport{Settings: domain.QuoteSettings{
 			ValidDays: q.ValidDays, NumberFormat: q.NumberFormat, EmailSubject: q.EmailSubject, EmailBody: q.EmailBody, Terms: q.Terms,
+			PublicURL: q.PublicUrl,
 		}, NextSequence: q.NextSequence}
 	}
 	if want(SettingsSectionCurrencies) {

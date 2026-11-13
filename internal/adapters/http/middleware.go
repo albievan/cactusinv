@@ -190,7 +190,8 @@ func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, nex
 			writeProblem(w, Problem{Type: problemType("csrf"), Title: "Missing " + csrfHeader + " header", Status: http.StatusForbidden})
 			return
 		}
-		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/version" {
+		// The customer's quote page (M41) needs no session: its e-mail's token is the key.
+		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/version" || strings.HasPrefix(r.URL.Path, "/api/v1/public/") {
 			next.ServeHTTP(w, r)
 			return
 		}
