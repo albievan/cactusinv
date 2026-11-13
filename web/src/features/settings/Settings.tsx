@@ -173,6 +173,9 @@ function EmailServer() {
   const can = useCan()
   const [e, setE] = useState<EmailSettings>()
   const [password, setPassword] = useState('')
+  // A saved user name is not shown, like the password: the box stays empty (keep it) until
+  // a new one is typed.
+  const [username, setUsername] = useState('')
   const [testTo, setTestTo] = useState('')
   const [msg, setMsg] = useState('')
   const [msgWarns, setMsgWarns] = useState(false)
@@ -183,7 +186,10 @@ function EmailServer() {
   const [saved, setSaved] = useState('')
   useEffect(() => { if (data) { setE(data); setSaved(JSON.stringify(data)) } }, [data])
   if (!e) return error ? <ErrorBanner error={error} /> : <Spinner />
-  const dirty = JSON.stringify(e) !== saved || password !== ''
+  const dirty = JSON.stringify(e) !== saved || password !== '' || username !== ''
+  const userSaved = e.username !== ''
+  // The server's warnings name the account; they show it as "the saved user name".
+  const hideUser = (w: string) => (userSaved ? w.split(e.username).join('the saved user name') : w)
   const preset = Object.entries(presets).find(([, p]) => p.host === e.host)?.[0] ?? 'Custom'
   const set = (patch: Partial<EmailSettings>) => setE({ ...e, ...patch })
   const save = async (ev: FormEvent) => {
@@ -194,10 +200,11 @@ function EmailServer() {
     setMsg('')
     setMsgWarns(false)
     try {
-      const next = await unwrap(api.PUT('/settings/email', { body: { ...e, password: password === '' ? undefined : password } }))
+      const next = await unwrap(api.PUT('/settings/email', { body: { ...e, username: username === '' ? e.username : username, password: password === '' ? undefined : password } }))
       setE(next)
       setSaved(JSON.stringify(next))
       setPassword('')
+      setUsername('')
       setMsg('Saved.')
     } catch (x) {
       setErr(x as Error)
@@ -214,7 +221,7 @@ function EmailServer() {
       // The server says when the provider will not send as the Send-as address.
       const warnings = r?.warnings ?? []
       setMsgWarns(warnings.length > 0)
-      setMsg(warnings.length > 0 ? `Test e-mail sent — but: ${warnings.join(' ')}` : 'Test e-mail sent — check the inbox.')
+      setMsg(warnings.length > 0 ? `Test e-mail sent — but: ${warnings.map(hideUser).join(' ')}` : 'Test e-mail sent — check the inbox.')
     } catch (x) {
       setErr(x as Error)
     }
@@ -253,7 +260,9 @@ function EmailServer() {
             </Field>
           </div>
         </div>
-        <Field label="User name" hint="For Gmail: your full Gmail address.">{(f) => <input id={f} className="form-control" autoComplete="off" value={e.username} onChange={(x) => set({ username: x.target.value })} />}</Field>
+        <Field label="User name" hint={userSaved ? 'A user name is saved. Leave empty to keep it.' : 'For Gmail: your full Gmail address.'}>
+          {(f) => <input id={f} className="form-control" autoComplete="off" spellCheck={false} placeholder={userSaved ? '•••••••• saved' : ''} value={username} onChange={(x) => setUsername(x.target.value)} />}
+        </Field>
         <Field label="Password" hint={e.passwordSet ? 'A password is saved (encrypted). Leave empty to keep it.' : 'Stored encrypted.'}>
           {(f) => <input id={f} type="password" className="form-control" autoComplete="new-password" placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={(x) => setPassword(x.target.value)} />}
         </Field>
@@ -263,7 +272,7 @@ function EmailServer() {
             <div className="alert alert-warning mt-2 mb-0 p-3 small">
               <p className="fw-medium mb-0">For the saved settings:</p>
               <ul aria-label="Send-as warnings" className="mt-1 mb-0 ps-4">
-                {e.warnings.map((w) => <li key={w}>{w}</li>)}
+                {e.warnings.map((w) => <li key={w}>{hideUser(w)}</li>)}
               </ul>
             </div>
           )}
@@ -271,7 +280,7 @@ function EmailServer() {
         <div className="d-flex align-items-center pt-md-4"><div className="form-check mb-0"><input type="checkbox" id="email-enabled" className="form-check-input" checked={e.enabled} onChange={(x) => set({ enabled: x.target.checked })} /><label className="form-check-label" htmlFor="email-enabled">Use this server for all e-mail</label></div></div>
       </div>
       <div className="d-flex flex-wrap align-items-end gap-3 border-top pt-3">
-        <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="form-control" style={{ maxWidth: '18rem' }} value={testTo} placeholder={e.username || 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
+        <Field label="Send a test e-mail to">{(f) => <input id={f} type="email" className="form-control" style={{ maxWidth: '18rem' }} value={testTo} placeholder={userSaved ? 'the saved user name' : 'you@example.com'} onChange={(x) => setTestTo(x.target.value)} />}</Field>
         {can('settings.email.test') && (
           <button type="button" className="btn btn-outline-primary" onClick={test} disabled={dirty} title={dirty ? 'Save first: the test uses the saved settings' : undefined}>
             Send test e-mail

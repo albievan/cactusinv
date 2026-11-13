@@ -106,9 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 /** The public source repository. */
 const REPO_URL = 'https://github.com/albievan/cactusinv'
 
-/** The sign-in screen's paper colour, a shade warmer than the app canvas. */
-const paper = '#f3ece0'
-
 function IconGitHub() {
   return <i className="bi bi-github" style={{ fontSize: '14px' }} aria-hidden="true" />
 }
@@ -140,6 +137,31 @@ function Notice({ error, children }: { error: boolean; children: ReactNode }) {
       style={error ? undefined : ({ '--bs-border-color': '#c7b48a' } as CSSProperties)}
     >
       {children}
+    </div>
+  )
+}
+
+/**
+ * PasswordInput is a password box with an eye button at its end that shows or hides what
+ * is typed (show is shared, so a second box on the form follows it).
+ */
+function PasswordInput({ id, autoComplete, placeholder, minLength, value, onChange, show, onShow }: {
+  id: string
+  autoComplete: string
+  placeholder?: string
+  minLength?: number
+  value: string
+  onChange: (v: string) => void
+  show: boolean
+  onShow: (v: boolean) => void
+}) {
+  return (
+    <div className="input-group">
+      <input id={id} className="form-control" type={show ? 'text' : 'password'} autoComplete={autoComplete} placeholder={placeholder} minLength={minLength} maxLength={autoComplete === 'new-password' ? 200 : undefined}
+        value={value} onChange={(e) => onChange(e.target.value)} required />
+      <button type="button" className="btn password-toggle" aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show} title={show ? 'Hide password' : 'Show password'} aria-controls={id} onClick={() => onShow(!show)}>
+        <i className={`bi ${show ? 'bi-eye-slash' : 'bi-eye'}`} style={{ fontSize: '18px' }} aria-hidden="true" />
+      </button>
     </div>
   )
 }
@@ -208,7 +230,7 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
         <WaveLines />
       </section>
 
-      <section className="d-flex flex-column col-lg-5 col-xl-4 px-4 py-5 px-sm-5" style={{ background: paper }}>
+      <section className="d-flex flex-column col-lg-5 col-xl-4 px-4 py-5 px-sm-5 bg-paper">
         <div className="d-none d-lg-block">
           <Wordmark />
         </div>
@@ -219,19 +241,13 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
             <label className="form-label" htmlFor="login">
               User name
             </label>
-            <input id="login" className="form-control" autoComplete="username" autoCapitalize="none" value={user} onChange={(e) => setUser(e.target.value)} required />
+            <input id="login" className="form-control" autoComplete="username" autoCapitalize="none" placeholder="Enter your user name" value={user} onChange={(e) => setUser(e.target.value)} required />
           </div>
           <div>
             <label className="form-label" htmlFor="password">
               Password
             </label>
-            <input id="password" className="form-control" type={show ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          <div className="form-check small text-body-secondary">
-            <input id="login-show" className="form-check-input" type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
-            <label className="form-check-label" htmlFor="login-show">
-              Show what I type
-            </label>
+            <PasswordInput id="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={setPassword} show={show} onShow={setShow} />
           </div>
           <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
@@ -278,8 +294,8 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
   }
   return (
     <main
-      className="d-flex min-vh-100 flex-column px-4 pt-5 px-sm-5 align-items-sm-center justify-content-sm-center"
-      style={{ background: paper, paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
+      className="d-flex min-vh-100 flex-column px-4 pt-5 px-sm-5 align-items-sm-center justify-content-sm-center bg-paper"
+      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.5rem)' }}
     >
       <div className="w-100" style={{ maxWidth: '28rem' }}>
         <Wordmark />
@@ -303,7 +319,7 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
             <label className="form-label" htmlFor="forced-new">
               New password
             </label>
-            <input id="forced-new" className="form-control" type={show ? 'text' : 'password'} autoComplete="new-password" minLength={12} maxLength={200} value={next} onChange={(e) => setNext(e.target.value)} required />
+            <PasswordInput id="forced-new" autoComplete="new-password" minLength={12} value={next} onChange={setNext} show={show} onShow={setShow} />
             <div className="form-text">At least 12 characters. A few unrelated words work well.</div>
           </div>
           <div>
@@ -311,12 +327,6 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
               New password again
             </label>
             <input id="forced-again" className="form-control" type={show ? 'text' : 'password'} autoComplete="new-password" maxLength={200} value={again} onChange={(e) => setAgain(e.target.value)} required />
-          </div>
-          <div className="form-check py-2 small text-body-secondary">
-            <input id="forced-show" className="form-check-input" type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} />
-            <label className="form-check-label" htmlFor="forced-show">
-              Show what I type
-            </label>
           </div>
           <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Saving…' : 'Save and continue'}

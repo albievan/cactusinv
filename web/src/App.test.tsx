@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from './App'
 import { json, mockFetch } from './test/fetch'
@@ -58,7 +58,14 @@ test('the login screen shows the version and build', async () => {
   render(<App />)
   expect(await screen.findByText('v1.1.0 · build 7')).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
-  expect(screen.getByLabelText('Show what I type')).toBeInTheDocument()
+  // The eye button at the end of the password box shows and hides what is typed.
+  const box = screen.getByLabelText('Password')
+  expect(box).toHaveAttribute('type', 'password')
+  await userEvent.click(screen.getByRole('button', { name: 'Show password' }))
+  expect(box).toHaveAttribute('type', 'text')
+  expect(screen.getByRole('button', { name: 'Hide password' })).toHaveAttribute('aria-pressed', 'true')
+  await userEvent.click(screen.getByRole('button', { name: 'Hide password' }))
+  expect(box).toHaveAttribute('type', 'password')
 })
 
 test('the statements page lists balances and e-mails selected statements', async () => {
@@ -222,13 +229,53 @@ test('E-mail server shows the server\'s Send-as warnings and adds them to the te
   })
   window.history.pushState({}, '', '/settings/email')
   render(<App />)
+  // The saved user name is not shown: not in its box, nor in the warnings.
+  const shown = warning.replace('albievan@gmail.com', 'the saved user name')
   const list = await screen.findByRole('list', { name: 'Send-as warnings' })
-  expect(within(list).getByRole('listitem')).toHaveTextContent(warning)
+  expect(within(list).getByRole('listitem')).toHaveTextContent(shown)
   expect(screen.getByText('For the saved settings:')).toBeInTheDocument()
   expect(screen.getByText(/The provider decides the sender it shows; see the setup guide\./)).toBeInTheDocument()
 
   await userEvent.click(screen.getByRole('button', { name: 'Send test e-mail' }))
-  expect(await screen.findByText(`Test e-mail sent — but: ${warning}`)).toBeInTheDocument()
+  expect(await screen.findByText(`Test e-mail sent — but: ${shown}`)).toBeInTheDocument()
+  expect(document.body).not.toHaveTextContent('albievan@gmail.com')
+})
+
+test('E-mail server hides a saved user name like the password, and keeps it unless one is typed', async () => {
+  const saved = { enabled: true, host: 'smtp.gmail.com', port: 587, username: 'albievan@gmail.com', passwordSet: true, from: '', tls: 'starttls', warnings: [], version: 2 }
+  const bodies: Record<string, unknown>[] = []
+  signedIn({
+    'GET /api/v1/settings/email': json(saved),
+    'PUT /api/v1/settings/email': async (req) => {
+      const body = await req.json()
+      bodies.push(body)
+      return json({ ...saved, ...body, password: undefined, version: saved.version + bodies.length })()
+    },
+  })
+  window.history.pushState({}, '', '/settings/email')
+  render(<App />)
+  const box = await screen.findByLabelText('User name')
+  expect(box).toHaveValue('')
+  expect(box).toHaveAttribute('placeholder', '•••••••• saved')
+  expect(screen.getByText('A user name is saved. Leave empty to keep it.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Password')).toHaveAttribute('placeholder', '•••••••• saved')
+
+  // Another change saves the stored user name unchanged.
+  await userEvent.type(screen.getByLabelText('Send as'), 'billing@example.com')
+  await userEvent.click(screen.getByRole('button', { name: 'Save e-mail server' }))
+  expect(await screen.findByText('Saved.')).toBeInTheDocument()
+  expect(bodies[0]).toMatchObject({ username: 'albievan@gmail.com', from: 'billing@example.com' })
+  expect(bodies[0]!.password).toBeUndefined()
+  expect(screen.getByLabelText('User name')).toHaveValue('')
+
+  // A typed user name replaces it, and is hidden again once saved.
+  await userEvent.type(screen.getByLabelText('User name'), 'other@gmail.com')
+  await userEvent.type(screen.getByLabelText('Password'), 'abcd efgh ijkl mnop')
+  await userEvent.click(screen.getByRole('button', { name: 'Save e-mail server' }))
+  await waitFor(() => expect(bodies).toHaveLength(2))
+  expect(bodies[1]).toMatchObject({ username: 'other@gmail.com', password: 'abcd efgh ijkl mnop' })
+  await waitFor(() => expect(screen.getByLabelText('User name')).toHaveValue(''))
+  expect(document.body).not.toHaveTextContent('gmail.com unless')
 })
 
 test('E-mail server without warnings shows no note and a plain test result', async () => {

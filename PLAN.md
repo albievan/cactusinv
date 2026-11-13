@@ -728,10 +728,31 @@ Five reviewers read domain/app, HTTP/auth, MariaDB/backup/restore, PDF/SMTP/self
 
 Not changed, and why (also under Open questions): an expired quote can still be accepted or converted (a customer may accept late, by agreement); the default `admin`/`admin` account (an owner's decision, must be changed at first sign-in); `/metrics` is not behind sign-in; a restored outbox may send a message again after Resume (automation is held, with a warning); invoice PDF archive names can collide only if the number format changes between `/` and `_`; no HSTS (the k3s default certificate is self-signed, and HSTS would stop the browser letting the user past its warning); self-update checks SHA256SUMS from the same https origin, not a signature.
 
+### M37 — Show-password eye button on sign-in (Albie, 2026-11-12)
+
+> "change the login screen password visible to look like [an eye button at the end of the password box]"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 37.1 | Sign-in and the first password change: the "Show what I type" checkbox is replaced by an eye button joined to the end of the password box (`PasswordInput`; eye / eye-slash, `aria-label` Show/Hide password, `aria-pressed`); in the box's own colours; placeholders on the sign-in boxes | done | `App.test.tsx` (toggles the box's type); Chrome on an isolated preview: hidden, then shown with the eye-slash |
+
+### M38 — Hidden mail user name; light and dark follow the system (Albie, 2026-11-13) — v1.20.0
+
+> "set the user name to look the same [as the password] after the email setup has been saved … the user name must not be visible after it's been saved. add the auto theme to follow the system light or dark mode without to toggle"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 38.1 | Settings → E-mail server: a saved user name is not shown — the box is empty with "•••••••• saved" and "Leave empty to keep it", like the password; an empty box saves the stored name, a typed one replaces it; the Send-as warnings, the test result, the test-address placeholder and the server's "enter the password again" error say "the saved user name" instead | done | `App.test.tsx` (box empty, kept on save, replaced when typed, nowhere on the page) |
+| 38.2 | Dark mode that follows the system, no toggle: `lib/theme.ts` sets `data-bs-theme` from `prefers-color-scheme` and follows changes; dark palette in `app.scss` (Bootstrap `*-dark` variables, `--ci-*` per mode, outline buttons, labels, cards, `bg-white`); sign-in paper, wordmark and chart axis use the mode's colours; `theme-color` per mode. `lightOnly.test.ts` (13.1) replaced by `colourMode.test.ts` | done | `lib/theme.test.ts`, `colourMode.test.ts`; Chrome on an isolated preview with a mock API: dark settings, list and sign-in pages, light unchanged |
+| 38.3 | New logo everywhere ("change the logo everywhere in the system to look like [a line-art cactus]"): `CactusMark` is two interlocking line strokes with a node ring on each arm, sage `#68927a` and mint `#9ec6b1`, the same in both colour modes; sidebar, phone top bar, sign-in and password-change screens; `favicon.svg` draws it on deep green; the web manifest's colours follow the brand. PDFs and e-mails carry no logo | done | rendered to PNG and compared with the reference; `pnpm check` |
+| 38.4 | Release: docs, VERSION 1.20.0, binaries and image rebuilt, committed (M37 included). The MariaDB test container waits up to 5 min for readiness and `test-int` has a 30 min limit (the module's 60 s and Go's 10 min were exceeded on a heavily loaded host; the tests are unchanged) | done | 2026-11-13: fmt-check, lint (0 issues), vet, cover (domain 96.3 %, app 84.0 %); integration ok 502.8 s at load average ~250; govulncheck "No vulnerabilities found."; contracts in sync; web 114 tests, build OK; `make dist` |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-13 | The colour mode follows the device's light/dark setting, with no toggle; this replaces light-only (13.1) | requested; the earlier problem (light text on stray dark backgrounds) is avoided by giving every colour a value in both modes and keeping the system setting in one file (`lib/theme.ts`) |
+| 2026-11-13 | The saved mail user name is hidden in the web form only; the API still returns it | the server needs it to warn about the Send-as address and to keep the stored password with its account; who may read Settings → E-mail server may already see them; hiding it on screen stops it being read over a shoulder or in a screenshot |
 | 2026-11-12 | Behind a trusted proxy (`CACTUSINV_TRUSTED_PROXIES`), the client address is the right-most X-Forwarded-For entry that is not a trusted proxy; without one, the peer address | entries further left are written by the client and can be forged; trusting nobody by default keeps a directly reached server from believing a forged header |
 | 2026-11-12 | A stored mail password is never used for another host or account: changing either needs it typed again | it is the business's mail account password; whoever may edit the server settings must not be able to send it elsewhere |
 | 2026-11-12 | Note pictures are bounded in pixels (5000 a side, 16 MP) as well as bytes | the byte limit does not bound the memory a picture takes to draw |
@@ -770,7 +791,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 2026-10-15 | Missed schedule periods are caught up one by one | an invoice is never silently skipped; each is dated its own period |
 | 2026-10-15 | Toolchain pinned to go1.26.9 | go1.26.0 standard library has known vulnerabilities |
 | 2026-10-15 | The e-mail setup guide is static help text in the web app, beside the form it explains | it decides nothing (the server still tests and stores the settings); one place to read it, where it is needed |
-| 2026-10-15 | Light-only enforced at the source: Tailwind `darkMode: 'class'`, no `dark:` classes in `web/src` (a test refuses them) (M13.1) | with the default `media` strategy a phone in dark mode applied stray `dark:` backgrounds under light-theme text; the app never sets the `dark` class, so no future `dark:` class can apply either |
+| 2026-10-15 | (Replaced by M38: the mode follows the system) Light-only enforced at the source: Tailwind `darkMode: 'class'`, no `dark:` classes in `web/src` (a test refuses them) (M13.1) | with the default `media` strategy a phone in dark mode applied stray `dark:` backgrounds under light-theme text; the app never sets the `dark` class, so no future `dark:` class can apply either |
 | 2026-10-15 | Which disclaimer a customer's PDFs use is decided by the domain (`domain.UsesOwnDisclaimer`) and sent as `Customer.disclaimerSource` (read-only, optional) (M13.2) | the web app shows it without re-implementing the rule; the existing fallback (`domain.Disclaimer`) already applied on every PDF path, so no behaviour changed |
 | 2026-10-15 | `{dd}` placeholder; default number format `{code}/{dd}{mm}-{seq}/{yy}` for new deployments (M13.3) | requested; stored formats are never rewritten, so existing deployments keep numbering as before. A deployment whose business profile was never saved has no stored format, so it switches to the new format at the upgrade to v1.4.0 (accepted: Albie asked for the new format) |
 | 2026-10-15 | `make remote-test-int`: integration tests on a Docker host over ssh, shipping the working tree (tracked + untracked, not ignored) as a tarball into a fresh `/data/cactusinv/src`, run in `golang:1.26.9-bookworm` pinned by digest with the host's Docker socket, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` (host-gateway) and `--security-opt label=disable` (SELinux host) | Docker is not run on the dev Mac; uncommitted changes must be testable before a commit; the paths are guarded to stay below `/data/cactusinv/` |
@@ -886,4 +907,5 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 ## Open questions
 
 - Left as they are after the M36 review, for the owner to decide: should an expired quote be refused for acceptance and conversion? Should a restore cancel e-mails that were pending in the backup? Should `/metrics` need sign-in (or move to its own port)? Should the default `admin`/`admin` be replaced by a generated password? Should releases be signed (today SHA256SUMS from the same https origin)?
+- (M38) A saved mail user name can only be replaced, not emptied, from the form (as with the password). A relay that needs no sign-in would need a way to clear both — add a "Remove" if someone needs it.
 - (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)

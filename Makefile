@@ -43,7 +43,7 @@ cover: ## unit tests with coverage gates on domain and app
 	done
 
 test-int: ## integration tests against MariaDB 11 (Docker); migrations up/down/up per test
-	go test -race -count=1 -tags integration ./internal/adapters/mariadb/
+	go test -race -count=1 -tags integration -timeout 30m ./internal/adapters/mariadb/
 
 # remote-test-int runs test-int on a Docker host over ssh, for machines without Docker.
 # It ships the working tree (tracked files plus untracked, not-ignored ones, uncommitted
@@ -70,7 +70,7 @@ remote-test-int: ## integration tests on REMOTE=user@host (required) via ssh + D
 	        --add-host=host.docker.internal:host-gateway -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
 	        -e GOTOOLCHAIN=local \
 	        -v "$(REMOTE_DIR)":/src -v "$(REMOTE_GOCACHE)/mod":/go/pkg/mod -v "$(REMOTE_GOCACHE)/build":/root/.cache/go-build \
-	        -w /src $(GO_IMAGE) go test -race -count=1 -tags integration ./internal/adapters/mariadb/'
+	        -w /src $(GO_IMAGE) go test -race -count=1 -tags integration -timeout 30m ./internal/adapters/mariadb/'
 
 vuln: ## known-vulnerability scan
 	govulncheck $(GO_PKGS)

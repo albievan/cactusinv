@@ -157,7 +157,7 @@ export function Layout() {
         <div className={`px-3 pt-3${folded ? ' text-center' : ''}`}>
           {/* The version sits beside the mark, under the name, so the mark never runs into it. */}
           <div className={`d-flex align-items-center gap-2${folded ? ' justify-content-center' : ''}`}>
-            <CactusMark className="flex-shrink-0" size={32} color="#e9dfc9" />
+            <CactusMark className="flex-shrink-0" size={32} />
             {!folded && (
               <div className="min-w-0 lh-sm">
                 <span className="d-block fs-5 fw-semibold">
@@ -214,7 +214,7 @@ export function Layout() {
 
       <div className="d-flex flex-column flex-grow-1 min-w-0">
         <header className="app-topbar sticky-top d-flex d-md-none align-items-center gap-2 px-3 py-2">
-          <CactusMark size={24} color="#e9dfc9" />
+          <CactusMark size={24} />
           <span className="fw-semibold">
             cactus<span className="text-gold">Inv</span>
           </span>

@@ -1,6 +1,7 @@
-// cactusInv on Bootstrap 5.3: cactus green on a warm cream canvas, one light theme.
-// Bootstrap's colour modes only switch on data-bs-theme (the default $color-mode-type:
-// data), and index.html pins data-bs-theme="light", so a phone in dark mode stays light.
+// cactusInv on Bootstrap 5.3: cactus green on a warm cream canvas, and a deep green dark
+// theme. Bootstrap's colour modes switch on data-bs-theme (the default $color-mode-type:
+// data); lib/theme.ts sets it from the system's light or dark mode and follows it (M38).
+// Rules below use the --bs-* and --ci-* variables, not fixed colours, so both modes work.
 
 // ---- Theme ----
 $brand-50: #eef4f0;
@@ -54,6 +55,15 @@ $table-cell-padding-y: 0.625rem;
 $table-cell-padding-x: 0.75rem;
 $enable-smooth-scroll: false;
 
+// Dark mode: deep green canvas, cream text.
+$body-bg-dark: #0f1814;
+$body-color-dark: #e7e2d6;
+$body-secondary-bg-dark: #1a2620;
+$body-tertiary-bg-dark: #141f1a;
+$border-color-dark: #2c3b33;
+$link-color-dark: $brand-200;
+$link-hover-color-dark: $brand-100;
+
 @import 'bootstrap/scss/functions';
 @import 'bootstrap/scss/variables';
 @import 'bootstrap/scss/variables-dark';
@@ -66,10 +76,61 @@ $font-sizes: map-merge($font-sizes, (7: 0.8125rem, 8: 0.75rem));
 @import 'bootstrap/scss/utilities';
 @import 'bootstrap/scss/bootstrap';
 
+// ---- Colour mode ----
+// The app's own colours per mode (Bootstrap's --bs-* cover the rest).
+:root,
+[data-bs-theme='light'] {
+  --ci-brand: #{$brand-600};
+  --ci-thead-color: #{$brand-800};
+  --ci-paper: #f3ece0;
+  --ci-raised: #fff;
+  --ci-sticky-bg: #{rgba(#fff, 0.95)};
+  --ci-chart-axis: #cfc8b8;
+  --ci-notes-link: #1d4ed8;
+}
+[data-bs-theme='dark'] {
+  --ci-brand: #{$brand-200};
+  --ci-thead-color: #{$brand-200};
+  --ci-paper: #121c17;
+  --ci-raised: #{$body-tertiary-bg-dark};
+  --ci-sticky-bg: #{rgba($body-bg-dark, 0.95)};
+  --ci-chart-axis: #3d4d44;
+  --ci-notes-link: #8ab4f8;
+
+  // Bootstrap compiles these with the light brand colours; lighten them on the dark canvas.
+  .form-label {
+    color: var(--bs-emphasis-color);
+  }
+  .card {
+    --bs-card-border-color: var(--bs-border-color);
+    --bs-card-bg: var(--bs-tertiary-bg);
+  }
+  .text-primary {
+    color: var(--ci-brand) !important;
+  }
+  .link-primary {
+    color: var(--ci-brand) !important;
+  }
+  .btn-outline-primary {
+    --bs-btn-color: #{$brand-200};
+    --bs-btn-border-color: #{$brand-500};
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #{$brand-500};
+    --bs-btn-hover-border-color: #{$brand-500};
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #{$brand-500};
+    --bs-btn-active-border-color: #{$brand-500};
+    --bs-btn-disabled-color: #{rgba($brand-200, 0.6)};
+    --bs-btn-disabled-border-color: #{$brand-700};
+  }
+  .bg-white {
+    background-color: var(--ci-raised) !important;
+  }
+}
+
 // ---- Base ----
 html {
   -webkit-tap-highlight-color: transparent;
-  color-scheme: light;
 }
 body {
   -webkit-font-smoothing: antialiased;
@@ -116,8 +177,8 @@ body {
 
 // Table headers: small capitals on cream.
 .table > thead > tr > th {
-  background-color: $cream-200;
-  color: $brand-800;
+  background-color: var(--bs-secondary-bg);
+  color: var(--ci-thead-color);
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -235,7 +296,7 @@ body {
       font-size: 1.375rem;
     }
     &.active {
-      color: $primary;
+      color: var(--ci-brand);
     }
   }
 }
@@ -258,8 +319,8 @@ body {
   bottom: calc(4rem + env(safe-area-inset-bottom));
   z-index: 1030;
   padding: 0.75rem;
-  border-top: 1px solid $cream-300;
-  background-color: rgba(#fff, 0.95);
+  border-top: 1px solid var(--bs-border-color);
+  background-color: var(--ci-sticky-bg);
   backdrop-filter: blur(8px);
   @include media-breakpoint-up(md) {
     position: static;
@@ -310,7 +371,7 @@ body {
   border-radius: 50%;
   font-size: 0.75rem;
   font-weight: 700;
-  background-color: $cream-200;
+  background-color: var(--bs-secondary-bg);
   color: var(--bs-secondary-color);
   &.done {
     background-color: $primary;
@@ -327,7 +388,7 @@ body {
   height: 2px;
   flex: 1;
   margin: 0 0.25rem 1.25rem;
-  background-color: $cream-300;
+  background-color: var(--bs-border-color);
   &.done {
     background-color: $primary;
   }
@@ -355,9 +416,9 @@ body {
   img { max-width: 100%; height: auto; }
   table { border-collapse: collapse; width: 100%; margin: 0.3em 0; }
   td, th { border: 1px solid $border-color; padding: 0.25em 0.4em; vertical-align: top; min-width: 2em; }
-  th { background-color: $light; }
+  th { background-color: var(--bs-tertiary-bg); }
   // Links (M35) look as they print: blue and underlined.
-  a { color: #1d4ed8; text-decoration: underline; }
+  a { color: var(--ci-notes-link); text-decoration: underline; }
 }
 .rich-notes-toolbar .form-select { min-width: 5.5rem; }
 .rich-notes-colour {
@@ -367,4 +428,27 @@ body {
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+// The eye button joined to the end of a password box (sign-in and the first password
+// change): the box's own background and border, a divider between them, the icon muted.
+.password-toggle {
+  min-width: 48px;
+  color: var(--bs-secondary-color);
+  background-color: $input-bg;
+  border: var(--bs-border-width) solid $input-border-color;
+  &:hover,
+  &:focus-visible {
+    color: var(--bs-body-color);
+    background-color: var(--bs-secondary-bg);
+    border-color: $input-border-color;
+  }
+}
+
+// The brand green as text: the wordmark and the sign-in paper follow the colour mode.
+.text-brand {
+  color: var(--ci-brand);
+}
+.bg-paper {
+  background-color: var(--ci-paper);
 }

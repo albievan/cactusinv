@@ -366,9 +366,15 @@ tables. Settings has sub-pages — `/settings/business`, `/settings/email`,
 `/settings/currencies`, `/settings/users`, `/settings/backup` (`/settings` opens the first) — listed once in
 `features/settings/settingsNav.ts`: the side nav nests them under Settings while a settings
 route is open, the phone More page lists them, and each settings page links its siblings.
-The app is light-only: `index.html` pins `data-bs-theme="light"`, Bootstrap's colour modes switch
-only on that attribute (never on the system setting), and `lightOnly.test.ts` refuses a dark mode
-or `prefers-color-scheme` anywhere in `web/src`. The server sends `.woff2` as `font/woff2`
+The logo is `components/Logo.tsx` (`CactusMark`: two line strokes, sage and mint, with a node ring on
+each arm; `Wordmark` adds the name and tagline), drawn the same in `public/favicon.svg`.
+The colour mode follows the system (M38): `lib/theme.ts`, called first in `main.tsx` (the CSP
+blocks inline scripts), sets `data-bs-theme` on `<html>` from `prefers-color-scheme` and follows
+its changes; there is no toggle and no stored choice. `index.html` starts light and colours the
+browser bar per mode with two `theme-color` metas. `app.scss` sets Bootstrap's `*-dark`
+variables (deep green canvas, cream text) and the app's own `--ci-*` variables per mode; custom
+rules use `--bs-*`/`--ci-*` variables, never fixed light colours. `colourMode.test.ts` keeps the
+system setting in `lib/theme.ts` alone and refuses a stored theme. The server sends `.woff2` as `font/woff2`
 (Go's MIME table has no font types). The production build is embedded in the binary and served with SPA fallback. While
 `Me.mustChangePassword` is set, `AuthProvider` shows only the forced change-password screen.
 

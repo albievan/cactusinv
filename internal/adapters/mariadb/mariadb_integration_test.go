@@ -18,6 +18,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
 	tcmariadb "github.com/testcontainers/testcontainers-go/modules/mariadb"
+	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/albievan/cactusinv/internal/adapters/idgen"
 	"github.com/albievan/cactusinv/internal/adapters/mariadb"
@@ -39,7 +40,10 @@ func TestMain(m *testing.M) {
 	ctr, err := tcmariadb.Run(ctx, "mariadb:11",
 		tcmariadb.WithDatabase("cactusinv"), tcmariadb.WithUsername("cactusinv"), tcmariadb.WithPassword("test-only"),
 		// The staging database for restores, granted to the app user (ADR-010).
-		tcmariadb.WithScripts(filepath.Join("testdata", "10-restore-db.sql")))
+		tcmariadb.WithScripts(filepath.Join("testdata", "10-restore-db.sql")),
+		// The module's own readiness check, with 5 minutes instead of 60 s: a busy Docker host
+		// can take longer than a minute to initialise a fresh data directory.
+		testcontainers.WithWaitStrategyAndDeadline(5*time.Minute, wait.ForLog("port: 3306  mariadb.org binary distribution").WithStartupTimeout(5*time.Minute)))
 	if err != nil {
 		panic(err)
 	}

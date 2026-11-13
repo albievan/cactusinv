@@ -45,7 +45,7 @@ func (s *Service) UpdateSMTPSettings(ctx context.Context, st domain.SMTPSettings
 		}
 		if password == nil && len(enc) > 0 && (!strings.EqualFold(st.Host, cur.Host) || st.Username != cur.Username) {
 			// The stored password belongs to that server's account: never send it to another.
-			return &domain.ValidationError{Field: "password", Reason: "enter the password again: the stored one is for " + cur.Username + " at " + cur.Host}
+			return &domain.ValidationError{Field: "password", Reason: "enter the password again: the stored one is for the saved user name at " + cur.Host}
 		}
 		if password != nil {
 			enc = nil

@@ -117,7 +117,7 @@ export function ColumnChart({ categories, series, unit, height = 240, decimals =
                 </g>
               )
             })}
-            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} stroke="#cfc8b8" strokeWidth={1} />
+            <line x1={padL} x2={W - padR} y1={padT + plotH} y2={padT + plotH} style={{ stroke: 'var(--ci-chart-axis)' }} strokeWidth={1} />
           </svg>
           {hover && (
             <div
