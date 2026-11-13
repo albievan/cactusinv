@@ -2402,6 +2402,16 @@ export interface components {
             count: number;
         };
         Dashboard: {
+            /** @description The window, in days from today, of expiringQuotes, dueSoon and QuoteStats.expiringSoon. */
+            soonDays: number;
+            /** @description Per currency; empty without quotes.view. */
+            quoteStats: components["schemas"]["QuoteStats"][];
+            /** @description Open quotes whose validity ends within soonDays, soonest first (no lines). */
+            expiringQuotes: components["schemas"]["Quote"][];
+            /** @description The next invoices the schedules will raise */
+            upcomingInvoices: components["schemas"]["UpcomingInvoice"][];
+            /** @description Unpaid issued invoices due within soonDays, soonest first. */
+            dueSoon: components["schemas"]["Invoice"][];
             /** @description Last 12 months, oldest first ("2026-10"). */
             months: string[];
             invoiced: components["schemas"]["MonthTotal"][];
@@ -2415,6 +2425,30 @@ export interface components {
             upcomingRuns: components["schemas"]["Schedule"][];
             recentInvoices: components["schemas"]["Invoice"][];
             failedEmailCount: number;
+        };
+        /** @description The quotes in one currency (amounts are quote totals in that currency). */
+        QuoteStats: {
+            currency: string;
+            /** @description Drafts and sent quotes still valid today. */
+            open: number;
+            openValue: string;
+            /** @description Accepted */
+            accepted: number;
+            acceptedValue: string;
+            declined: number;
+            /** @description Turned into an invoice. */
+            converted: number;
+            /** @description Drafts and sent quotes past their validity. */
+            expired: number;
+            /** @description Open quotes whose validity ends within soonDays. */
+            expiringSoon: number;
+            /** @description Quotes dated in the current month. */
+            issuedThisMonth: number;
+            thisMonthValue: string;
+            /** @description Accepted plus converted. */
+            won: number;
+            /** @description Won plus declined: with won, the win rate. */
+            decided: number;
         };
         BackupRun: {
             /** Format: date-time */

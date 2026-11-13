@@ -469,7 +469,12 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
 - **Dashboard** (`app.GetDashboard`, `GET /dashboard`): per-currency outstanding and overdue
   totals, the last 12 months invoiced (by issue month) and paid (by payment month) from two
   `GROUP BY` queries, the top debtors, upcoming schedule runs and e-mails, and the latest
-  audit entries. The web chart is a dependency-free SVG column chart with a validated
+  audit entries. M39 adds, each only for a user allowed to open it: quote figures per currency
+  (`domain.SummarizeQuotes`: open and accepted counts and values, declined, converted, expired,
+  expiring within `app.DashboardSoonDays` (7), this month's quotes, won/decided for the win
+  rate), the open quotes running out soonest (`domain.ExpiringQuotes`), the next invoice of each
+  schedule (`app.ListUpcomingInvoices`, the same samples as Invoices → Scheduled) and the
+  unpaid issued invoices falling due (`domain.DueSoon`); at most 6 entries a list. The web chart is a dependency-free SVG column chart with a validated
   two-colour categorical palette, hover tooltips and a table view.
 
 ## 13. Users (ADR-011)

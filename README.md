@@ -53,7 +53,10 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Audit trail** — every change and sign-in with who did it; append-only (the database
   refuses edits and deletes) and hash-chained, with a one-click integrity check.
 - **Dashboard** — outstanding and overdue per currency, invoiced vs paid over 12 months, who
-  owes the most, what is scheduled next and recent activity.
+  owes the most, what is scheduled next and recent activity; quote figures per currency (open
+  and accepted value, win rate, expiring and expired); the next invoices the schedules will
+  raise (with their amounts, and why one cannot be raised); invoices due in the next 7 days;
+  and quotes that run out in the next 7 days. Each part shows only to users allowed to open it.
 - **Recurring invoice workflows** — raise a predefined invoice on a schedule, then e-mail it
   straight away or a set number of days later. Lines use the product's current price in the
   customer's currency unless a fixed price is set; run times are shown in the schedule's time

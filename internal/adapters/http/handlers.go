@@ -711,28 +711,32 @@ func (h *handlers) ListUpcomingInvoices(ctx context.Context, _ ListUpcomingInvoi
 		return nil, err
 	}
 	items := make([]UpcomingInvoice, len(us))
-	for i, u := range us {
-		sc := u.Schedule
-		it := UpcomingInvoice{
-			ScheduleId: sc.ID, ScheduleName: sc.Name, ScheduleStatus: ScheduleStatus(sc.Status),
-			CustomerId: sc.CustomerID, CustomerName: u.Customer, Period: toAPIDate(u.Period),
-			Currency: string(u.Currency), AutoSend: sc.AutoSend, Problem: u.Problem,
-		}
-		if !sc.NextRunAt.IsZero() {
-			at := sc.NextRunAt.UTC()
-			it.RunAt = &at
-		}
-		if inv := u.Invoice; inv != nil {
-			c := inv.Currency
-			it.IssueDate, it.DueDate = toAPIDatePtr(inv.IssueDate), toAPIDatePtr(inv.DueDate)
-			it.Totals = &Totals{
-				Subtotal: mu.format(inv.Totals.Subtotal, c), Discount: mu.format(inv.Totals.Discount, c),
-				Vat: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
-			}
-		}
-		items[i] = it
+	for i := range us {
+		items[i] = toAPIUpcomingInvoice(&us[i], mu)
 	}
 	return ListUpcomingInvoices200JSONResponse{Items: items}, nil
+}
+
+func toAPIUpcomingInvoice(u *app.UpcomingInvoice, mu minorUnits) UpcomingInvoice {
+	sc := u.Schedule
+	it := UpcomingInvoice{
+		ScheduleId: sc.ID, ScheduleName: sc.Name, ScheduleStatus: ScheduleStatus(sc.Status),
+		CustomerId: sc.CustomerID, CustomerName: u.Customer, Period: toAPIDate(u.Period),
+		Currency: string(u.Currency), AutoSend: sc.AutoSend, Problem: u.Problem,
+	}
+	if !sc.NextRunAt.IsZero() {
+		at := sc.NextRunAt.UTC()
+		it.RunAt = &at
+	}
+	if inv := u.Invoice; inv != nil {
+		c := inv.Currency
+		it.IssueDate, it.DueDate = toAPIDatePtr(inv.IssueDate), toAPIDatePtr(inv.DueDate)
+		it.Totals = &Totals{
+			Subtotal: mu.format(inv.Totals.Subtotal, c), Discount: mu.format(inv.Totals.Discount, c),
+			Vat: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
+		}
+	}
+	return it
 }
 
 func (h *handlers) GetScheduleSamplePdf(ctx context.Context, req GetScheduleSamplePdfRequestObject) (GetScheduleSamplePdfResponseObject, error) {
@@ -830,6 +834,24 @@ func (h *handlers) GetDashboard(ctx context.Context, _ GetDashboardRequestObject
 		Today: toAPIDate(d.Today), FailedEmailCount: d.FailedEmailCount,
 		Totals: []CurrencyTotal{}, UpcomingEmails: []EmailMessage{}, UpcomingRuns: []Schedule{}, RecentInvoices: []Invoice{},
 		Months: d.Months, Invoiced: []MonthTotal{}, Paid: []MonthTotal{}, Activity: []AuditEntry{}, TopDebtors: []Debtor{},
+		SoonDays: app.DashboardSoonDays, QuoteStats: []QuoteStats{}, ExpiringQuotes: []Quote{}, UpcomingInvoices: []UpcomingInvoice{}, DueSoon: []Invoice{},
+	}
+	for _, q := range d.QuoteStats {
+		c := q.Currency
+		out.QuoteStats = append(out.QuoteStats, QuoteStats{
+			Currency: string(c), Open: q.Open, OpenValue: mu.format(q.OpenValue, c), Accepted: q.Accepted, AcceptedValue: mu.format(q.AcceptedValue, c),
+			Declined: q.Declined, Converted: q.Converted, Expired: q.Expired, ExpiringSoon: q.ExpiringSoon,
+			IssuedThisMonth: q.IssuedThisMonth, ThisMonthValue: mu.format(q.ThisMonthValue, c), Won: q.Won(), Decided: q.Decided(),
+		})
+	}
+	for i := range d.ExpiringQuotes {
+		out.ExpiringQuotes = append(out.ExpiringQuotes, toAPIQuote(&d.ExpiringQuotes[i], mu, d.Today))
+	}
+	for i := range d.UpcomingInvoices {
+		out.UpcomingInvoices = append(out.UpcomingInvoices, toAPIUpcomingInvoice(&d.UpcomingInvoices[i], mu))
+	}
+	for i := range d.DueSoon {
+		out.DueSoon = append(out.DueSoon, toAPIInvoice(&d.DueSoon[i], mu, d.Today))
 	}
 	for _, m := range d.Invoiced {
 		out.Invoiced = append(out.Invoiced, MonthTotal{Currency: string(m.Currency), Month: m.Month, Total: mu.format(m.Total, m.Currency), Count: m.Count})

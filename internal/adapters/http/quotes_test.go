@@ -61,6 +61,14 @@ func TestQuotesOverHTTP(t *testing.T) {
 	}
 	c.ok(c.do("PUT", "/api/v1/quotes/"+q.Id, obj{"version": 1, "lines": []obj{{"productId": prod.ID, "quantity": "2"}}}, &p), 409, "stale")
 
+	// The dashboard counts it as an open quote, in its currency's units (M39).
+	var dash httpapi.Dashboard
+	c.ok(c.do("GET", "/api/v1/dashboard", nil, &dash), 200, "dashboard")
+	if dash.SoonDays != 7 || len(dash.QuoteStats) != 1 || dash.QuoteStats[0].Currency != "ZAR" || dash.QuoteStats[0].Open != 1 ||
+		dash.QuoteStats[0].OpenValue != "24000.00" || dash.QuoteStats[0].Decided != 0 || dash.ExpiringQuotes == nil || dash.DueSoon == nil {
+		t.Fatalf("dashboard quotes = %+v", dash.QuoteStats)
+	}
+
 	// E-mail it (no address yet: the request names one), and the PDF.
 	var m httpapi.EmailMessage
 	c.ok(c.do("POST", "/api/v1/quotes/"+q.Id+"/send", obj{}, &p), 422, "no address")

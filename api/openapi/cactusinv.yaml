@@ -2827,8 +2827,13 @@ components:
         count: { type: integer }
     Dashboard:
       type: object
-      required: [today, totals, upcomingEmails, upcomingRuns, recentInvoices, failedEmailCount, months, invoiced, paid, topDebtors, activity]
+      required: [today, totals, upcomingEmails, upcomingRuns, recentInvoices, failedEmailCount, months, invoiced, paid, topDebtors, activity, soonDays, quoteStats, expiringQuotes, upcomingInvoices, dueSoon]
       properties:
+        soonDays: { type: integer, description: 'The window, in days from today, of expiringQuotes, dueSoon and QuoteStats.expiringSoon.' }
+        quoteStats: { type: array, items: { $ref: '#/components/schemas/QuoteStats' }, description: Per currency; empty without quotes.view. }
+        expiringQuotes: { type: array, items: { $ref: '#/components/schemas/Quote' }, description: 'Open quotes whose validity ends within soonDays, soonest first (no lines).' }
+        upcomingInvoices: { type: array, items: { $ref: '#/components/schemas/UpcomingInvoice' }, description: The next invoices the schedules will raise, soonest first. }
+        dueSoon: { type: array, items: { $ref: '#/components/schemas/Invoice' }, description: 'Unpaid issued invoices due within soonDays, soonest first.' }
         months: { type: array, items: { type: string }, description: 'Last 12 months, oldest first ("2026-10").' }
         invoiced: { type: array, items: { $ref: '#/components/schemas/MonthTotal' } }
         paid: { type: array, items: { $ref: '#/components/schemas/MonthTotal' } }
@@ -2840,6 +2845,24 @@ components:
         upcomingRuns: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
         recentInvoices: { type: array, items: { $ref: '#/components/schemas/Invoice' } }
         failedEmailCount: { type: integer }
+    QuoteStats:
+      type: object
+      description: The quotes in one currency (amounts are quote totals in that currency).
+      required: [currency, open, openValue, accepted, acceptedValue, declined, converted, expired, expiringSoon, issuedThisMonth, thisMonthValue, won, decided]
+      properties:
+        currency: { type: string }
+        open: { type: integer, description: Drafts and sent quotes still valid today. }
+        openValue: { type: string }
+        accepted: { type: integer, description: Accepted, not yet invoiced. }
+        acceptedValue: { type: string }
+        declined: { type: integer }
+        converted: { type: integer, description: Turned into an invoice. }
+        expired: { type: integer, description: Drafts and sent quotes past their validity. }
+        expiringSoon: { type: integer, description: Open quotes whose validity ends within soonDays. }
+        issuedThisMonth: { type: integer, description: Quotes dated in the current month. }
+        thisMonthValue: { type: string }
+        won: { type: integer, description: Accepted plus converted. }
+        decided: { type: integer, description: 'Won plus declined: with won, the win rate.' }
     BackupRun:
       type: object
       required: [slot, name, result, error, startedAt]

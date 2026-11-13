@@ -876,19 +876,34 @@ type CustomerList struct {
 
 // Dashboard defines model for Dashboard.
 type Dashboard struct {
-	Activity         []AuditEntry `json:"activity"`
+	Activity []AuditEntry `json:"activity"`
+
+	// DueSoon Unpaid issued invoices due within soonDays, soonest first.
+	DueSoon []Invoice `json:"dueSoon"`
+
+	// ExpiringQuotes Open quotes whose validity ends within soonDays, soonest first (no lines).
+	ExpiringQuotes   []Quote      `json:"expiringQuotes"`
 	FailedEmailCount int          `json:"failedEmailCount"`
 	Invoiced         []MonthTotal `json:"invoiced"`
 
 	// Months Last 12 months, oldest first ("2026-10").
-	Months         []string           `json:"months"`
-	Paid           []MonthTotal       `json:"paid"`
-	RecentInvoices []Invoice          `json:"recentInvoices"`
+	Months []string     `json:"months"`
+	Paid   []MonthTotal `json:"paid"`
+
+	// QuoteStats Per currency; empty without quotes.view.
+	QuoteStats     []QuoteStats `json:"quoteStats"`
+	RecentInvoices []Invoice    `json:"recentInvoices"`
+
+	// SoonDays The window, in days from today, of expiringQuotes, dueSoon and QuoteStats.expiringSoon.
+	SoonDays       int                `json:"soonDays"`
 	Today          openapi_types.Date `json:"today"`
 	TopDebtors     []Debtor           `json:"topDebtors"`
 	Totals         []CurrencyTotal    `json:"totals"`
 	UpcomingEmails []EmailMessage     `json:"upcomingEmails"`
-	UpcomingRuns   []Schedule         `json:"upcomingRuns"`
+
+	// UpcomingInvoices The next invoices the schedules will raise
+	UpcomingInvoices []UpcomingInvoice `json:"upcomingInvoices"`
+	UpcomingRuns     []Schedule        `json:"upcomingRuns"`
 }
 
 // Debtor defines model for Debtor.
@@ -1412,6 +1427,38 @@ type QuoteSettings struct {
 
 // QuoteStage The status, or expired for a draft or sent quote past its validity.
 type QuoteStage string
+
+// QuoteStats The quotes in one currency (amounts are quote totals in that currency).
+type QuoteStats struct {
+	// Accepted Accepted
+	Accepted      int    `json:"accepted"`
+	AcceptedValue string `json:"acceptedValue"`
+
+	// Converted Turned into an invoice.
+	Converted int    `json:"converted"`
+	Currency  string `json:"currency"`
+
+	// Decided Won plus declined: with won, the win rate.
+	Decided  int `json:"decided"`
+	Declined int `json:"declined"`
+
+	// Expired Drafts and sent quotes past their validity.
+	Expired int `json:"expired"`
+
+	// ExpiringSoon Open quotes whose validity ends within soonDays.
+	ExpiringSoon int `json:"expiringSoon"`
+
+	// IssuedThisMonth Quotes dated in the current month.
+	IssuedThisMonth int `json:"issuedThisMonth"`
+
+	// Open Drafts and sent quotes still valid today.
+	Open           int    `json:"open"`
+	OpenValue      string `json:"openValue"`
+	ThisMonthValue string `json:"thisMonthValue"`
+
+	// Won Accepted plus converted.
+	Won int `json:"won"`
+}
 
 // QuoteStatus defines model for QuoteStatus.
 type QuoteStatus string

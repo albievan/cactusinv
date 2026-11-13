@@ -747,10 +747,23 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 38.3 | New logo everywhere ("change the logo everywhere in the system to look like [a line-art cactus]"): `CactusMark` is two interlocking line strokes with a node ring on each arm, sage `#68927a` and mint `#9ec6b1`, the same in both colour modes; sidebar, phone top bar, sign-in and password-change screens; `favicon.svg` draws it on deep green; the web manifest's colours follow the brand. PDFs and e-mails carry no logo | done | rendered to PNG and compared with the reference; `pnpm check` |
 | 38.4 | Release: docs, VERSION 1.20.0, binaries and image rebuilt, committed (M37 included). The MariaDB test container waits up to 5 min for readiness and `test-int` has a 30 min limit (the module's 60 s and Go's 10 min were exceeded on a heavily loaded host; the tests are unchanged) | done | 2026-11-13: fmt-check, lint (0 issues), vet, cover (domain 96.3 %, app 84.0 %); integration ok 502.8 s at load average ~250; govulncheck "No vulnerabilities found."; contracts in sync; web 114 tests, build OK; `make dist` |
 
+### M39 — A fuller dashboard: upcoming invoices, quote figures, what falls due (Albie, 2026-11-13) — v1.21.0
+
+> "expand the dashboard e.g. add upcoming invoices, quote stats etc."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 39.1 | Domain: `SummarizeQuotes` (per currency: open/accepted counts and values, declined, converted, expired, expiring soon, this month; `Won`, `Decided`), `ExpiringQuotes`, `DueSoon` — pure, sorted, limited | done | `domain/quote_stats_test.go` |
+| 39.2 | App: `GetDashboard` adds `QuoteStats`, `ExpiringQuotes` (quotes.view), `UpcomingInvoices` (schedules.view, plus each schedule's own access), `DueSoon` (invoices.view); 7-day window `DashboardSoonDays`; 6 a list | done | `app/dashboard_test.go` (figures, windows by clock, a dashboard-only and a quotes-only user) |
+| 39.3 | API: `Dashboard.soonDays`, `quoteStats` (`QuoteStats`), `expiringQuotes`, `upcomingInvoices`, `dueSoon`; the upcoming-invoice mapping shared with `/schedules/upcoming` | done | `http/quotes_test.go` (dashboard quote figures in currency units); contracts regenerated |
+| 39.4 | Web: a Quotes card for the selected currency (open, accepted to invoice, win rate with a bar, expiring in 7 days / expired, this month), and Upcoming invoices, Due in the next 7 days, Quotes expiring soon lists linking to the schedule, invoice or quote; each card only with its permission; the currency picker includes quote currencies | done | `Dashboard.test.tsx` (figures, links, details, a quotes-only user); Chrome on an isolated preview with a mock API at desktop and 390 px |
+| 39.5 | Gate | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.4 %, app 84.0 %; integration ok 38.8 s; "No vulnerabilities found."; contracts in sync; web 116 tests, build OK |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-13 | Quote figures are counted in the app from all quotes (a domain function), not by a SQL aggregate | the stages (expired is a draft or sent quote past its date) are domain rules; a small business has hundreds of quotes, not millions; no new query or migration |
 | 2026-11-13 | The colour mode follows the device's light/dark setting, with no toggle; this replaces light-only (13.1) | requested; the earlier problem (light text on stray dark backgrounds) is avoided by giving every colour a value in both modes and keeping the system setting in one file (`lib/theme.ts`) |
 | 2026-11-13 | The saved mail user name is hidden in the web form only; the API still returns it | the server needs it to warn about the Send-as address and to keep the stored password with its account; who may read Settings → E-mail server may already see them; hiding it on screen stops it being read over a shoulder or in a screenshot |
 | 2026-11-12 | Behind a trusted proxy (`CACTUSINV_TRUSTED_PROXIES`), the client address is the right-most X-Forwarded-For entry that is not a trusted proxy; without one, the peer address | entries further left are written by the client and can be forged; trusting nobody by default keeps a directly reached server from believing a forged header |

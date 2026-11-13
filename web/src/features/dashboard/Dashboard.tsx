@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Can, MaybeLink } from '../../components/Access'
 import { Link } from 'react-router-dom'
 import { api, unwrap, type Dashboard as DashboardData } from '../../lib/api/client'
-import { formatDateTime, formatInZone } from '../../lib/format'
+import { formatDate, formatDateTime, formatInZone } from '../../lib/format'
 import { groupAmount, zero } from '../../lib/money'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
@@ -21,7 +21,10 @@ export function Dashboard() {
   const { data, error, loading } = useAsync(() => unwrap(api.GET('/dashboard')), [])
   const currencies = useMemo(() => {
     if (!data) return []
-    const set = new Set<string>([...data.totals.map((t) => t.currency), ...data.invoiced.map((m) => m.currency), ...data.paid.map((m) => m.currency)])
+    const set = new Set<string>([
+      ...data.totals.map((t) => t.currency), ...data.invoiced.map((m) => m.currency), ...data.paid.map((m) => m.currency),
+      ...data.quoteStats.map((q) => q.currency),
+    ])
     return [...set].sort()
   }, [data])
   const [picked, setPicked] = useState<string>('')
@@ -49,6 +52,7 @@ export function Dashboard() {
             </div>
           )}
           {currency ? <CurrencyView data={data} currency={currency} /> : <Empty>No invoices yet — create your first one to see figures here.</Empty>}
+          <ComingUp data={data} />
           <div className="row row-cols-1 row-cols-xl-3 g-4">
             <div><TopDebtors data={data} /></div>
             <div><Upcoming data={data} /></div>
@@ -115,7 +119,139 @@ function CurrencyView({ data, currency }: { data: DashboardData; currency: strin
         <p className="mb-3 small text-body-secondary">{currency} · invoiced by issue month, paid by payment month</p>
         <ColumnChart categories={data.months.map(monthLabel)} series={series} unit={currency} decimals={digits} />
       </section>
+      <Can need="quotes.view"><QuoteFigures data={data} currency={currency} /></Can>
     </>
+  )
+}
+
+/** Stat is one figure in a card: a label, the value and a line under it. */
+function Stat({ label, value, note, warn }: { label: string; value: ReactNode; note: ReactNode; warn?: boolean }) {
+  return (
+    <div>
+      <h3 className="small fw-semibold text-body-secondary mb-0">{label}</h3>
+      <p className="mt-1 mb-0 fs-5 fw-bold text-primary-emphasis text-nowrap" style={{ fontVariantNumeric: 'tabular-nums' }}>{value}</p>
+      <p className={`mt-1 mb-0 small ${warn ? 'fw-semibold text-warning-emphasis' : 'text-body-secondary'}`}>{note}</p>
+    </div>
+  )
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** QuoteFigures is the quotes in the selected currency: open, accepted, won and expiring (M39). */
+function QuoteFigures({ data, currency }: { data: DashboardData; currency: string }) {
+  const q = data.quoteStats.find((x) => x.currency === currency)
+  const rate = q && q.decided > 0 ? Math.round((q.won / q.decided) * 100) : null
+  return (
+    <section className="card card-body" aria-labelledby="quote-figures">
+      <div className="mb-3 d-flex align-items-center justify-content-between gap-2">
+        <h2 id="quote-figures" className="fs-5 fw-semibold mb-0">Quotes</h2>
+        <Link to="/quotes" className="fs-8 fw-semibold">All quotes</Link>
+      </div>
+      {!q ? <p className="small text-body-secondary mb-0">No quotes in {currency} yet.</p> : (
+        <>
+          <div className="row row-cols-2 row-cols-lg-4 g-3">
+            <Stat label="Open" value={`${currency} ${groupAmount(q.openValue)}`} note={`${plural(q.open, 'quote')} awaiting an answer`} />
+            <Stat label="Accepted, to invoice" value={`${currency} ${groupAmount(q.acceptedValue)}`} note={plural(q.accepted, 'quote')} />
+            <div>
+              <Stat label="Win rate" value={rate === null ? '—' : `${rate}%`} note={q.decided > 0 ? `${q.won} won of ${q.decided} answered` : 'No answers yet'} />
+              {rate !== null && (
+                <div className="progress mt-2" style={{ height: 6 }} role="progressbar" aria-label="Win rate" aria-valuenow={rate} aria-valuemin={0} aria-valuemax={100}>
+                  <div className="progress-bar" style={{ width: `${rate}%` }} />
+                </div>
+              )}
+            </div>
+            <Stat
+              label={`Expiring in ${data.soonDays} days`}
+              value={q.expiringSoon}
+              warn={q.expired > 0}
+              note={q.expired > 0 ? `${plural(q.expired, 'quote')} already expired` : 'None expired'}
+            />
+          </div>
+          <p className="mt-3 mb-0 pt-3 border-top small text-body-secondary">
+            This month: {plural(q.issuedThisMonth, 'quote')} worth {currency} {groupAmount(q.thisMonthValue)} · {q.converted} turned into invoices · {q.declined} declined
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+/** ListCard is a titled list with a link to the full page and a line for when it is empty. */
+function ListCard({ title, link, linkLabel, empty, children }: { title: string; link: string; linkLabel: string; empty: ReactNode; children: ReactNode[] }) {
+  return (
+    <section className="card card-body h-100">
+      <div className="mb-3 d-flex align-items-center justify-content-between gap-2">
+        <h2 className="fs-5 fw-semibold mb-0">{title}</h2>
+        <Link to={link} className="fs-8 fw-semibold text-nowrap">{linkLabel}</Link>
+      </div>
+      {children.length === 0 ? <p className="small text-body-secondary mb-0">{empty}</p> : <ul className="list-unstyled vstack gap-3 mb-0">{children}</ul>}
+    </section>
+  )
+}
+
+/** Row is one entry of a ListCard: a linked title and amount, and a line of detail. */
+function Row({ to, title, amount, detail, warn }: { to: string; title: string; amount: string; detail: ReactNode; warn?: boolean }) {
+  return (
+    <li>
+      <div className="d-flex align-items-baseline justify-content-between gap-2 small">
+        <Link to={to} className="text-truncate min-w-0 fw-medium text-primary-emphasis">{title}</Link>
+        <span className="flex-shrink-0 fw-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>{amount}</span>
+      </div>
+      <div className={`fs-8 ${warn ? 'fw-semibold text-warning-emphasis' : 'text-body-secondary'}`}>{detail}</div>
+    </li>
+  )
+}
+
+const daysUntil = (iso: string, today: string) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000)
+const inDays = (n: number) => (n <= 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`)
+
+/** ComingUp lists, across currencies, the next scheduled invoices, invoices falling due and quotes running out (M39). */
+function ComingUp({ data }: { data: DashboardData }) {
+  return (
+    <div className="row row-cols-1 row-cols-lg-2 row-cols-xxl-3 g-4">
+      <Can need="schedules.view">
+        <div>
+          <ListCard title="Upcoming invoices" link="/invoices" linkLabel="Invoices → Scheduled" empty="No invoices scheduled.">
+            {data.upcomingInvoices.map((u) => (
+              <Row
+                key={u.scheduleId}
+                to={`/schedules/${u.scheduleId}`}
+                title={u.customerName}
+                amount={u.totals ? `${u.currency} ${groupAmount(u.totals.total)}` : u.currency}
+                warn={!!u.problem || u.scheduleStatus === 'paused'}
+                detail={u.problem ? `Cannot be raised: ${u.problem}` : `${u.scheduleName} · ${u.runAt ? formatDateTime(u.runAt) : 'paused'}${u.autoSend ? ' · e-mailed' : ''}`}
+              />
+            ))}
+          </ListCard>
+        </div>
+      </Can>
+      <Can need="invoices.view">
+        <div>
+          <ListCard title={`Due in the next ${data.soonDays} days`} link="/invoices" linkLabel="All invoices" empty="Nothing falls due this week.">
+            {data.dueSoon.map((inv) => {
+              const n = inv.dueDate ? daysUntil(inv.dueDate, data.today) : 0
+              return (
+                <Row key={inv.id} to={`/invoices/${inv.id}`} title={`${inv.number ?? ''} · ${inv.billTo.name}`} amount={`${inv.currency} ${groupAmount(inv.totals.total)}`}
+                  warn={n <= 1} detail={`Due ${inDays(n)} (${formatDate(inv.dueDate)})`} />
+              )
+            })}
+          </ListCard>
+        </div>
+      </Can>
+      <Can need="quotes.view">
+        <div>
+          <ListCard title="Quotes expiring soon" link="/quotes" linkLabel="All quotes" empty={`No open quote runs out in the next ${data.soonDays} days.`}>
+            {data.expiringQuotes.map((q) => {
+              const n = daysUntil(q.validUntil, data.today)
+              return (
+                <Row key={q.id} to={`/quotes/${q.id}`} title={`${q.number} · ${q.billTo.name}`} amount={`${q.currency} ${groupAmount(q.totals.total)}`}
+                  warn={n <= 1} detail={`${q.stage === 'sent' ? 'Sent' : 'Draft'} · valid until ${formatDate(q.validUntil)} (${n <= 0 ? 'last day' : inDays(n)})`} />
+              )
+            })}
+          </ListCard>
+        </div>
+      </Can>
+    </div>
   )
 }
 

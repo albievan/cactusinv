@@ -26,7 +26,19 @@ type Dashboard struct {
 	Paid       []ports.MonthTotal
 	TopDebtors []ports.Debtor
 	Activity   []domain.AuditEntry
+	// M39: quotes per currency, quotes running out, the next scheduled invoices and the
+	// unpaid invoices falling due, each within SoonDays of today.
+	QuoteStats       []domain.QuoteStats
+	ExpiringQuotes   []domain.Quote
+	UpcomingInvoices []UpcomingInvoice
+	DueSoon          []domain.Invoice
 }
+
+// DashboardSoonDays is the window, in days, for "expiring soon" and "due soon".
+const DashboardSoonDays = 7
+
+// dashboardListLimit is how many entries each dashboard list shows.
+const dashboardListLimit = 6
 
 // GetDashboard assembles the dashboard.
 func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
@@ -74,6 +86,41 @@ func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 	}
 	// The dashboard shows only what the user may also open (ADR-012).
 	a := ActorFrom(ctx)
+	d.QuoteStats, d.ExpiringQuotes, d.UpcomingInvoices, d.DueSoon = []domain.QuoteStats{}, []domain.Quote{}, []UpcomingInvoice{}, []domain.Invoice{}
+	if a.Can(domain.PermQuotesView) {
+		qs, err := allQuotes(ctx, r)
+		if err != nil {
+			return Dashboard{}, wrap("app.GetDashboard", err)
+		}
+		d.QuoteStats = domain.SummarizeQuotes(qs, d.Today, DashboardSoonDays)
+		d.ExpiringQuotes = domain.ExpiringQuotes(qs, d.Today, DashboardSoonDays, dashboardListLimit)
+	}
+	if a.Can(domain.PermInvoicesView) {
+		var open []domain.Invoice
+		for _, st := range []domain.InvoiceStatus{domain.InvoiceIssued, domain.InvoiceSent} {
+			page := ports.Page{Limit: 200}.Normalize()
+			for {
+				invs, total, err := r.Invoices.List(ctx, ports.InvoiceFilter{Status: st, Today: d.Today, Page: page})
+				if err != nil {
+					return Dashboard{}, wrap("app.GetDashboard", err)
+				}
+				open = append(open, invs...)
+				page.Offset += len(invs)
+				if len(invs) == 0 || page.Offset >= total {
+					break
+				}
+			}
+		}
+		d.DueSoon = domain.DueSoon(open, d.Today, DashboardSoonDays, dashboardListLimit)
+	}
+	if a.Can(domain.PermSchedulesView) {
+		// Each schedule the user may run, soonest first (paused ones have no run time).
+		us, err := s.ListUpcomingInvoices(ctx)
+		if err != nil {
+			return Dashboard{}, wrap("app.GetDashboard", err)
+		}
+		d.UpcomingInvoices = us[:min(dashboardListLimit, len(us))]
+	}
 	if !a.Can(domain.PermEmailsView) {
 		d.UpcomingEmails, d.FailedEmailCount = []domain.EmailMessage{}, 0
 	}
@@ -87,6 +134,23 @@ func (s *Service) GetDashboard(ctx context.Context) (Dashboard, error) {
 		d.Activity = []domain.AuditEntry{}
 	}
 	return d, nil
+}
+
+// allQuotes reads every quote (without lines), page by page.
+func allQuotes(ctx context.Context, r ports.Repos) ([]domain.Quote, error) {
+	var out []domain.Quote
+	page := ports.Page{Limit: 200}.Normalize()
+	for {
+		qs, total, err := r.Quotes.List(ctx, ports.QuoteFilter{Page: page})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, qs...)
+		page.Offset += len(qs)
+		if len(qs) == 0 || page.Offset >= total {
+			return out, nil
+		}
+	}
 }
 
 // OutboxStats exposes outbox depth for metrics.
