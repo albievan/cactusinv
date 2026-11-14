@@ -160,6 +160,12 @@ upgrade() {
     return 0
   fi
   old_head="$(schema_head "$old")" new_head="$(schema_head "$target")"
+  # The running database's schema, when the install reports it: the checkout may already be
+  # at the new version (released from this folder), and both the summary and a rollback's
+  # migrate-down need where the database really is.
+  if [[ "$run_schema" =~ ^[0-9]+$ ]]; then
+    old_head="$run_schema"
+  fi
   count="$(git -C "$ROOT" rev-list --count "${old}..${target}")"
   # (head stops reading early: under pipefail that is not a failure)
   changes="$(git -C "$ROOT" log --no-decorate --format='    %h %s' "${old}..${target}" | head -25 || true)"

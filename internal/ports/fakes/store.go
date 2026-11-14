@@ -138,6 +138,24 @@ type Store struct {
 	mu       sync.Mutex
 	st       *state
 	FailNext error
+	failAt   int // FailAt: calls left before failErr (0 = off)
+	failErr  error
+}
+
+// FailAt makes the n-th repository call from now (1 = the next) fail with err, so a test
+// can walk a use case through a failure at every step (fault injection).
+func (s *Store) FailAt(n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failAt, s.failErr = n, err
+}
+
+// FailPending reports whether a FailAt failure has not happened yet (the use case made
+// fewer calls than n).
+func (s *Store) FailPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failAt > 0
 }
 
 // NewStore returns an empty store.
@@ -176,6 +194,11 @@ func (s *Store) do(f func(st *state) error) error {
 		err := s.FailNext
 		s.FailNext = nil
 		return err
+	}
+	if s.failAt > 0 {
+		if s.failAt--; s.failAt == 0 {
+			return s.failErr
+		}
 	}
 	return f(s.st)
 }

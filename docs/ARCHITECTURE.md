@@ -727,6 +727,9 @@ the session timeouts and the host folders mapped to the container's folders.
   `backing-up → downloading → installing → restarting` or `failed` (the old version keeps
   running). A container (`CACTUSINV_CONTAINER=1` in the image, or a deploy target) refuses:
   its image would bring the old version back, so the page shows `./deploy.sh --upgrade`.
+- **Upgrade summary and rollback (M46)**: `--upgrade` takes the database's starting schema from
+  the running install's `--version` when it reports one (the checkout may already be at the new
+  version), for both the summary and a failed upgrade's `--migrate-down-to`.
 - **Signed releases (M45)**: `make dist` signs `dist/SHA256SUMS` with the owner's Ed25519
   release key (`tools/releasesign sign`, key at `RELEASE_KEY`, default
   `~/.config/cactusinv/release-ed25519.key`, never in the repository) into

@@ -840,6 +840,16 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 45.7 | System Settings → **This site is reached through Cloudflare**: the sign-in rate limit counts each visitor by Cloudflare's `CF-Connecting-IP` (only through the trusted ingress, only when on) | done | `TestClientAddressBehindCloudflare` |
 | 45.8 | Docs, VERSION 1.26.0, gate, signed binaries, commit, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 83.7 %; integration ok 49.4 s; "No vulnerabilities found."; contracts in sync; web 131 tests, build OK; `make dist` 1.26.0 (build 49), `SHA256SUMS.sig` verifies with the compiled-in key |
 
+### M46 — Small fixes (Albie, 2026-11-14) — v1.26.1
+
+> "complete all small fixes"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 46.1 | `deploy.sh --upgrade` read the database's starting schema from the git checkout, not the running install: upgrading from a checkout already at the new version (released from this folder) said "database: no changes" while migrating 27 → 28, and a failed upgrade would not have migrated back down. It now uses the schema the install reports | done | `bash -n`; the 1.26.0 upgrades that showed it |
+| 46.2 | App test coverage 83.7 % → 87.2 %: `fakes.Store.FailAt(n)` fails the n-th repository call; `TestEveryStoreFailureIsReported` walks 29 use cases (quotes, ad-hoc customers, invoices and "I have paid", upcoming invoices, the dashboard, Your account, password resets, users) through a database failure at every step they take — each one is reported, none lost | done | `go test ./internal/app` coverage 87.2 % |
+| 46.3 | VERSION 1.26.1, gate, signed binaries, commit | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 47.6 s; "No vulnerabilities found."; contracts in sync; web 131 tests, build OK; `make dist` 1.26.1 (build 50), signature verified |
+
 ## Decisions
 
 | Date | Decision | Why |
