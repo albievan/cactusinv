@@ -825,10 +825,29 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 44.3 | Audit log: every entry carries the actor's user name as it was then (already so); `user.updated` and `user.deleted` name the user (and full name); a deleted or renamed user's earlier entries keep their name; the Users table shows names under user names and calls the column *User name* | done | `TestDeleteUser` (the deleted user's own entry still names them) |
 | 44.4 | Docs (README, ARCHITECTURE §13), gate, VERSION 1.25.0, binaries, commit, upgrade 10.101.18.101 | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 83.7 %; integration ok 43.6 s; "No vulnerabilities found."; contracts in sync; web 130 tests, build OK; `make dist` 1.25.0 (build 47) |
 
+### M45 — External address, HTTPS only, signed releases (Albie, 2026-11-14) — v1.26.0
+
+> "item 7 no, yes, make it a system setting that can be changed, item 1 add the ability to define the external domain e.g. https://invoice.primesoft.co.za" — restores keep pending e-mails (no change); releases are signed; HSTS is a System Setting.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 45.1 | System Settings → **External address**: every link in an e-mail (quotes, invoices, password resets) points there, scheduled e-mails included; the Quotes page points to it; migration 00028 moves an address saved under Settings → Quotes | done | `TestExternalAddressAndHSTS`, `TestExternalAddressForLinks`, Vitest |
+| 45.2 | System Settings → **HTTPS only (HSTS)**: `Strict-Transport-Security: max-age=31536000` on HTTPS responses while on (off by default; needs an https external address when one is set; read at most every 30 s); the page warns what it does | done | `TestHSTSFollowsSystemSettings`, Vitest |
+| 45.3 | Signed releases: `tools/releasesign` (Ed25519 keygen/sign); the release key made on the owner's Mac (`~/.config/cactusinv/release-ed25519.key`, 0600, not in the repository); `make dist` writes `dist/SHA256SUMS.sig` and refuses to run without the key; the installer verifies it with the compiled-in public key before trusting any checksum | done | `TestInstallNeedsTheReleaseSignature` (unsigned, another key, changed list, garbage), existing install tests now signed |
+| 45.4 | A restore keeps e-mails that were pending in the backup (owner's decision: no change) | done | — |
+| 45.5 | invoice.primesoft.co.za behind Cloudflare: a Cloudflare Origin Certificate installed on the k3s ingress (`K8S_TLS_CERT`/`K8S_TLS_KEY`); the owner set Cloudflare to Full (strict), Always Use HTTPS, TLS 1.2+, and the firewall to Cloudflare only. `deploy.sh` fix: a certificate without `K8S_HTTPS_HOST` stopped the script silently (`[[ ]] &&` inside `$()` under `set -e`) | done | the node presents the Cloudflare Origin certificate for the name; https via Cloudflare 200, http → 301 https, TLS 1.1 refused, direct by IP 200 |
+| 45.6 | `deploy.sh` keeps the installed certificate across deploys (`K8S_TLS_CERT=none` removes it) | done | `bash -n`; the 1.26.0 upgrade of 10.101.18.101 without the variables kept it |
+| 45.7 | System Settings → **This site is reached through Cloudflare**: the sign-in rate limit counts each visitor by Cloudflare's `CF-Connecting-IP` (only through the trusted ingress, only when on) | done | `TestClientAddressBehindCloudflare` |
+| 45.8 | Docs, VERSION 1.26.0, gate, signed binaries, commit, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 83.7 %; integration ok 49.4 s; "No vulnerabilities found."; contracts in sync; web 131 tests, build OK; `make dist` 1.26.0 (build 49), `SHA256SUMS.sig` verifies with the compiled-in key |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | Releases are signed with an Ed25519 key kept by the owner; the public key is compiled in | the checksums came from the same place as the binaries, so whoever could change one could change both; a signature only the owner can make closes that |
+| 2026-11-14 | HSTS is a System Setting, off by default | the k3s default certificate is self-signed: HSTS would stop browsers letting users past its warning; it is for installations with a trusted certificate |
+| 2026-11-14 | One external address for every link in e-mails, in System Settings | the address is the installation's own (not backed up or carried in settings files) and is needed by scheduled e-mails, which have no browser |
+| 2026-11-14 | A restore keeps the e-mails that were pending in the backup | owner's decision; automation stays held after a restore until an administrator resumes it |
 | 2026-11-14 | Users may now be deleted (replaces "users are disabled, never deleted", M14) | requested; the audit log stores the actor's user name with each entry, so who did what stays readable after a delete |
 | 2026-11-14 | A password reset e-mail goes through the outbox, but its text is never shown and is cleared once sent | e-mail goes only through the outbox (CLAUDE.md); the link is a key to the account and must not be readable by whoever may see the outbox |
 | 2026-11-14 | A reset link goes to the user's e-mail address, else their login when it is an address; the default `admin` needs one set first | logins before v1.6.0 such as `admin` are no address; nothing may be sent to a guessed one |
@@ -999,7 +1018,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 ## Open questions
 
-- For the owner to decide: should a restore cancel e-mails that were pending in the backup? Should releases be signed (today SHA256SUMS from the same https origin)? HSTS (needs a real certificate first)? (Decided: a generated first password and `/metrics` behind a token, M40; an expired quote cannot be accepted or converted but is renewed, M41; `.env` stays as it is, M41.)
+- (Decided: a restore keeps pending e-mails, releases are signed, HSTS is a System Setting — M45; a generated first password and `/metrics` behind a token, M40; an expired quote cannot be accepted or converted but is renewed, M41; `.env` stays as it is, M41.)
 - (M40/M41) The committed `.env` names `/data/k3s/...` folders for the Docker targets; the owner's Mac install keeps its data in `./data` and `./secrets`, so a Docker deploy there needs `DATA_DIR`, `MARIADB_DATA_DIR`, `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` in the environment (the M40 guard stops it otherwise). The owner chose to leave `.env` as it is.
 - (M41–M43) Customer links (quote answers, "I have paid", password resets) need an address customers can reach and a certificate their browsers trust: set Settings → Quotes → Address customers reach this app on, and a real certificate (`K8S_TLS_CERT`/`K8S_TLS_KEY`).
 - (M38) A saved mail user name can only be replaced, not emptied, from the form (as with the password). A relay that needs no sign-in would need a way to clear both — add a "Remove" if someone needs it.

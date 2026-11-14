@@ -79,6 +79,39 @@ function SystemForm() {
       <ErrorBanner error={err} />
 
       <div className="card card-body vstack gap-3">
+        <h3 className="fs-6 fw-semibold mb-0">Web address</h3>
+        <Field
+          label="External address"
+          hint={`The address customers and users reach this installation on, e.g. https://invoice.primesoft.co.za. Every link in an e-mail points here: quote Accept/Decline, invoice Mark as paid and password resets. Empty = the address the e-mail was sent from (now ${window.location.origin}); scheduled e-mails then carry no links.`}
+        >
+          {(id) => (
+            <input id={id} type="url" inputMode="url" autoCapitalize="none" className="form-control" maxLength={300} placeholder="https://invoice.example.com"
+              value={s.externalUrl ?? ''} onChange={(e) => set({ externalUrl: e.target.value })} />
+          )}
+        </Field>
+        <div className="form-check">
+          <input id="system-hsts" type="checkbox" className="form-check-input" checked={!!s.hsts} onChange={(e) => set({ hsts: e.target.checked })} aria-describedby="system-hsts-help" />
+          <label className="form-check-label fw-semibold" htmlFor="system-hsts">HTTPS only (HSTS)</label>
+          <div id="system-hsts-help" className="form-text">
+            Browsers that open this installation over HTTPS remember, for a year, to use only HTTPS here and refuse to continue past a certificate warning.
+            Switch it on only when the site has a certificate browsers trust (not the cluster's own self-signed one); switching it off later takes a year to reach
+            browsers that already saw it.
+          </div>
+          {s.hsts && !(s.externalUrl ?? '').startsWith('https://') && (s.externalUrl ?? '') !== '' && (
+            <div role="alert" className="small fw-semibold text-danger-emphasis mt-1">The external address must start with https:// for HTTPS only.</div>
+          )}
+        </div>
+        <div className="form-check">
+          <input id="system-cloudflare" type="checkbox" className="form-check-input" checked={!!s.behindCloudflare} onChange={(e) => set({ behindCloudflare: e.target.checked })} aria-describedby="system-cloudflare-help" />
+          <label className="form-check-label fw-semibold" htmlFor="system-cloudflare">This site is reached through Cloudflare</label>
+          <div id="system-cloudflare-help" className="form-text">
+            Then each visitor's own address comes from Cloudflare, so one person's wrong passwords cannot lock everyone else out of signing in. Tick it only when the
+            server can be reached through Cloudflare alone (the firewall lets in only Cloudflare's addresses); otherwise anyone could claim any address.
+          </div>
+        </div>
+      </div>
+
+      <div className="card card-body vstack gap-3">
         <h3 className="fs-6 fw-semibold mb-0">Sign-in sessions</h3>
         <p className="small text-body-secondary mb-0">Changes apply at once to everyone who is signed in.</p>
         <Field label="Sign out after this many minutes without activity" hint="0 = never. 5 minutes to 30 days (43200).">

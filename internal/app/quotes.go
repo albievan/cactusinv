@@ -505,13 +505,10 @@ func (s *Service) SendQuote(ctx context.Context, id string, in SendInput) (*doma
 			body = qs.EmailBody
 		}
 		text := domain.RenderTemplate(body, data)
-		// The customer's Accept and Decline links (M41), while the quote can still be answered,
-		// at the address Settings → Quotes names, else the one it was sent from.
-		base := qs.PublicURL
-		if base == "" {
-			if base, err = domain.ParsePublicURL(in.LinkBase); err != nil {
-				return err
-			}
+		// The customer's Accept and Decline links (M41), while the quote can still be answered.
+		base, err := s.linkBase(ctx, r, in.LinkBase)
+		if err != nil {
+			return err
 		}
 		if base != "" && (q.Status == domain.QuoteDraft || q.Status == domain.QuoteSent) {
 			token, err := newToken()

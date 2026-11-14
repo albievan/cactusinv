@@ -1962,6 +1962,12 @@ export interface components {
             backupHostDir: string;
             /** @description Host folder mapped to the invoice export folder ("" = .env INVOICES_DIR). */
             invoicesHostDir: string;
+            /** @description The address customers and users reach this installation on, e.g. https://invoice.example.com (M45): every link in an e-mail points there. "" = the address an action was taken from. */
+            externalUrl?: string;
+            /** @description Tell browsers to use HTTPS only, for a year (Strict-Transport-Security; M45). Only with a certificate browsers trust. */
+            hsts?: boolean;
+            /** @description The site is reached only through Cloudflare (M45): a visitor's address (for the sign-in rate limit) is Cloudflare's CF-Connecting-IP on requests through the ingress. */
+            behindCloudflare?: boolean;
             version: number;
             deployment: components["schemas"]["DeploymentInfo"];
             /** @description A saved mapping differs from what is mounted now (redeploy to apply). */

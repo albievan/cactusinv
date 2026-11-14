@@ -11,7 +11,7 @@ import (
 )
 
 const getSystemSettings = `-- name: GetSystemSettings :one
-SELECT id, session_idle_minutes, session_max_minutes, backup_host_dir, invoices_host_dir, version, updated_at FROM system_settings WHERE id = 1
+SELECT id, session_idle_minutes, session_max_minutes, backup_host_dir, invoices_host_dir, version, updated_at, external_url, hsts, behind_cloudflare FROM system_settings WHERE id = 1
 `
 
 func (q *Queries) GetSystemSettings(ctx context.Context) (SystemSetting, error) {
@@ -25,13 +25,16 @@ func (q *Queries) GetSystemSettings(ctx context.Context) (SystemSetting, error) 
 		&i.InvoicesHostDir,
 		&i.Version,
 		&i.UpdatedAt,
+		&i.ExternalUrl,
+		&i.Hsts,
+		&i.BehindCloudflare,
 	)
 	return i, err
 }
 
 const insertSystemSettings = `-- name: InsertSystemSettings :exec
-INSERT INTO system_settings (id, session_idle_minutes, session_max_minutes, backup_host_dir, invoices_host_dir, version, updated_at)
-VALUES (1, ?, ?, ?, ?, 1, ?)
+INSERT INTO system_settings (id, session_idle_minutes, session_max_minutes, backup_host_dir, invoices_host_dir, external_url, hsts, behind_cloudflare, version, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, 1, ?)
 `
 
 type InsertSystemSettingsParams struct {
@@ -39,6 +42,9 @@ type InsertSystemSettingsParams struct {
 	SessionMaxMinutes  int32
 	BackupHostDir      string
 	InvoicesHostDir    string
+	ExternalUrl        string
+	Hsts               bool
+	BehindCloudflare   bool
 	UpdatedAt          time.Time
 }
 
@@ -48,6 +54,9 @@ func (q *Queries) InsertSystemSettings(ctx context.Context, arg InsertSystemSett
 		arg.SessionMaxMinutes,
 		arg.BackupHostDir,
 		arg.InvoicesHostDir,
+		arg.ExternalUrl,
+		arg.Hsts,
+		arg.BehindCloudflare,
 		arg.UpdatedAt,
 	)
 	return err
@@ -55,7 +64,7 @@ func (q *Queries) InsertSystemSettings(ctx context.Context, arg InsertSystemSett
 
 const updateSystemSettings = `-- name: UpdateSystemSettings :execrows
 UPDATE system_settings SET session_idle_minutes = ?, session_max_minutes = ?, backup_host_dir = ?, invoices_host_dir = ?,
-    version = version + 1, updated_at = ?
+    external_url = ?, hsts = ?, behind_cloudflare = ?, version = version + 1, updated_at = ?
 WHERE id = 1 AND version = ?
 `
 
@@ -64,6 +73,9 @@ type UpdateSystemSettingsParams struct {
 	SessionMaxMinutes  int32
 	BackupHostDir      string
 	InvoicesHostDir    string
+	ExternalUrl        string
+	Hsts               bool
+	BehindCloudflare   bool
 	UpdatedAt          time.Time
 	Version            int32
 }
@@ -74,6 +86,9 @@ func (q *Queries) UpdateSystemSettings(ctx context.Context, arg UpdateSystemSett
 		arg.SessionMaxMinutes,
 		arg.BackupHostDir,
 		arg.InvoicesHostDir,
+		arg.ExternalUrl,
+		arg.Hsts,
+		arg.BehindCloudflare,
 		arg.UpdatedAt,
 		arg.Version,
 	)

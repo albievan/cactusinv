@@ -637,3 +637,38 @@ func domainBank() domain.BankAccount {
 func domainCustomer() domain.Customer {
 	return domain.Customer{Code: "CD", Name: "Acme", Email: "a@acme.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true}
 }
+
+// HTTPS only (M45): the Strict-Transport-Security header only when switched on in System
+// Settings and the request came over HTTPS.
+func TestHSTSFollowsSystemSettings(t *testing.T) {
+	store := fakes.NewStore()
+	svc := app.New(app.Deps{Tx: store, Clock: &fakes.Clock{}, IDs: &fakes.IDs{}})
+	get := func(proto string) string {
+		h := httpapi.NewHandler(httpapi.Options{Service: svc, Clock: &fakes.Clock{}})
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/healthz", nil)
+		if proto != "" {
+			req.Header.Set("X-Forwarded-Proto", proto)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Header().Get("Strict-Transport-Security")
+	}
+	if got := get("https"); got != "" {
+		t.Fatalf("off by default, got %q", got)
+	}
+	v, err := svc.GetSystemSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := v.Settings
+	st.HSTS = true
+	if _, err := svc.UpdateSystemSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if got := get("https"); got != "max-age=31536000" {
+		t.Fatalf("on over HTTPS: %q", got)
+	}
+	if got := get(""); got != "" {
+		t.Fatalf("plain HTTP: %q", got)
+	}
+}

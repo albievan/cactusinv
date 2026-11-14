@@ -4,7 +4,10 @@ package selfupdate_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -21,18 +24,30 @@ func script(version string) []byte {
 	return []byte("#!/bin/sh\necho '" + version + " (build 40)'\n")
 }
 
-// publish serves dist/ with one binary and its SHA256SUMS line (sum may be forced).
+// testPub, testPriv stand in for the release key (M45).
+var testPub, testPriv, _ = ed25519.GenerateKey(rand.Reader)
+
+// publish serves dist/ with one binary, its SHA256SUMS line (sum may be forced) and the
+// list's signature by the test release key.
 func publish(t *testing.T, body []byte, sum string) string {
+	t.Helper()
+	return publishSigned(t, body, sum, func(sums []byte) string { return base64.StdEncoding.EncodeToString(ed25519.Sign(testPriv, sums)) })
+}
+
+// publishSigned is publish with the signature made by sign ("" = no SHA256SUMS.sig).
+func publishSigned(t *testing.T, body []byte, sum string, sign func(sums []byte) string) string {
 	t.Helper()
 	if sum == "" {
 		h := sha256.Sum256(body)
 		sum = hex.EncodeToString(h[:])
 	}
 	asset := selfupdate.AssetName(runtime.GOOS, runtime.GOARCH)
+	sums := []byte(sum + "  " + asset + "\n" + strings.Repeat("0", 64) + "  cactusinv-plan9-mips\n")
 	mux := http.NewServeMux()
-	mux.HandleFunc("/dist/SHA256SUMS", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(sum + "  " + asset + "\n" + strings.Repeat("0", 64) + "  cactusinv-plan9-mips\n"))
-	})
+	mux.HandleFunc("/dist/SHA256SUMS", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(sums) })
+	if sig := sign(sums); sig != "" {
+		mux.HandleFunc("/dist/SHA256SUMS.sig", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(sig + "\n")) })
+	}
 	mux.HandleFunc("/dist/"+asset, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -51,7 +66,7 @@ func running(t *testing.T) string {
 func TestInstallSwapsTheBinary(t *testing.T) {
 	exe := running(t)
 	var last int64
-	in := selfupdate.NewFor(publish(t, script("1.16.0"), ""), exe)
+	in := newInstaller(publish(t, script("1.16.0"), ""), exe)
 	if p := in.CanInstall(); p != "" {
 		t.Fatal(p)
 	}
@@ -81,7 +96,7 @@ func TestInstallRefusesABadDownload(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			exe := running(t)
-			err := selfupdate.NewFor(publish(t, c.body, c.sum), exe).Install(context.Background(), "1.16.0", nil)
+			err := newInstaller(publish(t, c.body, c.sum), exe).Install(context.Background(), "1.16.0", nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
@@ -99,7 +114,7 @@ func TestCanInstall(t *testing.T) {
 	if p := selfupdate.New("https://example.invalid/dist/", true).CanInstall(); !strings.Contains(p, "container") {
 		t.Fatalf("container: %q", p)
 	}
-	if p := selfupdate.NewFor("", running(t)).CanInstall(); !strings.Contains(p, "VERSION file") {
+	if p := newInstaller("", running(t)).CanInstall(); !strings.Contains(p, "VERSION file") {
 		t.Fatalf("no dist: %q", p)
 	}
 	if got := selfupdate.DistURL("https://raw.githubusercontent.com/albievan/cactusinv/main/VERSION"); got != "https://raw.githubusercontent.com/albievan/cactusinv/main/dist/" {
@@ -110,5 +125,37 @@ func TestCanInstall(t *testing.T) {
 	}
 	if selfupdate.OldPath(`C:\cactusinv.exe`) != `C:\cactusinv.old.exe` {
 		t.Fatal("windows old path")
+	}
+}
+
+func newInstaller(dist, exe string) *selfupdate.Installer {
+	return selfupdate.NewForKey(dist, exe, testPub)
+}
+
+// A release whose SHA256SUMS is unsigned, signed by another key, or changed after signing
+// is not installed (M45).
+func TestInstallNeedsTheReleaseSignature(t *testing.T) {
+	body := script("1.16.0")
+	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
+	for name, sign := range map[string]func([]byte) string{
+		"unsigned":    func([]byte) string { return "" },
+		"another key": func(s []byte) string { return base64.StdEncoding.EncodeToString(ed25519.Sign(otherPriv, s)) },
+		"changed list": func(s []byte) string {
+			return base64.StdEncoding.EncodeToString(ed25519.Sign(testPriv, append(s, '\n')))
+		},
+		"not a base64": func([]byte) string { return "!!!" },
+	} {
+		exe := running(t)
+		err := newInstaller(publishSigned(t, body, "", sign), exe).Install(context.Background(), "1.16.0", nil)
+		if err == nil || (!strings.Contains(err.Error(), "not signed") && !strings.Contains(err.Error(), "signature does not match")) {
+			t.Errorf("%s: %v", name, err)
+		}
+		if got, _ := os.ReadFile(exe); string(got) != string(script("1.15.0")) { //nolint:gosec // the test's own file
+			t.Errorf("%s: the binary was replaced", name)
+		}
+	}
+	// The real installer carries the release key.
+	if k := selfupdate.ReleaseKeyForTest(); len(k) != ed25519.PublicKeySize {
+		t.Fatalf("release key is %d bytes", len(k))
 	}
 }

@@ -553,6 +553,21 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   (`POST /auth/password-reset/{token}`) checks the password policy, uses up every link of the
   user, sets the password (not must-change) and ends every session. `GET` on the same path
   says whether a link still works. Housekeeping deletes resets a day after they expire.
+- **External address and HTTPS only (M45)**: `system_settings.external_url` and `hsts`
+  (migration 00028 copies Settings → Quotes' public address). `app.linkBase` picks the address
+  of every link in an e-mail: the external address, else the quote settings' address (older
+  installations), else the request's `linkBase`. The HTTP adapter adds
+  `Strict-Transport-Security: max-age=31536000` to a response over HTTPS (TLS, or
+  `X-Forwarded-Proto: https` from the ingress) while `hsts` is on, read at most every 30 s.
+  Validation: an http(s) address without query; HSTS needs an `https://` address when one is set.
+  `system_settings.behind_cloudflare`: `clientAddress` (the sign-in rate limit's key) takes a
+  valid `CF-Connecting-IP` when the request came from a trusted proxy and the switch is on;
+  otherwise the right-most untrusted X-Forwarded-For entry as before. The HSTS switch and this
+  one are read together (`app.WebSettings`) at most every 30 s.
+- **TLS on k3s/k8s (M45)**: `deploy.sh` keeps secret `cactusinv-tls` across deploys; new
+  `K8S_TLS_CERT`/`K8S_TLS_KEY` files replace it, `K8S_TLS_CERT=none` removes it. A certificate
+  without `K8S_HTTPS_HOST` (a Cloudflare Origin Certificate for the node reached by IP and by
+  name) works; that path used to stop the script silently under `set -e`.
 - **Edit and delete (M44)**: `UpdateUser` (`PUT /users/{id}`) changes the login (a new one must
   pass `ValidateNewLogin` and be unique in any case) and the profile; `DeleteUser`
   (`POST /users/{id}/delete`) refuses yourself and the last active user (`CheckCanDisable` on
@@ -712,6 +727,15 @@ the session timeouts and the host folders mapped to the container's folders.
   `backing-up → downloading → installing → restarting` or `failed` (the old version keeps
   running). A container (`CACTUSINV_CONTAINER=1` in the image, or a deploy target) refuses:
   its image would bring the old version back, so the page shows `./deploy.sh --upgrade`.
+- **Signed releases (M45)**: `make dist` signs `dist/SHA256SUMS` with the owner's Ed25519
+  release key (`tools/releasesign sign`, key at `RELEASE_KEY`, default
+  `~/.config/cactusinv/release-ed25519.key`, never in the repository) into
+  `dist/SHA256SUMS.sig`. The installer verifies that signature with the public key compiled in
+  (`selfupdate/releasekey.go`) before it reads a single checksum; no or a wrong signature stops
+  the install. Losing the private key means no further release can be installed by an
+  installation's own update button (a new key needs a release that carries its public key,
+  installed by hand or by `deploy.sh --upgrade`). `deploy.sh --upgrade` builds from the git
+  checkout and does not use `dist/`.
 
 ## 20. Review rules (M36, v1.19.0)
 

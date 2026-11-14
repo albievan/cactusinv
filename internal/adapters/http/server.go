@@ -78,6 +78,11 @@ func NewHandler(o Options) http.Handler {
 
 	limiter := newLoginLimiter(o.Clock)
 	limiter.trusted = o.TrustedProxies
+	var web *webSettings
+	if o.Service != nil {
+		web = &webSettings{read: o.Service.WebSettings}
+	}
+	limiter.cloudflare = func() bool { return web.get().BehindCloudflare }
 	root := http.NewServeMux()
 	root.Handle("/api/", withSecureSignIn(o.CookieSecure, limiter.middleware(withAPIGuards(o.Service, o.MaxUploadBytes, limiter, withIdempotency(o.Service.Idempotency(), o.Clock, api)))))
 	root.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -88,7 +93,7 @@ func NewHandler(o Options) http.Handler {
 	if o.Web != nil {
 		root.Handle("/", spa(o.Web))
 	}
-	return withRequestLog(o.Logger, withSecurityHeaders(root))
+	return withRequestLog(o.Logger, withSecurityHeaders(func() bool { return web.get().HSTS }, root))
 }
 
 // metricsGuard serves next only with the bearer token; without a configured token the

@@ -2012,8 +2012,17 @@ type StatementSummary struct {
 // SystemSettings defines model for SystemSettings.
 type SystemSettings struct {
 	// BackupHostDir Host folder mapped to the backups folder ("" = the deployment's, .env BACKUP_DIR).
-	BackupHostDir string         `json:"backupHostDir"`
-	Deployment    DeploymentInfo `json:"deployment,omitempty"`
+	BackupHostDir string `json:"backupHostDir"`
+
+	// BehindCloudflare The site is reached only through Cloudflare (M45): a visitor's address (for the sign-in rate limit) is Cloudflare's CF-Connecting-IP on requests through the ingress.
+	BehindCloudflare bool           `json:"behindCloudflare,omitempty"`
+	Deployment       DeploymentInfo `json:"deployment,omitempty"`
+
+	// ExternalUrl The address customers and users reach this installation on, e.g. https://invoice.example.com (M45): every link in an e-mail points there. "" = the address an action was taken from.
+	ExternalUrl string `json:"externalUrl,omitempty"`
+
+	// Hsts Tell browsers to use HTTPS only, for a year (Strict-Transport-Security; M45). Only with a certificate browsers trust.
+	Hsts bool `json:"hsts,omitempty"`
 
 	// InvoicesHostDir Host folder mapped to the invoice export folder ("" = .env INVOICES_DIR).
 	InvoicesHostDir string `json:"invoicesHostDir"`

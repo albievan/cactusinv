@@ -795,7 +795,13 @@ k8s_https() {
   local host="${K8S_HTTPS_HOST:-}" cert="${K8S_TLS_CERT:-}" key="${K8S_TLS_KEY:-}"
   [[ -z "$host" || "$host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] ||
     die "K8S_HTTPS_HOST must be a DNS name such as invoices.example.com, or empty (got '$host')"
-  if [[ -n "$cert" || -n "$key" ]]; then
+  # The certificate in secret cactusinv-tls stays across deploys (M45): it is replaced only
+  # when K8S_TLS_CERT/K8S_TLS_KEY name new files, and removed only with K8S_TLS_CERT=none.
+  local use_tls=""
+  if [[ "$cert" == none ]]; then
+    kc -n "$K8S_NAMESPACE" delete secret cactusinv-tls --ignore-not-found </dev/null >/dev/null
+    ok "certificate removed: the ingress controller's own (self-signed) certificate is used"
+  elif [[ -n "$cert" || -n "$key" ]]; then
     [[ -f "$cert" && -f "$key" ]] || die "K8S_TLS_CERT and K8S_TLS_KEY must both name PEM files (got '$cert' and '$key')"
     # Sent as a manifest on stdin: kubectl may run on the node, where these files are not.
     kc apply -f - >/dev/null <<YAML
@@ -811,14 +817,21 @@ data:
   tls.key: $(base64 <"$key" | tr -d '\n')
 YAML
     ok "certificate ${cert} is in secret cactusinv-tls"
-  else
-    kc -n "$K8S_NAMESPACE" delete secret cactusinv-tls --ignore-not-found </dev/null >/dev/null
+    use_tls=1
+  elif kc -n "$K8S_NAMESPACE" get secret cactusinv-tls </dev/null >/dev/null 2>&1; then
+    info "keeping the installed certificate (secret cactusinv-tls; K8S_TLS_CERT=none removes it)"
+    use_tls=1
   fi
-  local tls="{}" rule="{"
-  if [[ -n "$cert" ]]; then
-    tls="{ secretName: cactusinv-tls$([[ -n "$host" ]] && echo ", hosts: [${host}]") }"
+  # (if, not "[[ ]] &&": under set -e a false test inside $() or as an assignment's last
+  # command would stop the script without a word — a certificate without a host name did.)
+  local tls="{}" rule="{" hosts=""
+  if [[ -n "$host" ]]; then
+    hosts=", hosts: [${host}]"
+    rule="{ host: ${host},"
   fi
-  [[ -n "$host" ]] && rule="{ host: ${host},"
+  if [[ -n "$use_tls" ]]; then
+    tls="{ secretName: cactusinv-tls${hosts} }"
+  fi
   local node="${SSH_HOST#*@}"
   info "serving https://${host:-${node:-<node-ip>}}/ through the ingress controller"
   kc apply -f - <<YAML

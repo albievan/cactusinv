@@ -56,8 +56,62 @@ func systemSummary(st domain.SystemSettings) string {
 		}
 		return d
 	}
-	return fmt.Sprintf("%s, sessions at most %s; backups → %s, invoices → %s", idle, st.SessionMax, dir(st.BackupHostDir), dir(st.InvoicesHostDir))
+	ext := st.ExternalURL
+	if ext == "" {
+		ext = "none"
+	}
+	hsts := "off"
+	if st.HSTS {
+		hsts = "on"
+	}
+	cf := "no"
+	if st.BehindCloudflare {
+		cf = "yes"
+	}
+	return fmt.Sprintf("%s, sessions at most %s; backups → %s, invoices → %s; external address %s; HTTPS only (HSTS) %s; behind Cloudflare %s",
+		idle, st.SessionMax, dir(st.BackupHostDir), dir(st.InvoicesHostDir), ext, hsts, cf)
 }
+
+// linkBase is the address links in e-mails point at (M45): System Settings' external
+// address, else the public address an older version kept under Settings → Quotes (M41),
+// else requestBase — the address the action was taken from in the browser. "" means no
+// address is known and no link is made.
+func (s *Service) linkBase(ctx context.Context, r ports.Repos, requestBase string) (string, error) {
+	st, err := s.systemSettings(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	if st.ExternalURL != "" {
+		return st.ExternalURL, nil
+	}
+	qs, err := s.quoteSettings(ctx, r)
+	if err != nil {
+		return "", err
+	}
+	if qs.PublicURL != "" {
+		return qs.PublicURL, nil
+	}
+	return domain.ParsePublicURL(requestBase)
+}
+
+// WebSettings are the System Settings the web server applies to every request (M45).
+type WebSettings struct {
+	HSTS             bool // send Strict-Transport-Security on HTTPS
+	BehindCloudflare bool // a visitor's address is Cloudflare's CF-Connecting-IP
+}
+
+// WebSettings returns them. A failure to read the settings answers the zero value: neither
+// is ever switched on by an error.
+func (s *Service) WebSettings(ctx context.Context) WebSettings {
+	st, err := s.systemSettings(ctx, s.tx.Repos())
+	if err != nil {
+		return WebSettings{}
+	}
+	return WebSettings{HSTS: st.HSTS, BehindCloudflare: st.BehindCloudflare}
+}
+
+// HSTSEnabled reports whether System Settings ask browsers to use HTTPS only (M45).
+func (s *Service) HSTSEnabled(ctx context.Context) bool { return s.WebSettings(ctx).HSTS }
 
 // FolderMappings returns the host folders System Settings map to the container's folders,
 // as deploy.sh reads them: BACKUP_DIR and INVOICES_DIR, only those that are set.

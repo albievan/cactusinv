@@ -411,6 +411,9 @@ type SystemSetting struct {
 	InvoicesHostDir    string
 	Version            int32
 	UpdatedAt          time.Time
+	ExternalUrl        string
+	Hsts               bool
+	BehindCloudflare   bool
 }
 
 type SystemState struct {

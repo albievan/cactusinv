@@ -117,3 +117,22 @@ test('a container explains why it cannot install itself and gives the upgrade co
   expect(screen.getByText('./deploy.sh --upgrade --k3s')).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Install and restart' })).not.toBeInTheDocument()
 })
+
+test('sets the external address links point at and switches HTTPS only on (M45)', async () => {
+  let body: Record<string, unknown> = {}
+  routes(saved, async (req) => {
+    body = (await req.json()) as Record<string, unknown>
+    return json({ ...body, version: 1, deployment, pendingFolders: false })()
+  })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  const address = await screen.findByLabelText('External address')
+  expect(address).toHaveValue('')
+  await userEvent.type(address, 'https://invoice.primesoft.co.za')
+  const hsts = screen.getByLabelText('HTTPS only (HSTS)')
+  expect(hsts).not.toBeChecked()
+  expect(screen.getByText(/refuse to continue past a certificate warning/)).toBeInTheDocument()
+  await userEvent.click(hsts)
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await vi.waitFor(() => expect(body).toMatchObject({ externalUrl: 'https://invoice.primesoft.co.za', hsts: true }))
+})

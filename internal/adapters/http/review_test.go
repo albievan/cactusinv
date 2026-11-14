@@ -36,12 +36,43 @@ func TestClientAddress(t *testing.T) {
 		"garbage":              {req("10.42.0.7:5000", "not-an-ip"), "10.42.0.7"},
 		"no header":            {req("10.42.0.7:5000"), "10.42.0.7"},
 	} {
-		if got := clientAddress(c.r, trusted); got != c.want {
+		if got := clientAddress(c.r, trusted, false); got != c.want {
 			t.Errorf("%s: %s, want %s", name, got, c.want)
 		}
 	}
-	if got := clientAddress(req("10.42.0.7:5000", "203.0.113.5"), nil); got != "10.42.0.7" {
+	if got := clientAddress(req("10.42.0.7:5000", "203.0.113.5"), nil, false); got != "10.42.0.7" {
 		t.Errorf("no trusted proxies: %s", got)
+	}
+}
+
+// Behind Cloudflare (M45) the visitor is CF-Connecting-IP — only through a trusted proxy and
+// only when System Settings say so; a missing or malformed one falls back to the rule above.
+func TestClientAddressBehindCloudflare(t *testing.T) {
+	trusted := []netip.Prefix{netip.MustParsePrefix("10.42.0.0/16")}
+	req := func(remote, cf string) *http.Request {
+		r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/login", nil)
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", "172.67.139.221") // a Cloudflare edge, as the ingress saw it
+		if cf != "" {
+			r.Header.Set("CF-Connecting-IP", cf)
+		}
+		return r
+	}
+	for name, c := range map[string]struct {
+		r          *http.Request
+		cloudflare bool
+		want       string
+	}{
+		"visitor":                 {req("10.42.0.7:5000", "41.13.20.7"), true, "41.13.20.7"},
+		"IPv6 visitor":            {req("10.42.0.7:5000", "2001:db8::7"), true, "2001:db8::7"},
+		"switch off":              {req("10.42.0.7:5000", "41.13.20.7"), false, "172.67.139.221"},
+		"not through the ingress": {req("192.168.1.9:5000", "41.13.20.7"), true, "192.168.1.9"},
+		"malformed":               {req("10.42.0.7:5000", "evil, 1.2.3.4"), true, "172.67.139.221"},
+		"no header":               {req("10.42.0.7:5000", ""), true, "172.67.139.221"},
+	} {
+		if got := clientAddress(c.r, trusted, c.cloudflare); got != c.want {
+			t.Errorf("%s: %s, want %s", name, got, c.want)
+		}
 	}
 }
 

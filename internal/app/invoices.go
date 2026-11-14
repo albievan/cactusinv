@@ -528,15 +528,9 @@ func (s *Service) enqueue(ctx context.Context, r ports.Repos, inv *domain.Invoic
 	// The customer's "I have paid" link (M42) while the invoice is unpaid, at the address
 	// Settings → Quotes names (customers reach the app there), else the one it was sent from.
 	if inv.IsOpen() {
-		qs, err := s.quoteSettings(ctx, r)
+		base, err := s.linkBase(ctx, r, in.LinkBase)
 		if err != nil {
 			return nil, err
-		}
-		base := qs.PublicURL
-		if base == "" {
-			if base, err = domain.ParsePublicURL(in.LinkBase); err != nil {
-				return nil, err
-			}
 		}
 		if base != "" {
 			token, err := newToken()

@@ -6,8 +6,11 @@ package selfupdate
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -50,12 +53,14 @@ type Installer struct {
 	client    *http.Client
 	exe       string // the running binary, symlinks resolved ("" when unknown)
 	exeErr    error
+	key       ed25519.PublicKey // checks SHA256SUMS.sig (releasePublicKey)
 }
 
 // New returns an Installer downloading from dist (see DistURL). container marks an
 // installation that must not replace itself.
 func New(dist string, container bool) *Installer {
-	i := &Installer{dist: dist, container: container, client: &http.Client{Timeout: 10 * time.Minute, CheckRedirect: noDowngrade}}
+	key, _ := base64.StdEncoding.DecodeString(releasePublicKey)
+	i := &Installer{dist: dist, container: container, client: &http.Client{Timeout: 10 * time.Minute, CheckRedirect: noDowngrade}, key: key}
 	exe, err := os.Executable()
 	if err == nil {
 		exe, err = filepath.EvalSymlinks(exe)
@@ -135,16 +140,24 @@ func (i *Installer) get(ctx context.Context, name string) (*http.Response, error
 	return resp, nil
 }
 
-// checksums reads SHA256SUMS (sha256sum format). Unlike a missing binary, a missing list
-// is an error: nothing is installed unchecked.
+// checksums reads SHA256SUMS (sha256sum format) after checking its signature,
+// SHA256SUMS.sig, against the release key (M45). Unlike a missing binary, a missing or
+// wrong signature or list is an error: nothing is installed unchecked.
 func (i *Installer) checksums(ctx context.Context) (map[string]string, error) {
-	resp, err := i.get(ctx, "SHA256SUMS")
+	sums, err := i.read(ctx, "SHA256SUMS", 64<<10)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	sigText, err := i.read(ctx, "SHA256SUMS.sig", 1<<10)
+	if err != nil {
+		return nil, fmt.Errorf("selfupdate: the release is not signed: %w", err)
+	}
+	sig, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sigText)))
+	if err != nil || len(i.key) != ed25519.PublicKeySize || !ed25519.Verify(i.key, sums, sig) {
+		return nil, errors.New("selfupdate: the release's signature does not match the release key: it was not published by the owner, so it is not installed")
+	}
 	out := map[string]string{}
-	sc := bufio.NewScanner(io.LimitReader(resp.Body, 64<<10))
+	sc := bufio.NewScanner(bytes.NewReader(sums))
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) == 2 && len(f[0]) == sha256.Size*2 {
@@ -152,6 +165,23 @@ func (i *Installer) checksums(ctx context.Context) (map[string]string, error) {
 		}
 	}
 	return out, sc.Err()
+}
+
+// read fetches a small published file whole (at most max bytes).
+func (i *Installer) read(ctx context.Context, name string, max int64) ([]byte, error) {
+	resp, err := i.get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
+	if err != nil {
+		return nil, fmt.Errorf("selfupdate: %s: %w", name, err)
+	}
+	if int64(len(b)) > max {
+		return nil, fmt.Errorf("selfupdate: %s is larger than %d bytes", name, max)
+	}
+	return b, nil
 }
 
 func (i *Installer) download(ctx context.Context, asset, tmp, want string, progress func(done, total int64)) error {

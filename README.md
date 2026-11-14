@@ -147,7 +147,13 @@ Released into the public domain — see [LICENSE](LICENSE).
   unchanged, per section you choose), then applied all or nothing. It never deletes, new
   schedules arrive paused, the next invoice and quote numbers only move forward, and the e-mail
   server password is never in the file.
-- **System Settings** — Settings → System Settings: sign users out after a
+- **System Settings** — Settings → System Settings: the **external address** customers and
+  users reach this installation on (e.g. `https://invoice.primesoft.co.za`) — every link in an
+  e-mail (quote Accept/Decline, invoice Mark as paid, password resets) points there, scheduled
+  e-mails included; **HTTPS only (HSTS)**, which tells browsers to use only HTTPS here for a
+  year (switch it on only with a certificate browsers trust); **This site is reached through
+  Cloudflare**, so each visitor's own address (from Cloudflare) counts for the sign-in rate
+  limit — tick it only when the firewall lets in Cloudflare alone; sign users out after a
   time without activity and end every sign-in after a maximum time (applies at once), and map
   the container's backup and invoice export folders to host folders, e.g. a NAS share. A new
   mapping is used by the next `./deploy.sh --install --dockerdesktop`, which copies the
@@ -283,7 +289,8 @@ Settings → System Settings → **Check for updates** says when a newer version
 **A standalone server** (the `cactusinv` binary run on a machine, not in a container) installs
 it itself: an administrator presses **Install and restart**, then confirms. It takes a backup (when a backup key is
 set up), downloads the new binary for its OS and CPU from `dist/` on GitHub, checks it against
-the published SHA-256 and by running it, keeps the old one as `cactusinv.old` beside it, and
+the published SHA-256 — whose list must carry the owner's signature (`SHA256SUMS.sig`, from
+v1.26.0; an unsigned or wrongly signed release is refused) — and by running it, keeps the old one as `cactusinv.old` beside it, and
 restarts in place (same process, so systemd or a terminal stays attached). The new version
 updates the database as it starts; nobody is signed out. If the download or the check fails,
 nothing changes; if the new binary does not start, the old one is put back and started. The
@@ -417,7 +424,7 @@ Used only with `--k3s` and `--k8s`.
 | `K8S_BACKUP_STORAGE` | `10Gi` | Size of the backups claim. Allow room for `BACKUP_RETENTION_DAYS` × backups per day. |
 | `K8S_HTTPS` | `false` | `true` serves the app over HTTPS through the cluster's ingress controller (on k3s: Traefik, port 443), so sign-in works with `CACTUSINV_COOKIE_SECURE=true`. `false` removes that Ingress. See below. |
 | `K8S_HTTPS_HOST` | empty | The DNS name people use for the site (e.g. `invoices.example.com`). Empty = any name, or the node's address (`https://10.101.18.101/`). |
-| `K8S_TLS_CERT` / `K8S_TLS_KEY` | empty | A certificate and its key (PEM files on the machine running `deploy.sh`). `deploy.sh` stores them in secret `cactusinv-tls`. Empty = the controller's own self-signed certificate. |
+| `K8S_TLS_CERT` / `K8S_TLS_KEY` | empty | A certificate and its key (PEM files on the machine running `deploy.sh`), e.g. a Cloudflare Origin Certificate. `deploy.sh` stores them in secret `cactusinv-tls`, which later deploys keep (since v1.26.0); `K8S_TLS_CERT=none` removes it. None installed = the controller's own self-signed certificate. |
 | `K8S_REGISTRY` | empty | `--k8s` only: registry the image is pushed to (e.g. `registry.example.com/team`); you must be logged in to it (`docker login`). Not used by k3s, which imports the image straight into the node. |
 
 The sizes apply when a claim is created. A claim that exists keeps its size: claims cannot

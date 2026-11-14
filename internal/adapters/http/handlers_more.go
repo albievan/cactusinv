@@ -229,7 +229,7 @@ func toAPISystemSettings(v app.SystemView) SystemSettings {
 	s, d := v.Settings, v.Deployment
 	return SystemSettings{
 		SessionIdleMinutes: int(s.SessionIdle / time.Minute), SessionMaxHours: int((s.SessionMax + time.Hour - 1) / time.Hour),
-		BackupHostDir: s.BackupHostDir, InvoicesHostDir: s.InvoicesHostDir, Version: s.Version,
+		BackupHostDir: s.BackupHostDir, InvoicesHostDir: s.InvoicesHostDir, ExternalUrl: s.ExternalURL, Hsts: s.HSTS, BehindCloudflare: s.BehindCloudflare, Version: s.Version,
 		Deployment: DeploymentInfo{
 			Target: d.Target, BackupDir: d.BackupDir, InvoicesDir: d.InvoicesDir, BackupHostDir: d.BackupHostDir, InvoicesHostDir: d.InvoicesHostDir,
 		},
@@ -249,7 +249,7 @@ func (h *handlers) UpdateSystemSettings(ctx context.Context, req UpdateSystemSet
 	b := req.Body
 	v, err := h.svc.UpdateSystemSettings(ctx, domain.SystemSettings{
 		SessionIdle: time.Duration(b.SessionIdleMinutes) * time.Minute, SessionMax: time.Duration(b.SessionMaxHours) * time.Hour,
-		BackupHostDir: b.BackupHostDir, InvoicesHostDir: b.InvoicesHostDir, Version: b.Version,
+		BackupHostDir: b.BackupHostDir, InvoicesHostDir: b.InvoicesHostDir, ExternalURL: b.ExternalUrl, HSTS: b.Hsts, BehindCloudflare: b.BehindCloudflare, Version: b.Version,
 	})
 	if err != nil {
 		return nil, err

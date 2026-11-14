@@ -2328,6 +2328,9 @@ components:
         sessionMaxHours: { type: integer, minimum: 1, maximum: 8760, description: A sign-in ends this many hours after it started. }
         backupHostDir: { type: string, maxLength: 1024, description: 'Host folder mapped to the backups folder ("" = the deployment''s, .env BACKUP_DIR).' }
         invoicesHostDir: { type: string, maxLength: 1024, description: 'Host folder mapped to the invoice export folder ("" = .env INVOICES_DIR).' }
+        externalUrl: { type: string, maxLength: 300, description: 'The address customers and users reach this installation on, e.g. https://invoice.example.com (M45): every link in an e-mail points there. "" = the address an action was taken from.' }
+        hsts: { type: boolean, description: 'Tell browsers to use HTTPS only, for a year (Strict-Transport-Security; M45). Only with a certificate browsers trust.' }
+        behindCloudflare: { type: boolean, description: 'The site is reached only through Cloudflare (M45): a visitor''s address (for the sign-in rate limit) is Cloudflare''s CF-Connecting-IP on requests through the ingress.' }
         version: { type: integer }
         deployment: { $ref: '#/components/schemas/DeploymentInfo' }
         pendingFolders: { type: boolean, readOnly: true, x-omitempty: false, description: A saved mapping differs from what is mounted now (redeploy to apply). }

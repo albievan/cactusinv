@@ -50,15 +50,9 @@ func (s *Service) RequestPasswordReset(ctx context.Context, login, linkBase stri
 		return wrap("app.RequestPasswordReset", &domain.ValidationError{Field: "userName", Reason: "enter your user name"})
 	}
 	err := s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
-		qs, err := s.quoteSettings(ctx, r)
+		base, err := s.linkBase(ctx, r, linkBase)
 		if err != nil {
 			return err
-		}
-		base := qs.PublicURL
-		if base == "" {
-			if base, err = domain.ParsePublicURL(linkBase); err != nil {
-				return err
-			}
 		}
 		u, err := r.Users.GetByEmail(ctx, login)
 		if errors.Is(err, domain.ErrNotFound) {

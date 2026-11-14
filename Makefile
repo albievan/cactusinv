@@ -98,6 +98,8 @@ build: web-check ## build the binary with the web app embedded
 # SHA256SUMS, committed with VERSION. Their build number is that of the commit they go in
 # (the next one), so run this last, then commit.
 DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+# The private release key (never in the repository; see tools/releasesign).
+RELEASE_KEY ?= $(HOME)/.config/cactusinv/release-ed25519.key
 dist: web-check ## build the published binaries in dist/ (commit them with VERSION)
 	rm -rf dist && mkdir -p dist
 	next=$$(( $(BUILD) + 1 )); for t in $(DIST_TARGETS); do \
@@ -107,6 +109,9 @@ dist: web-check ## build the published binaries in dist/ (commit them with VERSI
 	    -o "dist/cactusinv-$$os-$$arch$$ext" ./cmd/cactusinv; \
 	done
 	cd dist && if command -v sha256sum >/dev/null; then sha256sum cactusinv-*; else shasum -a 256 cactusinv-*; fi > SHA256SUMS
+	@# Signed with the release key (M45): an installation's own update refuses an unsigned list.
+	@[ -f "$(RELEASE_KEY)" ] || { echo "no release key at $(RELEASE_KEY): restore it from your backup (or, for a new key, go run ./tools/releasesign keygen \"$(RELEASE_KEY)\" and put the public key in internal/adapters/selfupdate/releasekey.go)"; exit 1; }
+	go run ./tools/releasesign sign "$(RELEASE_KEY)" dist/SHA256SUMS
 	cat dist/SHA256SUMS
 
 image: ## build the container image

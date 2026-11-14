@@ -122,9 +122,14 @@ func newRequestID() string {
 }
 
 // withSecurityHeaders sets conservative browser security headers.
-func withSecurityHeaders(next http.Handler) http.Handler {
+func withSecurityHeaders(hsts func() bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
+		// HTTPS only (System Settings, M45): on a request that came over HTTPS (directly or
+		// through the ingress); a browser ignores the header on plain HTTP anyway.
+		if hsts != nil && (r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")) && hsts() {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
@@ -332,6 +337,8 @@ type loginLimiter struct {
 	clock   ports.Clock
 	buckets map[string]*limitBucket
 	trusted []netip.Prefix // proxies whose X-Forwarded-For is believed
+	// cloudflare says whether CF-Connecting-IP names the visitor (System Settings, M45).
+	cloudflare func() bool
 }
 
 type limitBucket struct {
@@ -397,7 +404,7 @@ func (l *loginLimiter) evict(now time.Time) {
 // clientAddress is the address of the client: the peer's, or, when the peer is a trusted
 // proxy, the right-most X-Forwarded-For entry that is not itself a trusted proxy (the
 // entries further left are written by the client and can be forged).
-func clientAddress(r *http.Request, trusted []netip.Prefix) string {
+func clientAddress(r *http.Request, trusted []netip.Prefix, cloudflare bool) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		ip = r.RemoteAddr
@@ -417,6 +424,14 @@ func clientAddress(r *http.Request, trusted []netip.Prefix) string {
 	}
 	if !isTrusted(ip) {
 		return ip
+	}
+	// Behind Cloudflare (M45): the ingress passed on Cloudflare's own record of the visitor.
+	// Only believed from a trusted proxy, and only when System Settings say every visitor
+	// comes through Cloudflare (otherwise anyone could set the header).
+	if cloudflare {
+		if a, err := netip.ParseAddr(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); err == nil {
+			return a.Unmap().String()
+		}
 	}
 	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
 	for i := len(hops) - 1; i >= 0; i-- {
@@ -496,7 +511,7 @@ func (l *loginLimiter) middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		key := "ip:" + addressKey(clientAddress(r, l.trusted))
+		key := "ip:" + addressKey(clientAddress(r, l.trusted, l.cloudflare != nil && l.cloudflare()))
 		if !l.reserve(key) {
 			tooManyAttempts(w)
 			return
@@ -562,4 +577,28 @@ func (c cookieConfig) cleared() *http.Cookie {
 		Name: SessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: c.secure,
 		SameSite: http.SameSiteStrictMode,
 	}
+}
+
+// webSettings reads the System Settings applied to every request (HTTPS only, behind
+// Cloudflare) at most every 30 seconds, so a change applies soon without a database read
+// on every request.
+type webSettings struct {
+	read func(context.Context) app.WebSettings
+	mu   sync.Mutex
+	v    app.WebSettings
+	at   time.Time
+}
+
+func (w *webSettings) get() app.WebSettings {
+	if w == nil {
+		return app.WebSettings{}
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if time.Since(w.at) > 30*time.Second {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		w.v, w.at = w.read(ctx), time.Now()
+		cancel()
+	}
+	return w.v
 }

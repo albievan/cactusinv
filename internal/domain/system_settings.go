@@ -30,7 +30,19 @@ type SystemSettings struct {
 	SessionMax      time.Duration
 	BackupHostDir   string
 	InvoicesHostDir string
-	Version         int
+	// ExternalURL is the address customers and users reach this installation on, e.g.
+	// "https://invoice.example.com" (M45): every link in an e-mail (quote answers, "I have
+	// paid", password resets) points there. Empty = the address an action was taken from.
+	ExternalURL string
+	// HSTS tells browsers to reach this installation over HTTPS only, for a year (M45). Only
+	// for an installation served over HTTPS with a certificate browsers trust.
+	HSTS bool
+	// BehindCloudflare says the site is reached through Cloudflare (M45): a visitor's
+	// address — what the sign-in rate limit counts by — is then Cloudflare's
+	// CF-Connecting-IP on requests that came through the trusted proxy (the ingress). Only
+	// for an installation that cannot be reached past Cloudflare.
+	BehindCloudflare bool
+	Version          int
 }
 
 // DefaultSystemSettings are the settings before any are saved: no idle timeout, sessions of
@@ -62,6 +74,12 @@ func (s *SystemSettings) Validate() error {
 	}
 	if s.BackupHostDir != "" && s.BackupHostDir == s.InvoicesHostDir {
 		return invalid("invoicesHostDir", "must differ from the backups folder")
+	}
+	if s.ExternalURL, err = ParsePublicURL(s.ExternalURL); err != nil {
+		return invalid("externalUrl", "an address like https://invoice.example.com (http or https, no query)")
+	}
+	if s.HSTS && s.ExternalURL != "" && !strings.HasPrefix(s.ExternalURL, "https://") {
+		return invalid("hsts", "HTTPS-only needs an external address that starts with https://")
 	}
 	return nil
 }
