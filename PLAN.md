@@ -874,6 +874,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | The Mac's Docker install stays as it is beside the server (owner's decision) | the server at invoice.primesoft.co.za is reached by customers; the Mac copy is the owner's to use |
 | 2026-11-14 | Release binaries are published as GitHub Releases, not committed (replaces the M31 decision) | each release added about 70 MB to every clone; the signed checksum list keeps the same trust, the history up to v1.27.0 stays as it is |
 | 2026-11-14 | Releases are signed with an Ed25519 key kept by the owner; the public key is compiled in | the checksums came from the same place as the binaries, so whoever could change one could change both; a signature only the owner can make closes that |
 | 2026-11-14 | HSTS is a System Setting, off by default | the k3s default certificate is self-signed: HSTS would stop browsers letting users past its warning; it is for installations with a trusted certificate |
@@ -1042,8 +1043,9 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 ## Later
 
-- Credit notes; partial payments; payment reminders for overdue invoices (would reuse the
-  outbox + schedules).
+- **Next (owner's choice, 2026-11-14): partial payments** — part-payments recorded against an
+  invoice; balance, statements and the dashboard show what is still owed; paid when covered.
+- Credit notes; payment reminders for overdue invoices (would reuse the outbox + schedules).
 - Customer portal / "view invoice" link.
 - OpenTelemetry tracing; Helm chart. (Users with access groups: M18.)
 
