@@ -147,7 +147,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   unchanged, per section you choose), then applied all or nothing. It never deletes, new
   schedules arrive paused, the next invoice and quote numbers only move forward, and the e-mail
   server password is never in the file.
-- **System Settings** — Settings → System Settings: the **external address** customers and
+- **System Settings** — Settings → System Settings, in four tabs (**Web settings**, **Sessions**,
+  **Folders**, **Version**; the open one is in the address, e.g. `?tab=folders`): the **external address** customers and
   users reach this installation on (e.g. `https://invoice.primesoft.co.za`) — every link in an
   e-mail (quote Accept/Decline, invoice Mark as paid, password resets) points there, scheduled
   e-mails included; **HTTPS only (HSTS)**, which tells browsers to use only HTTPS here for a

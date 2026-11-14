@@ -664,7 +664,10 @@ changes nothing more.
 ## 17. System Settings (M23)
 
 `settings.system.view` / `.edit` (M24). One `system_settings` row (migration 00021), never backed up or restored (`backupExcluded`):
-the session timeouts and the host folders mapped to the container's folders.
+the session timeouts and the host folders mapped to the container's folders (since M45 also the
+external address, HTTPS only and behind-Cloudflare switches, §13). The page (M47) has tabs Web
+settings, Sessions, Folders and Version (`?tab=`); the first three share one form and one
+`PUT /settings/system`, Version has the update check and install.
 
 - **Sessions**: a sign-in expires after `SessionMax` (default 7 days). Every request checks
   `SystemSettings.SessionAlive`: the stored expiry, the current maximum from the start, and the

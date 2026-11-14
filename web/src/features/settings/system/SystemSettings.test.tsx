@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from '../../../App'
 import { json, mockFetch } from '../../../test/fetch'
@@ -33,13 +33,16 @@ test('sets the session timeouts and maps a folder, applied at the next deploy', 
   window.history.pushState({}, '', '/settings/system')
   render(<App />)
   expect(await screen.findByRole('heading', { name: 'System Settings' })).toBeInTheDocument()
-  expect(screen.getByText('/Users/albie/cactusInv/data/backups')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('tab', { name: 'Sessions' }))
   const idle = screen.getByLabelText('Sign out after this many minutes without activity')
   await userEvent.clear(idle)
   await userEvent.type(idle, '30')
   const max = screen.getByLabelText('End every sign-in after this many hours')
   await userEvent.clear(max)
   await userEvent.type(max, '12')
+  // Changes on one tab stay while another is open; Save stores them all.
+  await userEvent.click(screen.getByRole('tab', { name: 'Folders' }))
+  expect(screen.getByText('/Users/albie/cactusInv/data/backups')).toBeInTheDocument()
   await userEvent.type(screen.getByLabelText('Host folder for backups'), '/Volumes/NAS/backups')
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   expect(await screen.findByText('Saved. The new folders are used after ./deploy.sh --install --dockerdesktop.')).toBeInTheDocument()
@@ -49,7 +52,7 @@ test('sets the session timeouts and maps a folder, applied at the next deploy', 
 
 test('on Kubernetes the folders are volume claims and cannot be mapped here', async () => {
   routes({ ...saved, deployment: { ...deployment, target: 'k3s', backupHostDir: '', invoicesHostDir: '' } })
-  window.history.pushState({}, '', '/settings/system')
+  window.history.pushState({}, '', '/settings/system?tab=folders')
   render(<App />)
   expect(await screen.findByText(/On k3s these folders are volume claims/)).toBeInTheDocument()
   expect(screen.queryByLabelText('Host folder for backups')).not.toBeInTheDocument()
@@ -58,7 +61,7 @@ test('on Kubernetes the folders are volume claims and cannot be mapped here', as
 
 test('checks for updates on request and shows the upgrade command for this deployment', async () => {
   routes(saved, undefined, { current: '1.11.0', latest: '1.13.0', available: true, problem: '' })
-  window.history.pushState({}, '', '/settings/system')
+  window.history.pushState({}, '', '/settings/system?tab=version')
   render(<App />)
   expect(await screen.findByText('cactusInv 1.11.0 (build 30)')).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
@@ -68,7 +71,7 @@ test('checks for updates on request and shows the upgrade command for this deplo
 
 test('says when this is the newest version, and why a check could not be made', async () => {
   routes({ ...saved, deployment: { ...deployment, target: 'k3s' } }, undefined, { current: '1.11.0', latest: '1.11.0', available: false, problem: '' })
-  window.history.pushState({}, '', '/settings/system')
+  window.history.pushState({}, '', '/settings/system?tab=version')
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText('You have the newest version (1.11.0).')).toBeInTheDocument()
@@ -93,7 +96,7 @@ test('a standalone server installs the newest version itself after a second clic
     },
     'GET /api/v1/settings/system/update/progress': json({ state: 'failed', from: '1.15.0', to: '1.16.0', done: 100, total: 100, error: 'installing: SHA-256 does not match', backup: '' }),
   })
-  window.history.pushState({}, '', '/settings/system')
+  window.history.pushState({}, '', '/settings/system?tab=version')
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
   await userEvent.click(await screen.findByRole('button', { name: 'Install and restart' }))
@@ -110,7 +113,7 @@ test('a container explains why it cannot install itself and gives the upgrade co
     current: '1.15.0', latest: '1.16.0', available: true, problem: '', canInstall: false,
     installProblem: 'This cactusInv runs in a container: a new version would only last until the container restarts.',
   })
-  window.history.pushState({}, '', '/settings/system')
+  window.history.pushState({}, '', '/settings/system?tab=version')
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText(/runs in a container/)).toBeInTheDocument()
@@ -135,4 +138,26 @@ test('sets the external address links point at and switches HTTPS only on (M45)'
   await userEvent.click(hsts)
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
   await vi.waitFor(() => expect(body).toMatchObject({ externalUrl: 'https://invoice.primesoft.co.za', hsts: true }))
+})
+
+test('System Settings are in tabs: Web settings, Sessions, Folders, Version; the open one is in the address', async () => {
+  routes(saved, undefined, { current: '1.11.0', latest: '1.11.0', available: false, problem: '' })
+  window.history.pushState({}, '', '/settings/system')
+  render(<App />)
+  const tabs = within(await screen.findByRole('tablist', { name: 'System Settings sections' })).getAllByRole('tab')
+  expect(tabs.map((t) => t.textContent)).toEqual(['Web settings', 'Sessions', 'Folders', 'Version'])
+  expect(screen.getByRole('tab', { name: 'Web settings' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByLabelText('External address')).toBeInTheDocument()
+  expect(screen.queryByLabelText('Sign out after this many minutes without activity')).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Check for updates' })).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('tab', { name: 'Version' }))
+  expect(window.location.search).toBe('?tab=version')
+  expect(await screen.findByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument() // nothing to save here
+  expect(screen.queryByLabelText('External address')).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole('tab', { name: 'Web settings' }))
+  expect(window.location.search).toBe('')
+  expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
 })

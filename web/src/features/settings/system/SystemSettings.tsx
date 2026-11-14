@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Schemas } from '../../../lib/api/client'
 import { useAsync } from '../../../lib/useAsync'
 import { ErrorBanner, Field, Spinner } from '../../../components/ui'
@@ -28,8 +29,24 @@ export function upgradeCommand(target: string): string {
   return target ? `./deploy.sh --upgrade --${target}` : './deploy.sh --upgrade --dockerdesktop|--k3s|--k8s'
 }
 
+/** The System Settings tabs; the open one is in the address (?tab=…). */
+const tabs = [
+  { key: 'web', label: 'Web settings' },
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'folders', label: 'Folders' },
+  { key: 'version', label: 'Version' },
+] as const
+type Tab = (typeof tabs)[number]['key']
+
 function SystemForm() {
   const can = useCan()
+  const [params, setParams] = useSearchParams()
+  const tab: Tab = tabs.find((t) => t.key === params.get('tab'))?.key ?? 'web'
+  const show = (t: Tab) => {
+    setSaved('')
+    setErr(null)
+    setParams(t === 'web' ? {} : { tab: t }, { replace: true })
+  }
   const loaded = useAsync(() => unwrap(api.GET('/settings/system')), [])
   const [s, setS] = useState<System | null>(null)
   const [err, setErr] = useState<Error | null>(null)
@@ -69,15 +86,27 @@ function SystemForm() {
     { label: 'Invoice export (PDF archive)', container: d.invoicesDir, now: d.invoicesHostDir, key: 'invoicesHostDir' },
   ]
 
+  const tabClass = (on: boolean) => `nav-link rounded-pill d-inline-flex align-items-center px-3 small fw-semibold ${on ? 'active' : 'bg-white border'}`
   return (
     <div className="vstack gap-3">
+    <h2 id="system-heading" className="fs-5 fw-bold mb-0">
+      System Settings
+    </h2>
+    <div role="tablist" aria-label="System Settings sections" className="nav nav-pills gap-2">
+      {tabs.map((t) => (
+        <button key={t.key} type="button" role="tab" id={`system-tab-${t.key}`} aria-selected={tab === t.key} aria-controls="system-panel"
+          className={tabClass(tab === t.key)} style={{ minHeight: 44 }} onClick={() => show(t.key)}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+    <div id="system-panel" role="tabpanel" aria-labelledby={`system-tab-${tab}`} className="vstack gap-3">
+    {tab === 'version' ? <VersionCard target={d.target} /> : (
     <form onSubmit={submit} className="vstack gap-3" aria-labelledby="system-heading">
       <fieldset disabled={!edit} className="vstack gap-3">
-      <h2 id="system-heading" className="fs-5 fw-bold mb-0">
-        System Settings
-      </h2>
       <ErrorBanner error={err} />
 
+      {tab === 'web' && (
       <div className="card card-body vstack gap-3">
         <h3 className="fs-6 fw-semibold mb-0">Web address</h3>
         <Field
@@ -110,7 +139,9 @@ function SystemForm() {
           </div>
         </div>
       </div>
+      )}
 
+      {tab === 'sessions' && (
       <div className="card card-body vstack gap-3">
         <h3 className="fs-6 fw-semibold mb-0">Sign-in sessions</h3>
         <p className="small text-body-secondary mb-0">Changes apply at once to everyone who is signed in.</p>
@@ -127,7 +158,9 @@ function SystemForm() {
           )}
         </Field>
       </div>
+      )}
 
+      {tab === 'folders' && (
       <div className="card card-body vstack gap-3">
         <h3 className="fs-6 fw-semibold mb-0">Folders</h3>
         {docker ? (
@@ -171,6 +204,7 @@ function SystemForm() {
           </p>
         )}
       </div>
+      )}
 
       </fieldset>
       {edit && (
@@ -182,7 +216,8 @@ function SystemForm() {
         </div>
       )}
     </form>
-    <VersionCard target={d.target} />
+    )}
+    </div>
     </div>
   )
 }

@@ -850,6 +850,15 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 46.2 | App test coverage 83.7 % → 87.2 %: `fakes.Store.FailAt(n)` fails the n-th repository call; `TestEveryStoreFailureIsReported` walks 29 use cases (quotes, ad-hoc customers, invoices and "I have paid", upcoming invoices, the dashboard, Your account, password resets, users) through a database failure at every step they take — each one is reported, none lost | done | `go test ./internal/app` coverage 87.2 % |
 | 46.3 | VERSION 1.26.1, gate, signed binaries, commit | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 47.6 s; "No vulnerabilities found."; contracts in sync; web 131 tests, build OK; `make dist` 1.26.1 (build 50), signature verified |
 
+### M47 — System Settings in tabs (Albie, 2026-11-14) — v1.27.0
+
+> "on the system settings page i want you to divide the page in tabs for easier management e.g Web settings, Sessions, Folders, Version"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 47.1 | System Settings split into tabs **Web settings** (external address, HTTPS only, behind Cloudflare), **Sessions**, **Folders**, **Version**; the open tab is in the address (`?tab=…`, Web settings by default); one form behind the first three, so Save stores every tab's changes (unsaved changes survive a tab switch); Version has no Save | done | Vitest `SystemSettings.test.tsx` (tabs, address, cross-tab save, each test on its tab); Chrome on an isolated preview with a mock API |
+| 47.2 | Docs (README, ARCHITECTURE §17, PLAN), VERSION 1.27.0, gate, signed binaries, commit, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 51.4 s; "No vulnerabilities found."; contracts in sync; web 132 tests, build OK; `make dist` 1.27.0 (build 51), signature verified |
+
 ## Decisions
 
 | Date | Decision | Why |
