@@ -999,7 +999,8 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 ## Open questions
 
-- Left as they are after the M36 review, for the owner to decide: should an expired quote be refused for acceptance and conversion? Should a restore cancel e-mails that were pending in the backup? Should releases be signed (today SHA256SUMS from the same https origin)? HSTS (needs a real certificate first)? (Decided in M40: a generated first password; `/metrics` behind a token.)
-- (M40) The committed `.env` names `/data/k3s/...` folders for the Docker targets; the owner's Mac install keeps its data in `./data` and `./secrets`, so a Docker deploy there needs `DATA_DIR`, `MARIADB_DATA_DIR`, `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` in the environment (the new guard stops it otherwise). Should `.env` go back to `./data`, or the Mac keep passing them?
+- For the owner to decide: should a restore cancel e-mails that were pending in the backup? Should releases be signed (today SHA256SUMS from the same https origin)? HSTS (needs a real certificate first)? (Decided: a generated first password and `/metrics` behind a token, M40; an expired quote cannot be accepted or converted but is renewed, M41; `.env` stays as it is, M41.)
+- (M40/M41) The committed `.env` names `/data/k3s/...` folders for the Docker targets; the owner's Mac install keeps its data in `./data` and `./secrets`, so a Docker deploy there needs `DATA_DIR`, `MARIADB_DATA_DIR`, `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` in the environment (the M40 guard stops it otherwise). The owner chose to leave `.env` as it is.
+- (M41–M43) Customer links (quote answers, "I have paid", password resets) need an address customers can reach and a certificate their browsers trust: set Settings → Quotes → Address customers reach this app on, and a real certificate (`K8S_TLS_CERT`/`K8S_TLS_KEY`).
 - (M38) A saved mail user name can only be replaced, not emptied, from the form (as with the password). A relay that needs no sign-in would need a way to clear both — add a "Remove" if someone needs it.
 - (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)
