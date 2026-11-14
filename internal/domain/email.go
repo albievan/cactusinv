@@ -43,9 +43,10 @@ type EmailKind string
 
 // E-mail kinds.
 const (
-	EmailKindInvoice   EmailKind = "invoice"   // one invoice PDF
-	EmailKindStatement EmailKind = "statement" // a customer's statement of account PDF
-	EmailKindQuote     EmailKind = "quote"     // one quote PDF
+	EmailKindInvoice       EmailKind = "invoice"        // one invoice PDF
+	EmailKindStatement     EmailKind = "statement"      // a customer's statement of account PDF
+	EmailKindQuote         EmailKind = "quote"          // one quote PDF
+	EmailKindPasswordReset EmailKind = "password_reset" // a forgotten-password link (M43); its body is hidden and cleared once sent
 )
 
 // EmailMessage is an invoice, statement or quote e-mail in the transactional outbox.

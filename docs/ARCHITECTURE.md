@@ -538,6 +538,28 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   `password-change-required` 403.
 - **CLI**: `cactusinv admin create|set-password <login>` (password on stdin) — shell access is
   the authority, so those passwords are not flagged; `set-password` ends the user's sessions.
+- **Your account (M43)**: `users.first_name`, `last_name`, `email_address` (migration 00027);
+  `GetProfile`/`UpdateProfile` (`/auth/profile`, the signed-in user only; `domain.Profile`).
+  `domain.User.ResetAddress` is where a reset link goes: `email_address`, else the login when
+  it is an address.
+- **Forgot password (M43)**: `RequestPasswordReset` (`POST /auth/password-reset`, no session,
+  rate-limited — every request counts) answers the same in every case; for an existing,
+  active user with a password and an address, and no link in the last 2 minutes
+  (`PasswordResetInterval`), it stores a reset (`password_resets`: SHA-256 of a 32-byte token,
+  expires after `PasswordResetTTL` = 1 h; not backed up) and queues an outbox e-mail of kind
+  `password_reset` with `<address>/reset-password/<token>` (Settings → Quotes' public address,
+  else the request's `linkBase`). The API never shows that e-mail's text, and
+  `deliverPasswordReset` replaces it with a placeholder once sent. `ResetPassword`
+  (`POST /auth/password-reset/{token}`) checks the password policy, uses up every link of the
+  user, sets the password (not must-change) and ends every session. `GET` on the same path
+  says whether a link still works. Housekeeping deletes resets a day after they expire.
+- **Edit and delete (M44)**: `UpdateUser` (`PUT /users/{id}`) changes the login (a new one must
+  pass `ValidateNewLogin` and be unique in any case) and the profile; `DeleteUser`
+  (`POST /users/{id}/delete`) refuses yourself and the last active user (`CheckCanDisable` on
+  the locked active users), removes the group memberships, then the row (sessions and resets
+  cascade). Both need the actor's password and are audited (`user.updated`, `user.deleted`).
+  The audit log stores the actor's login with each entry at the time, so a renamed or deleted
+  user's past entries keep the name they had.
 
 ## 14. Access groups (ADR-012)
 

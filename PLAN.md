@@ -803,10 +803,36 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 42.5 | Sheets (every pop-up form): the close button at the right edge of the header (it sat after the title) | done | Vitest `Sheet.test.tsx`; Chrome |
 | 42.6 | Docs (README, ARCHITECTURE §3.10, PLAN), VERSION 1.24.0, binaries, commit | done | 2026-11-13: `make check` exit 0 — 0 lint issues; domain 96.5 %, app 84.1 %; integration ok 40.6 s; "No vulnerabilities found."; contracts in sync; web 126 tests, build OK; `make dist` 1.24.0 (build 46) |
 
+### M43 — Your account, a clearer password change, forgot password (Albie, 2026-11-14) — v1.25.0
+
+> "on the settings | Your Account page … add a compressed preview button for the passwords … and add a confirm password edit box where the new and confirm password must be the same, also need to be clear on what the password policy is. I also want you to add user name, First name, Last name and email address to the my Account settings. then on the sign in page … add a forgot/reset password button, this button will email a url link to the user to reset their password only if there's a password associated with the username."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 43.1 | Migration 00027: `users.first_name`, `last_name`, `email_address` (appended, so older backups compare); `password_resets` (not backed up); outbox `kind` widened and `password_reset` allowed | done | integration (head schema 27; backup round trip from schema 12) |
+| 43.2 | Your account: **My details** (user name shown; first and last name and e-mail address saved), `GET/PUT /auth/profile` | done | `TestProfile`, `TestProfileOverHTTP`, Vitest `Account.test.tsx` |
+| 43.3 | Password change (Your account, the forced first change, the reset page): an eye button on every box (`components/password.tsx`), **Confirm new password** that must match, the **password policy** ticked off as typed (12–200 characters, matches, differs from the current) | done | Vitest (`Account.test.tsx`, `Users.test.tsx`) |
+| 43.4 | Forgot password: **Forgot password?** on the sign-in page e-mails a single-use, one-hour link only to an existing active user with a password and an e-mail address; the same answer for any user name; rate-limited, one link per user per 2 minutes; the outbox never shows the link and clears it once sent; the reset page sets the password and signs out everywhere | done | `TestForgotPassword`, `TestPasswordResetExpiresAndNeedsAnAddress`, `TestForgotPasswordOverHTTP`, `TestForgotPasswordIsRateLimited`, integration `TestProfileAndPasswordResetPersistence`, Vitest |
+
+### M44 — Edit and delete users; user names in the audit log (Albie, 2026-11-14) — v1.25.0
+
+> "on the users & group page i want to be able to edit the user, so you need to add an edit compressed button. i also need to be able to delete a user from the system. make sure that the audit log reflect the username in the logs as this will help identify who did what on the system."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 44.1 | **Edit** (pencil, compact): user name, first and last name, e-mail address; a new user name is an unused e-mail address; your password | done | `TestUpdateUser`, `TestEditAndDeleteUserOverHTTP`, integration, Vitest |
+| 44.2 | **Delete** (bin, compact): never yourself or the last active user; memberships removed, sessions and reset links go; your password | done | `TestDeleteUser`, integration `TestEditAndDeleteUserPersistence`, Vitest |
+| 44.3 | Audit log: every entry carries the actor's user name as it was then (already so); `user.updated` and `user.deleted` name the user (and full name); a deleted or renamed user's earlier entries keep their name; the Users table shows names under user names and calls the column *User name* | done | `TestDeleteUser` (the deleted user's own entry still names them) |
+| 44.4 | Docs (README, ARCHITECTURE §13), gate, VERSION 1.25.0, binaries, commit, upgrade 10.101.18.101 | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 83.7 %; integration ok 43.6 s; "No vulnerabilities found."; contracts in sync; web 130 tests, build OK; `make dist` 1.25.0 (build 47) |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | Users may now be deleted (replaces "users are disabled, never deleted", M14) | requested; the audit log stores the actor's user name with each entry, so who did what stays readable after a delete |
+| 2026-11-14 | A password reset e-mail goes through the outbox, but its text is never shown and is cleared once sent | e-mail goes only through the outbox (CLAUDE.md); the link is a key to the account and must not be readable by whoever may see the outbox |
+| 2026-11-14 | A reset link goes to the user's e-mail address, else their login when it is an address; the default `admin` needs one set first | logins before v1.6.0 such as `admin` are no address; nothing may be sent to a guessed one |
+| 2026-11-14 | Forgot password answers the same whatever the user name | it must not tell anyone which user names exist or have an address |
 | 2026-11-13 | "Mark as paid" by the customer flags the invoice and does not mark it paid | a payment is the business's to confirm; the flag and note tell them to check |
 | 2026-11-13 | The invoice links use Settings → Quotes' public address (one address customers reach the app on), else the sending browser's | scheduled invoice e-mails have no browser; one setting for both kinds of link |
 | 2026-11-13 | A quote e-mail's links open a confirmation page; nothing changes on a GET | mail scanners and link previews open links on their own and would otherwise accept or decline quotes |

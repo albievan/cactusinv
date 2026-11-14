@@ -12,7 +12,10 @@ import (
 // ---- users (ADR-011) ----
 
 func toAPIUser(u domain.User) User {
-	out := User{Id: u.ID, Email: u.Email, CreatedAt: u.CreatedAt, Active: u.Active(), MustChangePassword: u.MustChangePassword, GroupIds: u.GroupIDs}
+	out := User{
+		Id: u.ID, Email: u.Email, CreatedAt: u.CreatedAt, Active: u.Active(), MustChangePassword: u.MustChangePassword, GroupIds: u.GroupIDs,
+		FirstName: u.FirstName, LastName: u.LastName, EmailAddress: u.EmailAddress,
+	}
 	if out.GroupIds == nil {
 		out.GroupIds = []string{}
 	}
@@ -61,6 +64,24 @@ func (h *handlers) DisableUser(ctx context.Context, req DisableUserRequestObject
 		return nil, err
 	}
 	return DisableUser200JSONResponse(toAPIUser(u)), nil
+}
+
+func (h *handlers) UpdateUser(ctx context.Context, req UpdateUserRequestObject) (UpdateUserResponseObject, error) {
+	b := req.Body
+	u, err := h.svc.UpdateUser(ctx, req.Id, app.UserEdit{
+		Login: b.UserName, Profile: domain.Profile{FirstName: b.FirstName, LastName: b.LastName, EmailAddress: b.EmailAddress},
+	}, b.CurrentPassword)
+	if err != nil {
+		return nil, err
+	}
+	return UpdateUser200JSONResponse(toAPIUser(u)), nil
+}
+
+func (h *handlers) DeleteUser(ctx context.Context, req DeleteUserRequestObject) (DeleteUserResponseObject, error) {
+	if err := h.svc.DeleteUser(ctx, req.Id, req.Body.CurrentPassword); err != nil {
+		return nil, err
+	}
+	return DeleteUser204Response{}, nil
 }
 
 func (h *handlers) EnableUser(ctx context.Context, req EnableUserRequestObject) (EnableUserResponseObject, error) {
@@ -163,11 +184,10 @@ func sessionGate(f StrictHandlerFunc, operationID string) StrictHandlerFunc {
 func reauthPath(r *http.Request) bool {
 	p := r.URL.Path
 	if r.Method == http.MethodPut {
-		// Changing a group, or a user's groups (ADR-012). Every PUT under /groups/ counts:
-		// the decoded path of an id with an escaped slash (x%2Fy) has more segments than the
-		// route, which must not slip past the limit.
-		return strings.HasPrefix(p, "/api/v1/groups/") ||
-			(strings.HasPrefix(p, "/api/v1/users/") && strings.HasSuffix(p, "/groups"))
+		// Changing a group, a user's groups (ADR-012) or a user (M44). Every PUT under
+		// /groups/ and /users/ counts: the decoded path of an id with an escaped slash (x%2Fy)
+		// has more segments than the route, which must not slip past the limit.
+		return strings.HasPrefix(p, "/api/v1/groups/") || strings.HasPrefix(p, "/api/v1/users/")
 	}
 	if r.Method != http.MethodPost {
 		return false
@@ -175,11 +195,13 @@ func reauthPath(r *http.Request) bool {
 	if p == "/api/v1/groups" || (strings.HasPrefix(p, "/api/v1/groups/") && strings.HasSuffix(p, "/delete")) {
 		return true
 	}
-	if p == "/api/v1/auth/login" || p == "/api/v1/auth/password" || p == "/api/v1/users" {
+	if p == "/api/v1/auth/login" || p == "/api/v1/auth/password" || p == "/api/v1/users" ||
+		p == "/api/v1/auth/password-reset" || strings.HasPrefix(p, "/api/v1/auth/password-reset/") {
 		return true
 	}
 	if rest, ok := strings.CutPrefix(p, "/api/v1/users/"); ok {
-		return strings.HasSuffix(rest, "/reset-password") || strings.HasSuffix(rest, "/disable") || strings.HasSuffix(rest, "/enable")
+		return strings.HasSuffix(rest, "/reset-password") || strings.HasSuffix(rest, "/disable") || strings.HasSuffix(rest, "/enable") ||
+			strings.HasSuffix(rest, "/delete")
 	}
 	return strings.HasPrefix(p, "/api/v1/restores/") && strings.HasSuffix(p, "/apply")
 }

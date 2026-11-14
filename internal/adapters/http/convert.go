@@ -7,6 +7,7 @@ import (
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/albievan/cactusinv/internal/app"
 	"github.com/albievan/cactusinv/internal/domain"
 )
 
@@ -268,6 +269,9 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 }
 
 func toAPIEmail(m domain.EmailMessage) EmailMessage {
+	if m.Kind == domain.EmailKindPasswordReset {
+		m.Body = app.RedactedPasswordResetBody() // the link is a key to the account (M43)
+	}
 	to, cc := m.To, m.CC
 	if to == nil {
 		to = []string{}

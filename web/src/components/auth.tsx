@@ -3,6 +3,7 @@ import { api, ApiError, setUnauthorizedHandler, unwrap } from '../lib/api/client
 import { useVersion } from '../lib/version'
 import { Wordmark } from './Logo'
 import { Spinner } from './ui'
+import { PasswordInput, PasswordPolicy, passwordProblem } from './password'
 
 interface Auth {
   user: { id: string; email: string; automationPaused?: boolean; mustChangePassword?: boolean; administrator?: boolean; permissions?: string[] } | null
@@ -141,31 +142,6 @@ function Notice({ error, children }: { error: boolean; children: ReactNode }) {
   )
 }
 
-/**
- * PasswordInput is a password box with an eye button at its end that shows or hides what
- * is typed (show is shared, so a second box on the form follows it).
- */
-function PasswordInput({ id, autoComplete, placeholder, minLength, value, onChange, show, onShow }: {
-  id: string
-  autoComplete: string
-  placeholder?: string
-  minLength?: number
-  value: string
-  onChange: (v: string) => void
-  show: boolean
-  onShow: (v: boolean) => void
-}) {
-  return (
-    <div className="input-group">
-      <input id={id} className="form-control" type={show ? 'text' : 'password'} autoComplete={autoComplete} placeholder={placeholder} minLength={minLength} maxLength={autoComplete === 'new-password' ? 200 : undefined}
-        value={value} onChange={(e) => onChange(e.target.value)} required />
-      <button type="button" className="btn password-toggle" aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show} title={show ? 'Hide password' : 'Show password'} aria-controls={id} onClick={() => onShow(!show)}>
-        <i className={`bi ${show ? 'bi-eye-slash' : 'bi-eye'}`} style={{ fontSize: '18px' }} aria-hidden="true" />
-      </button>
-    </div>
-  )
-}
-
 function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
   const version = useVersion()
   const [user, setUser] = useState('')
@@ -173,6 +149,7 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
   const [show, setShow] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [forgot, setForgot] = useState(false)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setBusy(true)
@@ -234,6 +211,7 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
         <div className="d-none d-lg-block">
           <Wordmark />
         </div>
+        {forgot ? <ForgotPassword initial={user} onBack={() => setForgot(false)} /> : (
         <form onSubmit={submit} className="vstack gap-3 w-100 mt-2 mt-lg-5">
           <h2 className="h4 fw-bold mb-0">Sign in</h2>
           {(notice || error) && <Notice error={!!error}>{error || notice}</Notice>}
@@ -248,11 +226,17 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
               Password
             </label>
             <PasswordInput id="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={setPassword} show={show} onShow={setShow} />
+            <div className="text-end mt-1">
+              <button type="button" className="btn btn-link btn-sm p-0 fw-semibold" style={{ minHeight: 0 }} onClick={() => { setError(''); setForgot(true) }}>
+                Forgot password?
+              </button>
+            </div>
           </div>
           <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
+        )}
         <div className="mt-auto d-flex align-items-center justify-content-between gap-3 border-top pt-3 fs-8 text-body-secondary">
           <span>{version || ' '}</span>
           <a href={REPO_URL} target="_blank" rel="noreferrer" className="d-inline-flex align-items-center gap-1 fw-medium">
@@ -261,6 +245,56 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
         </div>
       </section>
     </main>
+  )
+}
+
+/**
+ * ForgotPassword asks for a user name and has a reset link e-mailed (M43). The answer is the
+ * same whether or not the user exists, has a password or an e-mail address.
+ */
+function ForgotPassword({ initial, onBack }: { initial: string; onBack: () => void }) {
+  const [name, setName] = useState(initial)
+  const [sentTo, setSentTo] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await unwrap(api.POST('/auth/password-reset', { body: { userName: name.trim(), linkBase: window.location.origin }, parseAs: 'text' })) // 202, no body
+      setSentTo(name.trim())
+    } catch (x) {
+      setError(x instanceof ApiError && x.problem.status === 429 ? 'Too many attempts. Wait a few minutes, then try again.' : x instanceof ApiError ? x.message : 'Could not reach the server. Check the connection and try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form onSubmit={submit} className="vstack gap-3 w-100 mt-2 mt-lg-5" aria-labelledby="forgot-heading">
+      <h2 id="forgot-heading" className="h4 fw-bold mb-0">Reset your password</h2>
+      {sentTo ? (
+        <Notice error={false}>
+          If “{sentTo}” has a password and an e-mail address, a link to choose a new password is on its way. It works once, for 60 minutes.
+          Nothing arrived? Check the spam folder, or ask an administrator: the account may have no e-mail address.
+        </Notice>
+      ) : (
+        <p className="small text-body mb-0">
+          Enter your user name. If it has a password and an e-mail address, we e-mail you a link to choose a new one.
+        </p>
+      )}
+      {error && <Notice error>{error}</Notice>}
+      {!sentTo && (
+        <>
+          <div>
+            <label className="form-label" htmlFor="forgot-login">User name</label>
+            <input id="forgot-login" className="form-control" autoComplete="username" autoCapitalize="none" placeholder="Enter your user name" value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>{busy ? 'Sending…' : 'E-mail me a reset link'}</button>
+        </>
+      )}
+      <button type="button" className="btn btn-outline-primary w-100 py-3 fs-6" onClick={onBack}>Back to sign in</button>
+    </form>
   )
 }
 
@@ -280,9 +314,8 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
-    if ([...next].length < 12) return setError('The new password needs at least 12 characters.')
-    if (next !== again) return setError('The two new passwords are not the same.')
-    if (next === current) return setError('Choose a password different from the one you signed in with.')
+    const problem = passwordProblem(next, again, current)
+    if (problem) return setError(problem)
     setBusy(true)
     try {
       await unwrap(api.POST('/auth/password', { body: { currentPassword: current, newPassword: next } }))
@@ -312,22 +345,22 @@ function ForcedPasswordChange({ login, onChanged, onSignOut }: { login: string; 
             <label className="form-label" htmlFor="forced-current">
               Current password
             </label>
-            <input id="forced-current" className="form-control" type={show ? 'text' : 'password'} autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
+            <PasswordInput id="forced-current" autoComplete="current-password" value={current} onChange={setCurrent} />
             <div className="form-text">The password you just signed in with.</div>
           </div>
           <div>
             <label className="form-label" htmlFor="forced-new">
               New password
             </label>
-            <PasswordInput id="forced-new" autoComplete="new-password" minLength={12} value={next} onChange={setNext} show={show} onShow={setShow} />
-            <div className="form-text">At least 12 characters. A few unrelated words work well.</div>
+            <PasswordInput id="forced-new" autoComplete="new-password" value={next} onChange={setNext} show={show} onShow={setShow} describedBy="forced-policy" />
           </div>
           <div>
             <label className="form-label" htmlFor="forced-again">
-              New password again
+              Confirm new password
             </label>
-            <input id="forced-again" className="form-control" type={show ? 'text' : 'password'} autoComplete="new-password" maxLength={200} value={again} onChange={(e) => setAgain(e.target.value)} required />
+            <PasswordInput id="forced-again" autoComplete="new-password" value={again} onChange={setAgain} show={show} onShow={setShow} />
           </div>
+          <PasswordPolicy id="forced-policy" next={next} confirm={again} current={current} />
           <button className="btn btn-primary w-100 py-3 fs-6" disabled={busy}>
             {busy ? 'Saving…' : 'Save and continue'}
           </button>

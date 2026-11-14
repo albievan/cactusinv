@@ -170,11 +170,11 @@ test('a user who must change the password sees only the change screen, then the 
   expect(screen.getByText('admin')).toBeInTheDocument()
   await userEvent.type(screen.getByLabelText('Current password'), 'admin')
   await userEvent.type(screen.getByLabelText('New password'), 'a long new password')
-  await userEvent.type(screen.getByLabelText('New password again'), 'a long new passwort')
+  await userEvent.type(screen.getByLabelText('Confirm new password'), 'a long new passwort')
   await userEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
   expect(screen.getByRole('alert')).toHaveTextContent('not the same')
-  await userEvent.clear(screen.getByLabelText('New password again'))
-  await userEvent.type(screen.getByLabelText('New password again'), 'a long new password')
+  await userEvent.clear(screen.getByLabelText('Confirm new password'))
+  await userEvent.type(screen.getByLabelText('Confirm new password'), 'a long new password')
   await userEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
   expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument()
   expect(changed).toEqual({ currentPassword: 'admin', newPassword: 'a long new password' })
@@ -195,7 +195,7 @@ test('the change screen reports a wrong current password and can sign out', asyn
   await screen.findByRole('heading', { name: 'Choose a new password' })
   await userEvent.type(screen.getByLabelText('Current password'), 'nimda')
   await userEvent.type(screen.getByLabelText('New password'), 'a long new password')
-  await userEvent.type(screen.getByLabelText('New password again'), 'a long new password')
+  await userEvent.type(screen.getByLabelText('Confirm new password'), 'a long new password')
   await userEvent.click(screen.getByRole('button', { name: 'Save and continue' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('The current password is not correct.')
   await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
@@ -298,4 +298,51 @@ test("changes a user's groups", async () => {
   await userEvent.click(within(sheet).getByRole('button', { name: 'Save access' }))
   expect(await screen.findByText('The access of bob@example.com was saved.')).toBeInTheDocument()
   expect(body).toEqual({ groupIds: ['g1'], currentPassword: 'correct horse battery' })
+})
+
+test('a user is edited with the Edit button and deleted with Delete, each after your password (M44)', async () => {
+  const edits: unknown[] = []
+  const deletes: unknown[] = []
+  let users: unknown[] = [albie, { ...bob, firstName: 'Bob', lastName: 'Smith' }, carol]
+  routes([], {
+    'GET /api/v1/users': () => json({ items: users })(),
+    'PUT /api/v1/users/u2': async (req) => {
+      const b = await req.json()
+      edits.push(b)
+      return json({ ...bob, email: b.userName, firstName: b.firstName, lastName: b.lastName, emailAddress: b.emailAddress })()
+    },
+    'POST /api/v1/users/u2/delete': async (req) => {
+      deletes.push(await req.json())
+      users = [albie, carol]
+      return new Response(null, { status: 204 })
+    },
+  })
+  const table = await openUsers()
+  const bobRow = within(table).getByText('bob@example.com').closest('tr')!
+  expect(within(bobRow).getByText('Bob Smith')).toBeInTheDocument()
+  // You may edit yourself but not delete yourself.
+  const meRow = within(table).getByText('albie@example.com').closest('tr')!
+  expect(within(meRow).getByRole('button', { name: 'Edit albie@example.com' })).toBeInTheDocument()
+  expect(within(meRow).queryByRole('button', { name: /Delete/ })).not.toBeInTheDocument()
+
+  await userEvent.click(within(bobRow).getByRole('button', { name: 'Edit bob@example.com' }))
+  const sheet = screen.getByRole('dialog', { name: 'Edit bob@example.com' })
+  expect(within(sheet).getByLabelText('User name')).toHaveValue('bob@example.com')
+  expect(within(sheet).getByLabelText('First name')).toHaveValue('Bob')
+  await userEvent.clear(within(sheet).getByLabelText('User name'))
+  await userEvent.type(within(sheet).getByLabelText('User name'), 'robert@example.com')
+  await userEvent.type(within(sheet).getByLabelText('E-mail address'), 'bob@home.example')
+  await userEvent.type(within(sheet).getByLabelText('Your password'), 'correct horse battery')
+  await userEvent.click(within(sheet).getByRole('button', { name: 'Save user' }))
+  expect(await screen.findByText('robert@example.com was saved.')).toBeInTheDocument()
+  expect(edits).toEqual([{ userName: 'robert@example.com', firstName: 'Bob', lastName: 'Smith', emailAddress: 'bob@home.example', currentPassword: 'correct horse battery' }])
+
+  await userEvent.click(within(screen.getByRole('table', { name: 'Users' })).getByRole('button', { name: 'Delete bob@example.com' }))
+  const del = screen.getByRole('dialog', { name: 'Delete bob@example.com?' })
+  expect(within(del).getByText(/the\s+audit log keeps their user name on it/)).toBeInTheDocument()
+  await userEvent.type(within(del).getByLabelText('Your password'), 'correct horse battery')
+  await userEvent.click(within(del).getByRole('button', { name: 'Delete user' }))
+  expect(await screen.findByText(/bob@example.com was deleted\. The audit log keeps their user name/)).toBeInTheDocument()
+  expect(deletes).toEqual([{ currentPassword: 'correct horse battery' }])
+  expect(within(screen.getByRole('table', { name: 'Users' })).queryByText('bob@example.com')).not.toBeInTheDocument()
 })

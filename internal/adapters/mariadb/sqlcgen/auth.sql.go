@@ -85,6 +85,15 @@ func (q *Queries) DeleteIdempotencyKeysBefore(ctx context.Context, createdAt tim
 	return err
 }
 
+const deleteOldPasswordResets = `-- name: DeleteOldPasswordResets :exec
+DELETE FROM password_resets WHERE expires_at < ?
+`
+
+func (q *Queries) DeleteOldPasswordResets(ctx context.Context, expiresAt time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteOldPasswordResets, expiresAt)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE token_hash = ?
 `
@@ -92,6 +101,18 @@ DELETE FROM sessions WHERE token_hash = ?
 func (q *Queries) DeleteSession(ctx context.Context, tokenHash string) error {
 	_, err := q.db.ExecContext(ctx, deleteSession, tokenHash)
 	return err
+}
+
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteUserSessions = `-- name: DeleteUserSessions :exec
@@ -125,6 +146,23 @@ func (q *Queries) GetIdempotencyKey(ctx context.Context, idemKey string) (Idempo
 	return i, err
 }
 
+const getPasswordReset = `-- name: GetPasswordReset :one
+SELECT token_hash, user_id, created_at, expires_at, used_at FROM password_resets WHERE token_hash = ?
+`
+
+func (q *Queries) GetPasswordReset(ctx context.Context, tokenHash string) (PasswordReset, error) {
+	row := q.db.QueryRowContext(ctx, getPasswordReset, tokenHash)
+	var i PasswordReset
+	err := row.Scan(
+		&i.TokenHash,
+		&i.UserID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
 const getSession = `-- name: GetSession :one
 SELECT token_hash, user_id, expires_at, created_at, last_seen_at FROM sessions WHERE token_hash = ?
 `
@@ -143,7 +181,7 @@ func (q *Queries) GetSession(ctx context.Context, tokenHash string) (Session, er
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE id = ?
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at, first_name, last_name, email_address FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
@@ -157,12 +195,15 @@ func (q *Queries) GetUser(ctx context.Context, id string) (User, error) {
 		&i.DisabledAt,
 		&i.MustChangePassword,
 		&i.LastLoginAt,
+		&i.FirstName,
+		&i.LastName,
+		&i.EmailAddress,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE email = ?
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at, first_name, last_name, email_address FROM users WHERE email = ?
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -176,6 +217,9 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.DisabledAt,
 		&i.MustChangePassword,
 		&i.LastLoginAt,
+		&i.FirstName,
+		&i.LastName,
+		&i.EmailAddress,
 	)
 	return i, err
 }
@@ -199,6 +243,27 @@ func (q *Queries) InsertIdempotencyKey(ctx context.Context, arg InsertIdempotenc
 		arg.Status,
 		arg.Body,
 		arg.CreatedAt,
+	)
+	return err
+}
+
+const insertPasswordReset = `-- name: InsertPasswordReset :exec
+INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)
+`
+
+type InsertPasswordResetParams struct {
+	TokenHash string
+	UserID    string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+func (q *Queries) InsertPasswordReset(ctx context.Context, arg InsertPasswordResetParams) error {
+	_, err := q.db.ExecContext(ctx, insertPasswordReset,
+		arg.TokenHash,
+		arg.UserID,
+		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	return err
 }
@@ -247,8 +312,19 @@ func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) error {
 	return err
 }
 
+const latestPasswordReset = `-- name: LatestPasswordReset :one
+SELECT created_at FROM password_resets WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
+`
+
+func (q *Queries) LatestPasswordReset(ctx context.Context, userID string) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, latestPasswordReset, userID)
+	var created_at time.Time
+	err := row.Scan(&created_at)
+	return created_at, err
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users ORDER BY email, id
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at, first_name, last_name, email_address FROM users ORDER BY email, id
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -268,6 +344,9 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.DisabledAt,
 			&i.MustChangePassword,
 			&i.LastLoginAt,
+			&i.FirstName,
+			&i.LastName,
+			&i.EmailAddress,
 		); err != nil {
 			return nil, err
 		}
@@ -311,8 +390,25 @@ func (q *Queries) LockActiveUsers(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const lockPasswordReset = `-- name: LockPasswordReset :one
+SELECT token_hash, user_id, created_at, expires_at, used_at FROM password_resets WHERE token_hash = ? FOR UPDATE
+`
+
+func (q *Queries) LockPasswordReset(ctx context.Context, tokenHash string) (PasswordReset, error) {
+	row := q.db.QueryRowContext(ctx, lockPasswordReset, tokenHash)
+	var i PasswordReset
+	err := row.Scan(
+		&i.TokenHash,
+		&i.UserID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
 const lockUser = `-- name: LockUser :one
-SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at FROM users WHERE id = ? FOR UPDATE
+SELECT id, email, password_hash, created_at, disabled_at, must_change_password, last_login_at, first_name, last_name, email_address FROM users WHERE id = ? FOR UPDATE
 `
 
 func (q *Queries) LockUser(ctx context.Context, id string) (User, error) {
@@ -326,6 +422,9 @@ func (q *Queries) LockUser(ctx context.Context, id string) (User, error) {
 		&i.DisabledAt,
 		&i.MustChangePassword,
 		&i.LastLoginAt,
+		&i.FirstName,
+		&i.LastName,
+		&i.EmailAddress,
 	)
 	return i, err
 }
@@ -378,6 +477,23 @@ func (q *Queries) TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) 
 	return result.RowsAffected()
 }
 
+const updateUserLogin = `-- name: UpdateUserLogin :execrows
+UPDATE users SET email = ? WHERE id = ?
+`
+
+type UpdateUserLoginParams struct {
+	Email string
+	ID    string
+}
+
+func (q *Queries) UpdateUserLogin(ctx context.Context, arg UpdateUserLoginParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUserLogin, arg.Email, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateUserPassword = `-- name: UpdateUserPassword :execrows
 UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?
 `
@@ -394,4 +510,42 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :execrows
+UPDATE users SET first_name = ?, last_name = ?, email_address = ? WHERE id = ?
+`
+
+type UpdateUserProfileParams struct {
+	FirstName    string
+	LastName     string
+	EmailAddress string
+	ID           string
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUserProfile,
+		arg.FirstName,
+		arg.LastName,
+		arg.EmailAddress,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const usePasswordResets = `-- name: UsePasswordResets :exec
+UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL
+`
+
+type UsePasswordResetsParams struct {
+	UsedAt sql.NullTime
+	UserID string
+}
+
+func (q *Queries) UsePasswordResets(ctx context.Context, arg UsePasswordResetsParams) error {
+	_, err := q.db.ExecContext(ctx, usePasswordResets, arg.UsedAt, arg.UserID)
+	return err
 }

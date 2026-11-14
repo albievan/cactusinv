@@ -73,6 +73,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Your own details (Your account, M43). */
+        get: operations["getProfile"];
+        /** @description Saves your first and last name and e-mail address (the user name does not change here). */
+        put: operations["updateProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Forgot password (M43): e-mails a single-use link, valid for an hour, to the user with
+         *     this user name — only when the user exists, is active, has a password and an e-mail
+         *     address, and no link went out in the last two minutes. The answer is the same in every
+         *     case. Shares the sign-in rate limit; every request counts.
+         */
+        post: operations["requestPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/password-reset/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["checkPasswordReset"];
+        put?: never;
+        /** @description Sets a new password through the link; the link is used up and every session of the user ends. Shares the sign-in rate limit. */
+        post: operations["resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -1411,6 +1471,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Edits a user's user name, first and last name and e-mail address (M44). Needs your
+         *     current password; shares the sign-in rate limit; exempt from Idempotency-Key. The audit
+         *     log keeps the old user name on what was done before.
+         */
+        put: operations["updateUser"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Deletes a user for good (M44): they can no longer sign in and leave their groups; the
+         *     audit log keeps their user name on what they did. You cannot delete yourself (403) or
+         *     the last active user (409). Needs your current password; shares the sign-in rate limit.
+         */
+        post: operations["deleteUser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/users/{id}/disable": {
         parameters: {
             query?: never;
@@ -1423,7 +1529,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Stops a user from signing in and signs them out everywhere. Users are never deleted.
+         * @description Stops a user from signing in and signs them out everywhere (they can be enabled again).
          *     You cannot disable yourself (403 `forbidden`) or the last active user (409
          *     `last-active-user`). Needs your current password; shares the sign-in rate limit;
          *     exempt from Idempotency-Key. Disabling a disabled user changes nothing.
@@ -1566,6 +1672,20 @@ export interface components {
         LoginRequest: {
             email: string;
             password: string;
+        };
+        Profile: {
+            /** @description What you sign in with. */
+            userName: string;
+            firstName: string;
+            lastName: string;
+            emailAddress: string;
+            /** @description Where a password reset link goes: the e-mail address, else the user name when it is one; empty = none can be sent. */
+            resetAddress: string;
+        };
+        ProfileInput: {
+            firstName: string;
+            lastName: string;
+            emailAddress: string;
         };
         ChangePasswordRequest: {
             currentPassword: string;
@@ -1729,6 +1849,19 @@ export interface components {
             lastLoginAt?: string;
             /** @description Must change the password at the next sign-in. */
             mustChangePassword: boolean;
+            firstName?: string;
+            lastName?: string;
+            /** @description Where password reset links go (else the login when it is an e-mail address). */
+            emailAddress?: string;
+        };
+        UserEdit: {
+            /** @description The login. A changed one must be an e-mail address no other user has. */
+            userName: string;
+            firstName: string;
+            lastName: string;
+            emailAddress: string;
+            /** @description Your own password. */
+            currentPassword: string;
         };
         UserList: {
             items: components["schemas"]["User"][];
@@ -2343,8 +2476,11 @@ export interface components {
         EmailStatus: "pending" | "sending" | "sent" | "failed" | "cancelled";
         EmailMessage: {
             id: string;
-            /** @enum {string} */
-            kind: "invoice" | "statement" | "quote";
+            /**
+             * @description password_reset: a forgotten-password link (M43); its text is hidden.
+             * @enum {string}
+             */
+            kind: "invoice" | "statement" | "quote" | "password_reset";
             invoiceId?: string;
             customerId?: string;
             quoteId?: string;
@@ -2871,6 +3007,129 @@ export interface operations {
         };
         responses: {
             /** @description Password changed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileInput"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    requestPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    userName: string;
+                    /** @description The address the request came from */
+                    linkBase?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description If that user can be sent a link */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    checkPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link works. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    newPassword: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Password changed; sign in with it. */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -5410,6 +5669,58 @@ export interface operations {
             403: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
             429: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserEdit"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReauthRequest"];
+            };
+        };
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             default: components["responses"]["Problem"];
         };
     };

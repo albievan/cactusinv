@@ -3,6 +3,7 @@ package mariadb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
@@ -52,6 +53,10 @@ func (r emailRepo) GetByIdempotencyKey(ctx context.Context, key string) (*domain
 		return nil, mapErr(err)
 	}
 	return toEmail(row), nil
+}
+
+func (r emailRepo) RedactBody(ctx context.Context, id, body string) error {
+	return mapErr(r.q.RedactEmailBody(ctx, sqlcgen.RedactEmailBodyParams{Body: body, ID: id}))
 }
 
 func (r emailRepo) Update(ctx context.Context, m *domain.EmailMessage) error {
@@ -134,7 +139,66 @@ func toUser(u sqlcgen.User) domain.User {
 	return domain.User{
 		ID: u.ID, Email: u.Email, PasswordHash: u.PasswordHash, CreatedAt: u.CreatedAt.UTC(),
 		DisabledAt: fromNullTime(u.DisabledAt), MustChangePassword: u.MustChangePassword, LastLoginAt: fromNullTime(u.LastLoginAt),
+		FirstName: u.FirstName, LastName: u.LastName, EmailAddress: u.EmailAddress,
 	}
+}
+
+func (r userRepo) UpdateProfile(ctx context.Context, id string, p domain.Profile) error {
+	n, err := r.q.UpdateUserProfile(ctx, sqlcgen.UpdateUserProfileParams{FirstName: p.FirstName, LastName: p.LastName, EmailAddress: p.EmailAddress, ID: id})
+	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r userRepo) UpdateLogin(ctx context.Context, id, login string) error {
+	n, err := r.q.UpdateUserLogin(ctx, sqlcgen.UpdateUserLoginParams{Email: login, ID: id})
+	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r userRepo) Delete(ctx context.Context, id string) error {
+	n, err := r.q.DeleteUser(ctx, id)
+	return affected(n, err, domain.ErrNotFound)
+}
+
+func toPasswordReset(p sqlcgen.PasswordReset) domain.PasswordReset {
+	return domain.PasswordReset{TokenHash: p.TokenHash, UserID: p.UserID, CreatedAt: p.CreatedAt.UTC(), ExpiresAt: p.ExpiresAt.UTC(), UsedAt: fromNullTime(p.UsedAt)}
+}
+
+func (r userRepo) AddPasswordReset(ctx context.Context, p domain.PasswordReset) error {
+	return mapErr(r.q.InsertPasswordReset(ctx, sqlcgen.InsertPasswordResetParams{TokenHash: p.TokenHash, UserID: p.UserID, CreatedAt: p.CreatedAt.UTC(), ExpiresAt: p.ExpiresAt.UTC()}))
+}
+
+func (r userRepo) LockPasswordReset(ctx context.Context, tokenHash string) (domain.PasswordReset, error) {
+	p, err := r.q.LockPasswordReset(ctx, tokenHash)
+	if err != nil {
+		return domain.PasswordReset{}, mapErr(err)
+	}
+	return toPasswordReset(p), nil
+}
+
+func (r userRepo) GetPasswordReset(ctx context.Context, tokenHash string) (domain.PasswordReset, error) {
+	p, err := r.q.GetPasswordReset(ctx, tokenHash)
+	if err != nil {
+		return domain.PasswordReset{}, mapErr(err)
+	}
+	return toPasswordReset(p), nil
+}
+
+func (r userRepo) LastPasswordReset(ctx context.Context, userID string) (time.Time, error) {
+	t, err := r.q.LatestPasswordReset(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, mapErr(err)
+	}
+	return t.UTC(), nil
+}
+
+func (r userRepo) UsePasswordResets(ctx context.Context, userID string, at time.Time) error {
+	return mapErr(r.q.UsePasswordResets(ctx, sqlcgen.UsePasswordResetsParams{UsedAt: nullTime(at), UserID: userID}))
+}
+
+func (r userRepo) DeleteOldPasswordResets(ctx context.Context, t time.Time) error {
+	return mapErr(r.q.DeleteOldPasswordResets(ctx, t.UTC()))
 }
 
 func (r userRepo) GetByEmail(ctx context.Context, email string) (domain.User, error) {

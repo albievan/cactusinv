@@ -63,6 +63,58 @@ func (h *handlers) ChangePassword(ctx context.Context, req ChangePasswordRequest
 	return ChangePassword204Response{}, nil
 }
 
+// ---- Your account and forgotten passwords (M43) ----
+
+func toAPIProfile(u domain.User) Profile {
+	return Profile{UserName: u.Email, FirstName: u.FirstName, LastName: u.LastName, EmailAddress: u.EmailAddress, ResetAddress: u.ResetAddress()}
+}
+
+func (h *handlers) GetProfile(ctx context.Context, _ GetProfileRequestObject) (GetProfileResponseObject, error) {
+	u, err := h.svc.GetProfile(ctx, currentUser(ctx).ID)
+	if err != nil {
+		return nil, err
+	}
+	return GetProfile200JSONResponse(toAPIProfile(u)), nil
+}
+
+func (h *handlers) UpdateProfile(ctx context.Context, req UpdateProfileRequestObject) (UpdateProfileResponseObject, error) {
+	b := req.Body
+	u, err := h.svc.UpdateProfile(ctx, currentUser(ctx).ID, domain.Profile{FirstName: b.FirstName, LastName: b.LastName, EmailAddress: b.EmailAddress})
+	if err != nil {
+		return nil, err
+	}
+	return UpdateProfile200JSONResponse(toAPIProfile(u)), nil
+}
+
+func (h *handlers) RequestPasswordReset(ctx context.Context, req RequestPasswordResetRequestObject) (RequestPasswordResetResponseObject, error) {
+	// Every request counts against the client's sign-in budget, whatever the answer: it
+	// may send an e-mail, and it must not become a way to try user names quickly.
+	if att := attemptFrom(ctx); att != nil {
+		att.failed.Store(true)
+	}
+	if err := h.svc.RequestPasswordReset(ctx, req.Body.UserName, req.Body.LinkBase); err != nil {
+		return nil, err
+	}
+	return RequestPasswordReset202Response{}, nil
+}
+
+func (h *handlers) CheckPasswordReset(ctx context.Context, req CheckPasswordResetRequestObject) (CheckPasswordResetResponseObject, error) {
+	if err := h.svc.CheckPasswordReset(ctx, req.Token); err != nil {
+		return nil, err
+	}
+	return CheckPasswordReset204Response{}, nil
+}
+
+func (h *handlers) ResetPassword(ctx context.Context, req ResetPasswordRequestObject) (ResetPasswordResponseObject, error) {
+	if err := h.svc.ResetPassword(ctx, req.Token, req.Body.NewPassword); err != nil {
+		if att := attemptFrom(ctx); att != nil {
+			att.failed.Store(true) // a wrong or old link counts, as a wrong password does
+		}
+		return nil, err
+	}
+	return ResetPassword204Response{}, nil
+}
+
 func (h *handlers) Me(ctx context.Context, _ MeRequestObject) (MeResponseObject, error) {
 	u := currentUser(ctx)
 	held, err := h.svc.AutomationHeld(ctx)

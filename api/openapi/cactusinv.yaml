@@ -94,6 +94,84 @@ paths:
       responses:
         '204': { description: Password changed. }
         default: { $ref: '#/components/responses/Problem' }
+  /auth/profile:
+    get:
+      tags: [auth]
+      operationId: getProfile
+      description: Your own details (Your account, M43).
+      responses:
+        '200':
+          description: Your profile.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        default: { $ref: '#/components/responses/Problem' }
+    put:
+      tags: [auth]
+      operationId: updateProfile
+      description: Saves your first and last name and e-mail address (the user name does not change here).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileInput' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        default: { $ref: '#/components/responses/Problem' }
+  /auth/password-reset:
+    post:
+      tags: [auth]
+      operationId: requestPasswordReset
+      security: []
+      description: |
+        Forgot password (M43): e-mails a single-use link, valid for an hour, to the user with
+        this user name — only when the user exists, is active, has a password and an e-mail
+        address, and no link went out in the last two minutes. The answer is the same in every
+        case. Shares the sign-in rate limit; every request counts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userName]
+              properties:
+                userName: { type: string, maxLength: 254 }
+                linkBase: { type: string, maxLength: 300, description: The address the request came from, for the link (Settings → Quotes' public address wins). }
+      responses:
+        '202': { description: If that user can be sent a link, it is on its way. }
+        default: { $ref: '#/components/responses/Problem' }
+  /auth/password-reset/{token}:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [auth]
+      operationId: checkPasswordReset
+      security: []
+      responses:
+        '204': { description: The link works. }
+        default: { $ref: '#/components/responses/Problem' }
+    post:
+      tags: [auth]
+      operationId: resetPassword
+      security: []
+      description: Sets a new password through the link; the link is used up and every session of the user ends. Shares the sign-in rate limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newPassword]
+              properties:
+                newPassword: { type: string, maxLength: 200 }
+      responses:
+        '204': { description: Password changed; sign in with it. }
+        default: { $ref: '#/components/responses/Problem' }
   /auth/me:
     get:
       tags: [auth]
@@ -1686,6 +1764,46 @@ paths:
         '422': { $ref: '#/components/responses/Problem' }
         '429': { $ref: '#/components/responses/Problem' }
         default: { $ref: '#/components/responses/Problem' }
+  /users/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [users]
+      operationId: updateUser
+      description: |
+        Edits a user's user name, first and last name and e-mail address (M44). Needs your
+        current password; shares the sign-in rate limit; exempt from Idempotency-Key. The audit
+        log keeps the old user name on what was done before.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UserEdit' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        default: { $ref: '#/components/responses/Problem' }
+  /users/{id}/delete:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [users]
+      operationId: deleteUser
+      description: |
+        Deletes a user for good (M44): they can no longer sign in and leave their groups; the
+        audit log keeps their user name on what they did. You cannot delete yourself (403) or
+        the last active user (409). Needs your current password; shares the sign-in rate limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReauthRequest' }
+      responses:
+        '204': { description: Deleted. }
+        default: { $ref: '#/components/responses/Problem' }
   /users/{id}/disable:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -1693,7 +1811,7 @@ paths:
       tags: [users]
       operationId: disableUser
       description: |
-        Stops a user from signing in and signs them out everywhere. Users are never deleted.
+        Stops a user from signing in and signs them out everywhere (they can be enabled again).
         You cannot disable yourself (403 `forbidden`) or the last active user (409
         `last-active-user`). Needs your current password; shares the sign-in rate limit;
         exempt from Idempotency-Key. Disabling a disabled user changes nothing.
@@ -1906,6 +2024,22 @@ components:
       properties:
         email: { type: string, maxLength: 254 }
         password: { type: string, maxLength: 200 }
+    Profile:
+      type: object
+      required: [userName, firstName, lastName, emailAddress, resetAddress]
+      properties:
+        userName: { type: string, description: What you sign in with. }
+        firstName: { type: string }
+        lastName: { type: string }
+        emailAddress: { type: string }
+        resetAddress: { type: string, description: 'Where a password reset link goes: the e-mail address, else the user name when it is one; empty = none can be sent.' }
+    ProfileInput:
+      type: object
+      required: [firstName, lastName, emailAddress]
+      properties:
+        firstName: { type: string, maxLength: 400 }
+        lastName: { type: string, maxLength: 400 }
+        emailAddress: { type: string, maxLength: 254 }
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]
@@ -2077,6 +2211,18 @@ components:
         disabledAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         lastLoginAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         mustChangePassword: { type: boolean, description: Must change the password at the next sign-in. }
+        firstName: { type: string }
+        lastName: { type: string }
+        emailAddress: { type: string, description: Where password reset links go (else the login when it is an e-mail address). }
+    UserEdit:
+      type: object
+      required: [userName, firstName, lastName, emailAddress, currentPassword]
+      properties:
+        userName: { type: string, maxLength: 254, description: The login. A changed one must be an e-mail address no other user has. }
+        firstName: { type: string, maxLength: 400 }
+        lastName: { type: string, maxLength: 400 }
+        emailAddress: { type: string, maxLength: 254 }
+        currentPassword: { type: string, maxLength: 200, description: Your own password. }
     UserList:
       type: object
       required: [items]
@@ -2744,7 +2890,7 @@ components:
       required: [id, kind, to, cc, subject, body, status, attempts, sendAt, nextAttemptAt, lastError, createdAt]
       properties:
         id: { type: string }
-        kind: { type: string, enum: [invoice, statement, quote] }
+        kind: { type: string, enum: [invoice, statement, quote, password_reset], description: 'password_reset: a forgotten-password link (M43); its text is hidden.' }
         invoiceId: { type: string }
         customerId: { type: string }
         quoteId: { type: string }

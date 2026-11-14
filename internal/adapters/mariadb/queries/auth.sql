@@ -68,3 +68,30 @@ DELETE FROM idempotency_keys;
 
 -- name: TouchSession :exec
 UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?;
+
+-- name: UpdateUserProfile :execrows
+UPDATE users SET first_name = ?, last_name = ?, email_address = ? WHERE id = ?;
+
+-- name: InsertPasswordReset :exec
+INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?);
+
+-- name: LockPasswordReset :one
+SELECT * FROM password_resets WHERE token_hash = ? FOR UPDATE;
+
+-- name: GetPasswordReset :one
+SELECT * FROM password_resets WHERE token_hash = ?;
+
+-- name: LatestPasswordReset :one
+SELECT created_at FROM password_resets WHERE user_id = ? ORDER BY created_at DESC LIMIT 1;
+
+-- name: UsePasswordResets :exec
+UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL;
+
+-- name: DeleteOldPasswordResets :exec
+DELETE FROM password_resets WHERE expires_at < ?;
+
+-- name: UpdateUserLogin :execrows
+UPDATE users SET email = ? WHERE id = ?;
+
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE id = ?;

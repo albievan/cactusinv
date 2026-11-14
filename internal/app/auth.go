@@ -327,6 +327,9 @@ func (s *Service) Housekeeping(ctx context.Context) error {
 	if err := r.Idempotency.DeleteBefore(ctx, s.now().Add(-24*time.Hour)); err != nil {
 		return wrap("app.Housekeeping", err)
 	}
+	if err := r.Users.DeleteOldPasswordResets(ctx, s.now().Add(-24*time.Hour)); err != nil {
+		return wrap("app.Housekeeping", err)
+	}
 	return wrap("app.Housekeeping", s.discardExpiredRestore(ctx))
 }
 

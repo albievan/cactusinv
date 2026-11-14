@@ -424,6 +424,8 @@ type EmailRepository interface {
 	Get(ctx context.Context, id string) (*domain.EmailMessage, error)
 	// Lock reads a message FOR UPDATE (inside WithinTx), before changing its status.
 	Lock(ctx context.Context, id string) (*domain.EmailMessage, error)
+	// RedactBody replaces a message's stored body (a password reset link once sent, M43).
+	RedactBody(ctx context.Context, id, body string) error
 	GetByIdempotencyKey(ctx context.Context, key string) (*domain.EmailMessage, error)
 	Update(ctx context.Context, m *domain.EmailMessage) error
 	List(ctx context.Context, f EmailFilter) ([]domain.EmailMessage, int, error)
@@ -458,6 +460,26 @@ type UserRepository interface {
 	// transaction ends (SELECT … FOR UPDATE): call inside WithinTx before disabling.
 	LockActive(ctx context.Context) ([]string, error)
 	Count(ctx context.Context) (int, error)
+	// UpdateProfile saves the user's first and last name and e-mail address (M43).
+	UpdateProfile(ctx context.Context, id string, p domain.Profile) error
+	// UpdateLogin changes the user's login; one that exists in any letter case is
+	// ErrConflict (M44).
+	UpdateLogin(ctx context.Context, id, login string) error
+	// Delete removes the user (sessions and reset links go with them; their group
+	// memberships must be removed first) (M44).
+	Delete(ctx context.Context, id string) error
+	// AddPasswordReset stores a password reset link (its token's hash) (M43).
+	AddPasswordReset(ctx context.Context, r domain.PasswordReset) error
+	// LockPasswordReset reads a reset by its token hash FOR UPDATE (ErrNotFound).
+	LockPasswordReset(ctx context.Context, tokenHash string) (domain.PasswordReset, error)
+	// GetPasswordReset reads a reset by its token hash (ErrNotFound).
+	GetPasswordReset(ctx context.Context, tokenHash string) (domain.PasswordReset, error)
+	// LastPasswordReset is when the user's newest reset was made (zero if never).
+	LastPasswordReset(ctx context.Context, userID string) (time.Time, error)
+	// UsePasswordResets marks every unused reset of the user used at at.
+	UsePasswordResets(ctx context.Context, userID string, at time.Time) error
+	// DeleteOldPasswordResets deletes resets that expired before t.
+	DeleteOldPasswordResets(ctx context.Context, t time.Time) error
 }
 
 // GroupRepository stores access groups, their permissions and their members (ADR-012).

@@ -151,10 +151,10 @@ type EmailOutbox struct {
 	IdempotencyKey sql.NullString
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
-	Kind           string
 	CustomerID     sql.NullString
 	InvoiceID      sql.NullString
 	QuoteID        sql.NullString
+	Kind           string
 }
 
 type IdempotencyKey struct {
@@ -236,6 +236,14 @@ type InvoiceResponseToken struct {
 type InvoiceSequence struct {
 	Name      string
 	NextValue int64
+}
+
+type PasswordReset struct {
+	TokenHash string
+	UserID    string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    sql.NullTime
 }
 
 type Product struct {
@@ -428,4 +436,7 @@ type User struct {
 	DisabledAt         sql.NullTime
 	MustChangePassword bool
 	LastLoginAt        sql.NullTime
+	FirstName          string
+	LastName           string
+	EmailAddress       string
 }

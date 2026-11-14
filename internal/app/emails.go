@@ -133,6 +133,8 @@ func (s *Service) deliver(ctx context.Context, m *domain.EmailMessage) (err erro
 		return s.deliverStatement(ctx, m)
 	case domain.EmailKindQuote:
 		return s.deliverQuote(ctx, m)
+	case domain.EmailKindPasswordReset:
+		return s.deliverPasswordReset(ctx, m)
 	}
 	r := s.tx.Repos()
 	doc, err := s.document(ctx, r, m.InvoiceID)

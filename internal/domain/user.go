@@ -20,6 +20,12 @@ type User struct {
 	ID           string
 	Email        string
 	PasswordHash string
+	// FirstName, LastName and EmailAddress are the user's own details (Your account, M43).
+	// EmailAddress is where a password reset link goes; empty = the login, when that is an
+	// e-mail address.
+	FirstName    string
+	LastName     string
+	EmailAddress string
 	CreatedAt    time.Time
 	// DisabledAt is when the user was disabled; zero while the user is active.
 	DisabledAt time.Time
@@ -91,4 +97,94 @@ func CheckCanDisable(actorID string, target User, activeIDs []string) error {
 		}
 	}
 	return ErrLastActiveUser
+}
+
+// Profile is what a user may change about themselves (Your account, M43).
+type Profile struct {
+	FirstName    string
+	LastName     string
+	EmailAddress string
+}
+
+// Validate trims the profile and checks it: names of at most 100 characters on one line,
+// and an empty or valid e-mail address.
+func (p *Profile) Validate() error {
+	p.FirstName, p.LastName, p.EmailAddress = strings.TrimSpace(p.FirstName), strings.TrimSpace(p.LastName), strings.TrimSpace(p.EmailAddress)
+	for field, v := range map[string]string{"firstName": p.FirstName, "lastName": p.LastName} {
+		if utf8.RuneCountInString(v) > 100 || strings.ContainsAny(v, "\r\n") {
+			return invalid(field, "one line, at most 100 characters")
+		}
+	}
+	if p.EmailAddress != "" {
+		if strings.ContainsAny(p.EmailAddress, ",;") {
+			return invalid("emailAddress", "one e-mail address")
+		}
+		if err := validEmail("emailAddress", p.EmailAddress); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ResetAddress is where u's password reset link goes: their e-mail address, else their
+// login when it is one; "" when they have neither (no link can be sent).
+func (u User) ResetAddress() string {
+	if u.EmailAddress != "" {
+		return u.EmailAddress
+	}
+	if validEmail("email", u.Email) == nil && !strings.ContainsAny(u.Email, ",;") {
+		return u.Email
+	}
+	return ""
+}
+
+// PasswordResetTTL is how long a password reset link works; PasswordResetInterval the
+// least time between two reset e-mails to one user.
+const (
+	PasswordResetTTL      = time.Hour
+	PasswordResetInterval = 2 * time.Minute
+)
+
+// PasswordReset is a forgotten-password link (M43); only a hash of its token is stored.
+type PasswordReset struct {
+	TokenHash string
+	UserID    string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	UsedAt    time.Time // zero until used (or replaced by a newer reset)
+}
+
+// Usable reports whether the link still works at now: not used and not expired.
+func (r PasswordReset) Usable(now time.Time) bool {
+	return r.UsedAt.IsZero() && now.Before(r.ExpiresAt)
+}
+
+// PasswordResetLink is the link a reset e-mail carries: base is the address users reach
+// cactusInv on (ParsePublicURL), token the reset's random token.
+func PasswordResetLink(base, token string) string {
+	return strings.TrimRight(base, "/") + "/reset-password/" + token
+}
+
+// PasswordResetSubject is a reset e-mail's subject.
+func PasswordResetSubject(businessName string) string {
+	if businessName == "" {
+		return "Reset your cactusInv password"
+	}
+	return TruncateUTF8("Reset your cactusInv password for "+strings.NewReplacer("\r", " ", "\n", " ").Replace(businessName), MaxSubjectLength)
+}
+
+// PasswordResetBody is a reset e-mail's text: who it is for, the link and how long it works.
+func PasswordResetBody(u User, businessName, link string) string {
+	name := strings.TrimSpace(u.FirstName)
+	if name == "" {
+		name = u.Email
+	}
+	where := "cactusInv"
+	if businessName != "" {
+		where = "cactusInv for " + businessName
+	}
+	return "Hello " + name + ",\n\n" +
+		"Someone asked to reset the password of the user " + u.Email + " in " + where + ".\n\n" +
+		"To choose a new password, open this link within 60 minutes. It works once:\n\n" + link + "\n\n" +
+		"If you did not ask for this, ignore this e-mail: your password stays as it is.\n"
 }

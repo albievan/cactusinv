@@ -23,6 +23,7 @@ import { QuoteList } from './features/quotes/QuoteList'
 import { QuoteEditor } from './features/quotes/QuoteEditor'
 import { QuoteDetail } from './features/quotes/QuoteDetail'
 import { QuoteResponsePage } from './features/quotes/QuoteResponsePage'
+import { ResetPasswordPage } from './components/ResetPasswordPage'
 import { AdhocCustomers } from './features/quotes/AdhocCustomers'
 import { QuoteSettingsPage } from './features/settings/QuoteSettings'
 
@@ -99,6 +100,8 @@ export function App() {
         <Route path="/q/:token" element={<QuoteResponsePage />} />
         {/* The customer's "I have paid" page for an invoice e-mail (M42): no sign-in. */}
         <Route path="/i/:token" element={<InvoicePaidPage />} />
+        {/* A forgotten password's e-mailed link (M43): no sign-in. */}
+        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
         <Route path="*" element={<AuthProvider><AppRoutes /></AuthProvider>} />
       </Routes>
     </BrowserRouter>

@@ -16,7 +16,9 @@ var signedIn = []domain.Permission{}
 // map is refused for every session: a new endpoint must be given its permission here
 // (the HTTP tests check every operation in the contract is listed) (ADR-012).
 var operationAccess = map[string][]domain.Permission{
-	"login": signedIn, "getversion": signedIn, "logout": signedIn, "changepassword": signedIn, "me": signedIn,
+	"login": signedIn, "getversion": signedIn, "getprofile": signedIn, "updateprofile": signedIn,
+	// Forgot password (M43): no session; the e-mailed link is the key.
+	"requestpasswordreset": signedIn, "checkpasswordreset": signedIn, "resetpassword": signedIn, "logout": signedIn, "changepassword": signedIn, "me": signedIn,
 	"listcurrencies": signedIn, "getbusiness": signedIn, "listbankaccounts": signedIn, "getbankaccount": signedIn,
 
 	"getdashboard": {domain.PermDashboardView},
@@ -74,7 +76,7 @@ var operationAccess = map[string][]domain.Permission{
 	"uploadbackup": {domain.PermAdminister}, "stagerestore": {domain.PermAdminister}, "getcurrentrestore": {domain.PermAdminister},
 	"applyrestore": {domain.PermAdminister}, "discardrestore": {domain.PermAdminister}, "resumeautomation": {domain.PermAdminister},
 	"listusers": {domain.PermAdminister}, "adduser": {domain.PermAdminister}, "resetuserpassword": {domain.PermAdminister},
-	"disableuser": {domain.PermAdminister}, "enableuser": {domain.PermAdminister}, "setusergroups": {domain.PermAdminister},
+	"disableuser": {domain.PermAdminister}, "enableuser": {domain.PermAdminister}, "updateuser": {domain.PermAdminister}, "deleteuser": {domain.PermAdminister}, "setusergroups": {domain.PermAdminister},
 	"listgroups": {domain.PermAdminister}, "creategroup": {domain.PermAdminister}, "updategroup": {domain.PermAdminister},
 	"deletegroup": {domain.PermAdminister},
 	// A settings file holds every customer's contact details and the bank account numbers,

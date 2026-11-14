@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { ApiError, type Schemas } from '../../../lib/api/client'
 import { ErrorBanner, Field } from '../../../components/ui'
+import { PasswordInput } from '../../../components/password'
 
 export type User = Schemas['User']
 export type Group = Schemas['Group']
@@ -28,7 +29,7 @@ export function friendly(e: unknown, what: 'user' | 'group' = 'user'): Error {
 export function YourPassword({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <Field label="Your password" hint="To confirm it is you.">
-      {(f) => <input id={f} type="password" autoComplete="current-password" className="form-control" maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} required />}
+      {(f) => <PasswordInput id={f} autoComplete="current-password" value={value} onChange={onChange} />}
     </Field>
   )
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
@@ -219,4 +220,118 @@ func (s *Service) reauthUser(ctx context.Context, what, password string) error {
 		_ = s.auditNow(ctx, "user.reauth_failed", "user", a.ID, "wrong current password when "+what)
 	}
 	return err
+}
+
+// UserEdit is what an administrator may change about a user (M44).
+type UserEdit struct {
+	Login   string // the user name they sign in with
+	Profile domain.Profile
+}
+
+// UpdateUser changes a user's user name, first and last name and e-mail address (M44). A
+// new user name must be an e-mail address no other user has (in any letter case); an
+// unchanged one is kept as it is (e.g. "admin"). Needs the actor's current password.
+// The audit log keeps the old user name on everything done before.
+func (s *Service) UpdateUser(ctx context.Context, userID string, in UserEdit, currentPassword string) (domain.User, error) {
+	if err := in.Profile.Validate(); err != nil {
+		return domain.User{}, wrap("app.UpdateUser", err)
+	}
+	u, err := s.tx.Repos().Users.Get(ctx, userID)
+	if err != nil {
+		return domain.User{}, wrap("app.UpdateUser", err)
+	}
+	login := strings.TrimSpace(in.Login)
+	if login != u.Email {
+		if login, err = domain.ValidateNewLogin(login); err != nil {
+			return domain.User{}, wrap("app.UpdateUser", &domain.ValidationError{Field: "userName", Reason: "must be an e-mail address"})
+		}
+	}
+	if err := s.reauthUser(ctx, "editing "+u.Email, currentPassword); err != nil {
+		return domain.User{}, wrap("app.UpdateUser", err)
+	}
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		if err := lockActor(ctx, r); err != nil {
+			return err
+		}
+		if _, err := lockAdministrators(ctx, r, nil); err != nil {
+			return err
+		}
+		cur, err := r.Users.Lock(ctx, userID)
+		if err != nil {
+			return err
+		}
+		var changes []string
+		if login != cur.Email {
+			if err := r.Users.UpdateLogin(ctx, userID, login); err != nil {
+				if errors.Is(err, domain.ErrConflict) {
+					return &domain.ValidationError{Field: "userName", Reason: "another user already has this user name"}
+				}
+				return err
+			}
+			changes = append(changes, "user name "+cur.Email+" → "+login)
+		}
+		if in.Profile != (domain.Profile{FirstName: cur.FirstName, LastName: cur.LastName, EmailAddress: cur.EmailAddress}) {
+			if err := r.Users.UpdateProfile(ctx, userID, in.Profile); err != nil {
+				return err
+			}
+			changes = append(changes, "name and e-mail address")
+		}
+		if len(changes) == 0 {
+			return nil
+		}
+		return s.audit(ctx, r, "user.updated", "user", userID, cur.Email+" edited: "+strings.Join(changes, "; "))
+	})
+	if err != nil {
+		return domain.User{}, wrap("app.UpdateUser", err)
+	}
+	u, err = s.tx.Repos().Users.Get(ctx, userID)
+	return u, wrap("app.UpdateUser", err)
+}
+
+// DeleteUser removes a user for good (M44): they can no longer sign in, and leave their
+// groups. The audit log keeps their user name on everything they did. Nobody deletes
+// themselves, and the last active user is never deleted. Needs the actor's current password.
+func (s *Service) DeleteUser(ctx context.Context, userID, currentPassword string) error {
+	actor := ActorFrom(ctx)
+	if userID == actor.ID {
+		return wrap("app.DeleteUser", domain.ErrForbidden)
+	}
+	u, err := s.tx.Repos().Users.Get(ctx, userID)
+	if err != nil {
+		return wrap("app.DeleteUser", err)
+	}
+	if err := s.reauthUser(ctx, "deleting "+u.Email, currentPassword); err != nil {
+		return wrap("app.DeleteUser", err)
+	}
+	err = s.tx.WithinTx(ctx, func(ctx context.Context, r ports.Repos) error {
+		active, err := r.Users.LockActive(ctx)
+		if err != nil {
+			return err
+		}
+		if !slices.Contains(active, actor.ID) { // disabled meanwhile
+			return domain.ErrUnauthenticated
+		}
+		if u, err = r.Users.Lock(ctx, userID); err != nil {
+			return err
+		}
+		if err := domain.CheckCanDisable(actor.ID, u, active); err != nil {
+			return err
+		}
+		if _, err := lockAdministrators(ctx, r, []string{userID}); err != nil {
+			return err
+		}
+		if err := r.Groups.SetUserGroups(ctx, userID, nil); err != nil {
+			return err
+		}
+		if err := r.Users.Delete(ctx, userID); err != nil {
+			return err
+		}
+		name := strings.TrimSpace(u.FirstName + " " + u.LastName)
+		detail := "deleted user " + u.Email
+		if name != "" {
+			detail += " (" + name + ")"
+		}
+		return s.audit(ctx, r, "user.deleted", "user", userID, detail+"; the audit log keeps this user name on what they did")
+	})
+	return wrap("app.DeleteUser", err)
 }

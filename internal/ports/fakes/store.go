@@ -81,6 +81,7 @@ type state struct {
 	quoteSeq    int64
 	quoteTokens map[string]string // response token hash → quote ID
 	invTokens   map[string]string // invoice "I have paid" token hash → invoice ID
+	resets      map[string]domain.PasswordReset
 }
 
 func newState() *state {
@@ -92,7 +93,7 @@ func newState() *state {
 		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
-		quoteTokens: map[string]string{}, invTokens: map[string]string{},
+		quoteTokens: map[string]string{}, invTokens: map[string]string{}, resets: map[string]domain.PasswordReset{},
 	}
 }
 
@@ -122,6 +123,7 @@ func (s *state) clone() *state {
 	c.adhoc = maps.Clone(s.adhoc)
 	c.quoteTokens = maps.Clone(s.quoteTokens)
 	c.invTokens = maps.Clone(s.invTokens)
+	c.resets = maps.Clone(s.resets)
 	if s.quoteSet != nil {
 		q := *s.quoteSet
 		c.quoteSet = &q
@@ -1101,6 +1103,18 @@ func (r emails) Create(_ context.Context, m *domain.EmailMessage) error {
 }
 
 // Lock reads the message (the fake serialises transactions).
+func (r emails) RedactBody(_ context.Context, id, body string) error {
+	return r.s.do(func(st *state) error {
+		m, ok := st.emails[id]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		m.Body = body
+		st.emails[id] = m
+		return nil
+	})
+}
+
 func (r emails) Lock(ctx context.Context, id string) (*domain.EmailMessage, error) {
 	return r.Get(ctx, id)
 }
@@ -1306,6 +1320,128 @@ func (r users) LockActive(_ context.Context) ([]string, error) {
 		return nil
 	})
 	return out, err
+}
+
+func (r users) UpdateProfile(_ context.Context, id string, p domain.Profile) error {
+	return r.s.do(func(st *state) error {
+		u, ok := st.users[id]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		u.FirstName, u.LastName, u.EmailAddress = p.FirstName, p.LastName, p.EmailAddress
+		st.users[id] = u
+		return nil
+	})
+}
+
+func (r users) UpdateLogin(_ context.Context, id, login string) error {
+	return r.s.do(func(st *state) error {
+		u, ok := st.users[id]
+		if !ok {
+			return domain.ErrNotFound
+		}
+		for _, o := range st.users {
+			if o.ID != id && strings.EqualFold(o.Email, login) {
+				return domain.ErrConflict
+			}
+		}
+		u.Email = login
+		st.users[id] = u
+		return nil
+	})
+}
+
+func (r users) Delete(_ context.Context, id string) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.users[id]; !ok {
+			return domain.ErrNotFound
+		}
+		for _, g := range st.groups {
+			if slices.Contains(g.MemberIDs, id) {
+				return domain.ErrConflict // like the foreign key: memberships first
+			}
+		}
+		delete(st.users, id)
+		for k, s := range st.sessions {
+			if s.UserID == id {
+				delete(st.sessions, k)
+			}
+		}
+		for k, p := range st.resets {
+			if p.UserID == id {
+				delete(st.resets, k)
+			}
+		}
+		return nil
+	})
+}
+
+func (r users) AddPasswordReset(_ context.Context, p domain.PasswordReset) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.users[p.UserID]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, dup := st.resets[p.TokenHash]; dup {
+			return domain.ErrConflict
+		}
+		st.resets[p.TokenHash] = p
+		return nil
+	})
+}
+
+func (r users) GetPasswordReset(_ context.Context, tokenHash string) (domain.PasswordReset, error) {
+	var p domain.PasswordReset
+	err := r.s.do(func(st *state) error {
+		var ok bool
+		if p, ok = st.resets[tokenHash]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, ok := st.users[p.UserID]; !ok { // deleted with the user
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+	return p, err
+}
+
+func (r users) LockPasswordReset(ctx context.Context, tokenHash string) (domain.PasswordReset, error) {
+	return r.GetPasswordReset(ctx, tokenHash)
+}
+
+func (r users) LastPasswordReset(_ context.Context, userID string) (time.Time, error) {
+	var last time.Time
+	err := r.s.do(func(st *state) error {
+		for _, p := range st.resets {
+			if p.UserID == userID && p.CreatedAt.After(last) {
+				last = p.CreatedAt
+			}
+		}
+		return nil
+	})
+	return last, err
+}
+
+func (r users) UsePasswordResets(_ context.Context, userID string, at time.Time) error {
+	return r.s.do(func(st *state) error {
+		for k, p := range st.resets {
+			if p.UserID == userID && p.UsedAt.IsZero() {
+				p.UsedAt = at
+				st.resets[k] = p
+			}
+		}
+		return nil
+	})
+}
+
+func (r users) DeleteOldPasswordResets(_ context.Context, t time.Time) error {
+	return r.s.do(func(st *state) error {
+		for k, p := range st.resets {
+			if p.ExpiresAt.Before(t) {
+				delete(st.resets, k)
+			}
+		}
+		return nil
+	})
 }
 
 func (r users) Count(_ context.Context) (int, error) {

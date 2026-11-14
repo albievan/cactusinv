@@ -49,3 +49,6 @@ FROM email_outbox WHERE status = 'pending';
 
 -- name: CountSendingEmails :one
 SELECT COUNT(*) FROM email_outbox WHERE status = 'sending' AND updated_at > ?;
+
+-- name: RedactEmailBody :exec
+UPDATE email_outbox SET body = ? WHERE id = ?;

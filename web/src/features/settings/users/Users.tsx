@@ -5,7 +5,8 @@ import { formatDateTime } from '../../../lib/format'
 import { useAsync } from '../../../lib/useAsync'
 import { Empty, ErrorBanner, Field, Sheet, Spinner } from '../../../components/ui'
 import { useAuth } from '../../../components/auth'
-import { IconBan, IconHistory, IconPlay, IconPlus, IconUsers } from '../../../components/icons'
+import { IconBan, IconEdit, IconHistory, IconPlay, IconPlus, IconTrash, IconUsers } from '../../../components/icons'
+import { PasswordInput } from '../../../components/password'
 import { ChangePassword, SettingsPage } from '../Settings'
 import { GroupChoice, GroupsAdmin, UserGroupsSheet } from './Groups'
 import { MIN_PASSWORD, useSubmit, UserForm, YourPassword, type Group, type User } from './shared'
@@ -64,7 +65,7 @@ export function UsersSettingsPage() {
   )
 }
 
-type Action = { kind: 'add' } | { kind: 'reset' | 'disable' | 'enable' | 'access'; user: User }
+type Action = { kind: 'add' } | { kind: 'reset' | 'disable' | 'enable' | 'access' | 'edit' | 'delete'; user: User }
 
 function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; groups: Group[]; meId?: string; onChanged: (msg: string) => void }) {
   const [action, setAction] = useState<Action | null>(null)
@@ -87,8 +88,8 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
         </button>
       </div>
       <p className="small text-body-secondary mb-0">
-        What a user may do comes from their groups (see the Groups tab). Users are disabled, never deleted, so the audit log keeps naming them. Nobody can
-        disable themselves or the last active user.
+        What a user may do comes from their groups (see the Groups tab). Disable a user to stop them signing in for now, or delete them for good; the
+        audit log keeps their user name on everything they did either way. Nobody can disable or delete themselves or the last active user.
       </p>
       {items.length === 0 ? (
         <Empty>No users.</Empty>
@@ -99,6 +100,7 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
               <li key={u.id} className="card card-body vstack gap-2">
                 <div className="d-flex flex-wrap align-items-center gap-2">
                   <span className="min-w-0 text-break fw-semibold">{u.email}</span>
+                  <FullName user={u} />
                   <Badges user={u} you={u.id === me?.id} />
                 </div>
                 <div className="small">
@@ -115,7 +117,7 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
                 <caption className="visually-hidden">Users</caption>
                 <thead>
                   <tr>
-                    <th>Login</th>
+                    <th>User name</th>
                     <th>Status</th>
                     <th>Groups</th>
                     <th>Last sign-in</th>
@@ -128,7 +130,10 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
                 <tbody>
                   {items.map((u) => (
                     <tr key={u.id}>
-                      <td className="text-break fw-medium" style={{ minWidth: '12rem' }}>{u.email}</td>
+                      <td className="text-break" style={{ minWidth: '12rem' }}>
+                        <div className="fw-medium">{u.email}</div>
+                        <FullName user={u} />
+                      </td>
                       <td>
                         <div className="d-flex flex-wrap gap-1">
                           <Badges user={u} you={u.id === me?.id} />
@@ -158,6 +163,12 @@ function UsersAdmin({ users: items, groups, meId, onChanged }: { users: User[]; 
       )}
       {action?.kind === 'reset' && (
         <ResetSheet user={action.user} onClose={() => setAction(null)} onDone={() => done(`The password of ${action.user.email} was reset; they were signed out and must change it when they next sign in.`)} />
+      )}
+      {action?.kind === 'edit' && (
+        <EditUserSheet user={action.user} onClose={() => setAction(null)} onDone={(u) => done(`${u.email} was saved.`)} />
+      )}
+      {action?.kind === 'delete' && (
+        <DeleteSheet user={action.user} onClose={() => setAction(null)} onDone={() => done(`${action.user.email} was deleted. The audit log keeps their user name on what they did.`)} />
       )}
       {(action?.kind === 'disable' || action?.kind === 'enable') && (
         <ToggleSheet
@@ -219,8 +230,10 @@ function Actions({ user, you, lastActive, onAction, compact }: { user: User; you
       </button>
     )
   const access = btn('Access…', `Change the groups of ${user.email}`, <IconUsers width={16} height={16} />, () => onAction({ kind: 'access', user }))
+  const editBtn = btn('Edit…', `Edit ${user.email}`, <IconEdit width={16} height={16} />, () => onAction({ kind: 'edit', user }))
   return (
     <div className={`d-flex align-items-center gap-2 ${compact ? 'flex-nowrap justify-content-end' : 'flex-wrap'}`}>
+      {editBtn}
       {access}
       {you ? (
         !compact && <span className="fs-8 text-body-secondary">Change your own password below.</span>
@@ -234,6 +247,11 @@ function Actions({ user, you, lastActive, onAction, compact }: { user: User; you
                 title: lastActive ? 'The last active user cannot be disabled' : undefined,
               })
             : btn('Enable…', `Enable ${user.email}`, <IconPlay width={16} height={16} />, () => onAction({ kind: 'enable', user }))}
+          {btn('Delete…', `Delete ${user.email}`, <IconTrash width={16} height={16} />, () => onAction({ kind: 'delete', user }), {
+            danger: true,
+            disabled: lastActive,
+            title: lastActive ? 'The last active user cannot be deleted' : undefined,
+          })}
         </>
       )}
     </div>
@@ -244,7 +262,6 @@ function AddUserSheet({ groups, onClose, onDone }: { groups: Group[]; onClose: (
   const [email, setEmail] = useState('')
   const [groupIds, setGroupIds] = useState<string[]>([])
   const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
   const [current, setCurrent] = useState('')
   const s = useSubmit(async () => {
     if ([...password].length < MIN_PASSWORD) throw new Error(`The first password needs at least ${MIN_PASSWORD} characters.`)
@@ -257,12 +274,9 @@ function AddUserSheet({ groups, onClose, onDone }: { groups: Group[]; onClose: (
         <Field label="E-mail address" hint="This is their login.">
           {(f) => <input id={f} type="email" inputMode="email" autoComplete="off" autoCapitalize="none" className="form-control" maxLength={254} value={email} onChange={(e) => setEmail(e.target.value)} required />}
         </Field>
-        <Field label="First password" hint={`At least ${MIN_PASSWORD} characters. Give it to them safely; they must change it.`}>
-          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="form-control" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
+        <Field label="First password" hint={`${MIN_PASSWORD} to 200 characters, any characters. Give it to them safely; they must change it.`}>
+          {(f) => <PasswordInput id={f} autoComplete="new-password" value={password} onChange={setPassword} />}
         </Field>
-        <label className="d-flex align-items-center gap-2 small text-body-secondary" style={{ minHeight: 44 }}>
-          <input type="checkbox" className="form-check-input mt-0" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the first password
-        </label>
         <GroupChoice groups={groups} value={groupIds} onChange={setGroupIds} />
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>
@@ -272,7 +286,6 @@ function AddUserSheet({ groups, onClose, onDone }: { groups: Group[]; onClose: (
 
 function ResetSheet({ user, onClose, onDone }: { user: User; onClose: () => void; onDone: () => void }) {
   const [password, setPassword] = useState('')
-  const [show, setShow] = useState(false)
   const [current, setCurrent] = useState('')
   const s = useSubmit(async () => {
     if ([...password].length < MIN_PASSWORD) throw new Error(`The temporary password needs at least ${MIN_PASSWORD} characters.`)
@@ -285,12 +298,9 @@ function ResetSheet({ user, onClose, onDone }: { user: User; onClose: () => void
         <p className="small text-body-secondary mb-0">
           <strong className="text-break">{user.email}</strong> is signed out everywhere and must choose their own password the next time they sign in.
         </p>
-        <Field label="Temporary password" hint={`At least ${MIN_PASSWORD} characters. Give it to them safely.`}>
-          {(f) => <input id={f} type={show ? 'text' : 'password'} autoComplete="new-password" className="form-control" minLength={MIN_PASSWORD} maxLength={200} value={password} onChange={(e) => setPassword(e.target.value)} required />}
+        <Field label="Temporary password" hint={`${MIN_PASSWORD} to 200 characters, any characters. Give it to them safely.`}>
+          {(f) => <PasswordInput id={f} autoComplete="new-password" value={password} onChange={setPassword} />}
         </Field>
-        <label className="d-flex align-items-center gap-2 small text-body-secondary" style={{ minHeight: 44 }}>
-          <input type="checkbox" className="form-check-input mt-0" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show the temporary password
-        </label>
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>
     </Sheet>
@@ -312,6 +322,61 @@ function ToggleSheet({ kind, user, onClose, onDone }: { kind: 'disable' | 'enabl
           {disabling
             ? 'They are signed out at once and can no longer sign in. Nothing they did is removed, and you can enable them again later.'
             : 'They can sign in again with their existing password.'}
+        </p>
+        <YourPassword value={current} onChange={setCurrent} />
+      </UserForm>
+    </Sheet>
+  )
+}
+
+/** FullName is a user's first and last name under their user name, when they have one. */
+function FullName({ user }: { user: User }) {
+  const name = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim()
+  return name ? <div className="small text-body-secondary">{name}</div> : null
+}
+
+/** EditUserSheet changes a user's user name, name and e-mail address (M44). */
+function EditUserSheet({ user, onClose, onDone }: { user: User; onClose: () => void; onDone: (u: User) => void }) {
+  const [login, setLogin] = useState(user.email)
+  const [firstName, setFirstName] = useState(user.firstName ?? '')
+  const [lastName, setLastName] = useState(user.lastName ?? '')
+  const [emailAddress, setEmailAddress] = useState(user.emailAddress ?? '')
+  const [current, setCurrent] = useState('')
+  const s = useSubmit(async () => {
+    onDone(await unwrap(api.PUT('/users/{id}', { params: { path: { id: user.id } }, body: { userName: login.trim(), firstName, lastName, emailAddress, currentPassword: current } })))
+  })
+  return (
+    <Sheet title={`Edit ${user.email}`} open onClose={onClose}>
+      <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Save user" onClose={onClose}>
+        <Field label="User name" hint="What they sign in with. A new one must be an e-mail address; the audit log keeps the old name on what was done before.">
+          {(f) => <input id={f} autoComplete="off" autoCapitalize="none" className="form-control" maxLength={254} value={login} onChange={(e) => setLogin(e.target.value)} required />}
+        </Field>
+        <div className="row row-cols-1 row-cols-sm-2 g-3">
+          <Field label="First name">{(f) => <input id={f} autoComplete="off" className="form-control" maxLength={100} value={firstName} onChange={(e) => setFirstName(e.target.value)} />}</Field>
+          <Field label="Last name">{(f) => <input id={f} autoComplete="off" className="form-control" maxLength={100} value={lastName} onChange={(e) => setLastName(e.target.value)} />}</Field>
+        </div>
+        <Field label="E-mail address" hint="Password reset links go here (else to the user name when it is an e-mail address).">
+          {(f) => <input id={f} type="email" inputMode="email" autoComplete="off" className="form-control" maxLength={254} value={emailAddress} onChange={(e) => setEmailAddress(e.target.value)} />}
+        </Field>
+        <YourPassword value={current} onChange={setCurrent} />
+      </UserForm>
+    </Sheet>
+  )
+}
+
+/** DeleteSheet deletes a user for good (M44) after the actor's password. */
+function DeleteSheet({ user, onClose, onDone }: { user: User; onClose: () => void; onDone: () => void }) {
+  const [current, setCurrent] = useState('')
+  const s = useSubmit(async () => {
+    await unwrap(api.POST('/users/{id}/delete', { params: { path: { id: user.id } }, body: { currentPassword: current } }))
+    onDone()
+  })
+  return (
+    <Sheet title={`Delete ${user.email}?`} open onClose={onClose}>
+      <UserForm submit={s.submit} err={s.err} busy={s.busy} label="Delete user" danger onClose={onClose}>
+        <p className="small text-body mb-0">
+          <strong className="text-break">{user.email}</strong> is signed out at once and can never sign in again; this cannot be undone. Everything they did stays, and the
+          audit log keeps their user name on it. To stop them only for now, disable them instead.
         </p>
         <YourPassword value={current} onChange={setCurrent} />
       </UserForm>

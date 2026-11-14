@@ -154,11 +154,23 @@ Released into the public domain — see [LICENSE](LICENSE).
   existing files into an empty new folder. On Kubernetes the folders are volume claims. It also
   shows the running version, and **Check for updates** says whether a newer one is published and
   the command that upgrades to it (`./deploy.sh --upgrade`; see [Upgrading](#upgrading)).
-- **Users and access groups** — Settings → Users & groups: add users, reset a password,
-  disable and enable; create groups, choose what each group may do — each action on its own
+- **Users and access groups** — Settings → Users & groups: add users, **edit** them (user
+  name, first and last name, e-mail address), reset a password, disable and enable, or
+  **delete** them; create groups, choose what each group may do — each action on its own
   (e.g. add customers but not edit or delete them; create invoices but not edit, issue or
-  delete them; mark paid but not void) — and who is in it. Only Administrators manage users, groups, backups and restore. Users are
-  never deleted, and a password someone else chose must be changed at the first sign-in.
+  delete them; mark paid but not void) — and who is in it. Only Administrators manage users, groups, backups and restore. A deleted
+  user can never sign in again, but the audit log keeps their user name on everything they did;
+  a password someone else chose must be changed at the first sign-in.
+- **Your account** — Settings → Your account: your user name, first and last name and e-mail
+  address (where a password reset link goes), and a password change with an eye button on
+  every box, a confirmation box and the password policy (12 to 200 characters, any characters,
+  different from the current one) ticked off as you type.
+- **Forgot password** — on the sign-in page: enter your user name and a link to choose a new
+  password is e-mailed, only if that user exists, is active, has a password and an e-mail
+  address (your account's, else the user name when it is one). The answer is the same either
+  way. The link works once, for 60 minutes; using it signs you out everywhere. The default
+  `admin` needs an e-mail address in Your account first. Requests are rate-limited, and at most
+  one link per user goes out every two minutes.
 - **Typing amounts** — use a point or, on a phone set to a comma region, a comma for decimals
   ("192,94"); "1,500" is refused as ambiguous. PDFs print names in Latin, Greek and Cyrillic
   scripts as typed.
@@ -525,6 +537,11 @@ comes from their **groups** (ADR-012):
   restore and installing updates. Only its members can change, and you cannot remove yourself from it.
 - A user in **no group** can sign in but sees nothing (the Add user form warns). **Access…**
   on a user's row sets their groups.
+- **Edit** (pencil) changes a user's user name, first and last name and e-mail address; a new
+  user name must be an e-mail address nobody else has. **Delete** (bin) removes a user for good:
+  they are signed out and leave their groups; the audit log's **User** column keeps the user
+  name everything was done under. Nobody can delete themselves or the last active user; both
+  ask for your own password.
 - Every group and membership change asks for your own password and is in the audit log.
 - Upgrading to v1.7.0: only the default administrator (`admin`) stays an administrator;
   everyone else has no access until you put them in a group.

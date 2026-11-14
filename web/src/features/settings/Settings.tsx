@@ -9,6 +9,7 @@ import { ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner } from '../../c
 import { useAuth, useCan } from '../../components/auth'
 import { IconInfo, IconPlus } from '../../components/icons'
 import { EmailSetupGuide, type GuideProvider } from './EmailSetupGuide'
+import { PasswordInput, PasswordPolicy, passwordProblem } from '../../components/password'
 import { settingsHref, useSettingsNav } from './settingsNav'
 
 type EmailSettings = Schemas['EmailSettings']
@@ -64,19 +65,23 @@ export function More() {
 export function ChangePassword() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
+  const problem = passwordProblem(next, confirm, current)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (busy) return
-    setBusy(true)
     setErr(null)
     setMsg('')
+    if (problem) return setErr(new Error(problem))
+    setBusy(true)
     try {
       await unwrap(api.POST('/auth/password', { body: { currentPassword: current, newPassword: next } }))
       setCurrent('')
       setNext('')
+      setConfirm('')
       setMsg('Password changed. Your other sessions were signed out.')
     } catch (x) {
       setErr(x as Error)
@@ -85,14 +90,66 @@ export function ChangePassword() {
     }
   }
   return (
-    <form onSubmit={submit} className="card card-body mt-3 vstack gap-3">
-      <h2 className="fs-6 fw-semibold mb-0">Change password</h2>
+    <form onSubmit={submit} className="card card-body mt-3 vstack gap-3" aria-labelledby="change-password">
+      <h2 id="change-password" className="fs-6 fw-semibold mb-0">Change password</h2>
       <ErrorBanner error={err} />
-      <Field label="Current password">{(f) => <input id={f} type="password" autoComplete="current-password" className="form-control" value={current} onChange={(e) => setCurrent(e.target.value)} required />}</Field>
-      <Field label="New password" hint="At least 12 characters.">{(f) => <input id={f} type="password" autoComplete="new-password" minLength={12} maxLength={200} className="form-control" value={next} onChange={(e) => setNext(e.target.value)} required />}</Field>
+      <div className="row row-cols-1 row-cols-md-3 g-3">
+        <Field label="Current password">{(f) => <PasswordInput id={f} autoComplete="current-password" value={current} onChange={setCurrent} />}</Field>
+        <Field label="New password">{(f) => <PasswordInput id={f} autoComplete="new-password" value={next} onChange={setNext} describedBy="password-policy" />}</Field>
+        <Field label="Confirm new password">{(f) => <PasswordInput id={f} autoComplete="new-password" value={confirm} onChange={setConfirm} />}</Field>
+      </div>
+      <PasswordPolicy id="password-policy" next={next} confirm={confirm} current={current} />
       <div className="d-flex align-items-center justify-content-end gap-3">
-        {msg && <span className="small text-success">{msg}</span>}
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Changing…' : 'Change password'}</button>
+        {msg && <span role="status" className="small text-success">{msg}</span>}
+        <button className="btn btn-primary" disabled={busy || !!problem || !current}>{busy ? 'Changing…' : 'Change password'}</button>
+      </div>
+    </form>
+  )
+}
+
+/** ProfileForm is the signed-in user's own details (M43): user name, name and e-mail address. */
+export function ProfileForm() {
+  const { data, error } = useAsync(() => unwrap(api.GET('/auth/profile')), [])
+  const [p, setP] = useState<{ firstName: string; lastName: string; emailAddress: string }>()
+  const [reset, setReset] = useState('')
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState<Error | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { if (data) { setP({ firstName: data.firstName, lastName: data.lastName, emailAddress: data.emailAddress }); setReset(data.resetAddress) } }, [data])
+  if (!p || !data) return error ? <ErrorBanner error={error} /> : <Spinner />
+  const set = (patch: Partial<typeof p>) => { setMsg(''); setP({ ...p, ...patch }) }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setErr(null)
+    try {
+      const out = await unwrap(api.PUT('/auth/profile', { body: p }))
+      setP({ firstName: out.firstName, lastName: out.lastName, emailAddress: out.emailAddress })
+      setReset(out.resetAddress)
+      setMsg('Saved.')
+    } catch (x) {
+      setErr(x as Error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <form onSubmit={submit} className="card card-body vstack gap-3" aria-labelledby="my-details">
+      <h2 id="my-details" className="fs-6 fw-semibold mb-0">My details</h2>
+      <ErrorBanner error={err} />
+      <div className="row row-cols-1 row-cols-md-2 g-3">
+        <Field label="User name" hint="What you sign in with. An administrator can change it under Users & groups.">
+          {(f) => <input id={f} className="form-control" value={data.userName} readOnly aria-readonly="true" />}
+        </Field>
+        <Field label="E-mail address" hint={reset ? `Password reset links go to ${reset}.` : 'Add one so a forgotten password can be reset by e-mail.'}>
+          {(f) => <input id={f} type="email" inputMode="email" autoComplete="email" className="form-control" maxLength={254} value={p.emailAddress} onChange={(e) => set({ emailAddress: e.target.value })} />}
+        </Field>
+        <Field label="First name">{(f) => <input id={f} autoComplete="given-name" className="form-control" maxLength={100} value={p.firstName} onChange={(e) => set({ firstName: e.target.value })} />}</Field>
+        <Field label="Last name">{(f) => <input id={f} autoComplete="family-name" className="form-control" maxLength={100} value={p.lastName} onChange={(e) => set({ lastName: e.target.value })} />}</Field>
+      </div>
+      <div className="d-flex align-items-center justify-content-end gap-3">
+        {msg && <span role="status" className="small text-success">{msg}</span>}
+        <button className="btn btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Save my details'}</button>
       </div>
     </form>
   )
@@ -143,7 +200,7 @@ export function EmailSettingsPage() {
   return <SettingsPage><EmailServer /></SettingsPage>
 }
 
-/** AccountSettingsPage is /settings/account: the signed-in user's own password. */
+/** AccountSettingsPage is /settings/account: the signed-in user's own details and password. */
 export function AccountSettingsPage() {
   const { user } = useAuth()
   return (
@@ -151,6 +208,7 @@ export function AccountSettingsPage() {
       <p className="small text-body-secondary">
         Signed in as <strong className="text-break">{user?.email}</strong>.
       </p>
+      <ProfileForm />
       <ChangePassword />
     </SettingsPage>
   )

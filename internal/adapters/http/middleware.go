@@ -191,7 +191,9 @@ func withAPIGuards(svc *app.Service, maxUpload int64, limiter *loginLimiter, nex
 			return
 		}
 		// The customer's quote page (M41) needs no session: its e-mail's token is the key.
-		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/version" || strings.HasPrefix(r.URL.Path, "/api/v1/public/") {
+		// Forgot password (M43) likewise: the e-mailed link is the key.
+		if r.URL.Path == "/api/v1/auth/login" || r.URL.Path == "/api/v1/version" || strings.HasPrefix(r.URL.Path, "/api/v1/public/") ||
+			r.URL.Path == "/api/v1/auth/password-reset" || strings.HasPrefix(r.URL.Path, "/api/v1/auth/password-reset/") {
 			next.ServeHTTP(w, r)
 			return
 		}
