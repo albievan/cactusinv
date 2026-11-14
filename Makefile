@@ -7,7 +7,7 @@ COVER_MIN := 80
 VERSION := $(shell tr -d '[:space:]' < VERSION 2>/dev/null || echo dev)
 BUILD := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 
-.PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build dist image check \
+.PHONY: help gen fmt fmt-check lint vet test cover test-int remote-test-int vuln contracts web-install web-check build dist release image check \
         install uninstall status backup
 
 help: ## list targets
@@ -93,10 +93,11 @@ web-check: web-install ## web lint, typecheck, tests, build
 build: web-check ## build the binary with the web app embedded
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION) -X main.build=$(BUILD)" -o bin/cactusinv ./cmd/cactusinv
 
-# dist/ is the published release a standalone server installs itself from (System Settings
-# → Install and restart; M31): one binary per OS and CPU and their
-# SHA256SUMS, committed with VERSION. Their build number is that of the commit they go in
-# (the next one), so run this last, then commit.
+# dist/ holds a release a standalone server installs itself from (System Settings →
+# Install and restart; M31): one binary per OS and CPU, SHA256SUMS and its signature. It
+# is not committed (M48): `make release` publishes it as the GitHub Release v<VERSION>.
+# The build number is that of the commit the release is made from (the next one), so run
+# this, commit VERSION and push, then `make release`.
 DIST_TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 # The private release key (never in the repository; see tools/releasesign).
 RELEASE_KEY ?= $(HOME)/.config/cactusinv/release-ed25519.key
@@ -113,6 +114,14 @@ dist: web-check ## build the published binaries in dist/ (commit them with VERSI
 	@[ -f "$(RELEASE_KEY)" ] || { echo "no release key at $(RELEASE_KEY): restore it from your backup (or, for a new key, go run ./tools/releasesign keygen \"$(RELEASE_KEY)\" and put the public key in internal/adapters/selfupdate/releasekey.go)"; exit 1; }
 	go run ./tools/releasesign sign "$(RELEASE_KEY)" dist/SHA256SUMS
 	cat dist/SHA256SUMS
+
+release: ## publish dist/ as the GitHub Release v$(VERSION) (after make dist, commit and push)
+	@[ -f dist/SHA256SUMS.sig ] || { echo "run make dist first"; exit 1; }
+	@./dist/cactusinv-$$(go env GOOS)-$$(go env GOARCH) version | grep -q '^$(VERSION) ' || { echo "dist/ is not $(VERSION): run make dist"; exit 1; }
+	@git diff --quiet HEAD -- && [ "$$(git rev-parse HEAD)" = "$$(git rev-parse @{upstream})" ] || { echo "commit and push first: the release is made from the pushed commit"; exit 1; }
+	git log -1 --format='%B' | sed '/^Co-Authored-By:/d; /^Claude-Session:/d' > dist/NOTES.md
+	gh release create "v$(VERSION)" dist/cactusinv-* dist/SHA256SUMS dist/SHA256SUMS.sig \
+	  --target "$$(git rev-parse HEAD)" --title "cactusInv $(VERSION)" --notes-file dist/NOTES.md
 
 image: ## build the container image
 	docker build --build-arg VERSION=$(VERSION) --build-arg BUILD=$(BUILD) -t cactusinv:latest .

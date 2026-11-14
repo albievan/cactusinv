@@ -363,7 +363,7 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 | `CACTUSINV_COOKIE_SECURE` | `Secure` cookie flag; while `true`, `POST /auth/login` over plain http (no TLS, no `X-Forwarded-Proto: https`, not localhost) answers 403 `https-required` | `true` |
 | `CACTUSINV_BACKUP_DIR` / `_BACKUP_TIMES` / `_BACKUP_RETENTION_DAYS` / `_BACKUP_MAX_UPLOAD_MB` | backups (§12) | `/data/backups` / `02:00` / `14` / `256` |
 | `CACTUSINV_RESTORE_DB_NAME` | restore staging database | `<db>_restore` |
-| `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never); a standalone server installs from `dist/` beside it, §19 | GitHub `main` `VERSION` |
+| `CACTUSINV_UPDATE_URL` | Check for updates source (`off` = never); a standalone server installs from that version's GitHub Release (default) or `dist/` beside a self-hosted VERSION file, §19 | GitHub `main` `VERSION` |
 | `CACTUSINV_CONTAINER` | `1` in the image: never replace its own binary (also when `CACTUSINV_DEPLOY_TARGET` is set) | – |
 | `CACTUSINV_DEPLOY_TARGET` / `_HOST_PROJECT_DIR` / `_HOST_BACKUP_DIR` / `_HOST_INVOICES_DIR` | set by `deploy.sh` for System Settings (folder mapping) | – |
 
@@ -717,11 +717,14 @@ settings, Sessions, Folders and Version (`?tab=`); the first three share one for
   not offered.
 - **Install in place (M31)**, standalone binary only: `make dist` builds
   `dist/cactusinv-<os>-<arch>[.exe]` (linux, darwin, windows × amd64, arm64) and
-  `dist/SHA256SUMS`, committed with `VERSION`, so a push to `main` publishes a release.
+  `dist/SHA256SUMS`. Until v1.27.0 they were committed with `VERSION`; since v1.28.0 (M48)
+  `dist/` is ignored and `make release` publishes it as the GitHub Release `v<VERSION>` from the
+  pushed commit.
   `POST /settings/system/update` (`administer` since M36; it installs and runs a program) starts `app.InstallUpdate`: a backup
   (skipped when no backup key is set up; any other backup failure stops it), then
-  `ports.Upgrader` (`adapters/selfupdate`) downloads the asset from `dist/` beside the VERSION
-  URL (256 MiB at most), requires its SHA-256 in `SHA256SUMS`, runs it with `version` (it must
+  `ports.Upgrader` (`adapters/selfupdate`) downloads the asset from the release's files —
+  `selfupdate.DistURL`: `…/releases/download/v{version}/` for GitHub's VERSION file (the version,
+  checked to be `n.n.n`, filled in), `dist/` beside any other VERSION URL (256 MiB at most), requires its SHA-256 in `SHA256SUMS`, runs it with `version` (it must
   report the published version), renames the running binary to `<exe>.old` and the download
   into place; audited `system.update_installed` / `system.update_failed`. `serve` then shuts
   down as for SIGTERM and `main` execs the new binary (same PID, arguments and environment;

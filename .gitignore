@@ -10,3 +10,5 @@ web/dist/*
 !web/dist/.gitkeep
 .DS_Store
 /example/
+# Release files: published as GitHub Releases (make release, M48), not committed.
+/dist/

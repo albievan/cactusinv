@@ -318,3 +318,25 @@ test('a user sees only what their groups allow', async () => {
   expect(window.location.pathname).toBe('/settings/account')
   window.history.pushState({}, '', '/')
 })
+
+test('E-mail server: the saved login can be removed, after a confirmation', async () => {
+  const saved = { enabled: true, host: 'relay.example.com', port: 25, username: 'albievan@gmail.com', passwordSet: true, from: '', tls: 'starttls', warnings: [], version: 2 }
+  const bodies: Record<string, unknown>[] = []
+  signedIn({
+    'GET /api/v1/settings/email': json(saved),
+    'PUT /api/v1/settings/email': async (req) => {
+      const body = await req.json()
+      bodies.push(body)
+      return json({ ...saved, username: '', passwordSet: false, version: 3 })()
+    },
+  })
+  window.history.pushState({}, '', '/settings/email')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Remove saved login' }))
+  expect(bodies).toEqual([]) // nothing yet: it asks first
+  await userEvent.click(screen.getByRole('button', { name: 'Remove login' }))
+  expect(await screen.findByText('The saved login was removed.')).toBeInTheDocument()
+  expect(bodies).toEqual([expect.objectContaining({ username: '', password: '', host: 'relay.example.com' })])
+  expect(screen.queryByRole('button', { name: 'Remove saved login' })).not.toBeInTheDocument()
+  expect(screen.getByLabelText('Password')).not.toHaveAttribute('placeholder', '•••••••• saved')
+})

@@ -175,3 +175,20 @@ func TestRestoreKeepsTheQuoteSequence(t *testing.T) {
 		t.Fatalf("quote sequence rewound to %d", next)
 	}
 }
+
+// The saved mail login can be removed for a relay that needs none (M48): an empty user name
+// and an empty password clear both, the server stays enabled.
+func TestSMTPLoginCanBeRemoved(t *testing.T) {
+	h := newHarness(t).seed()
+	svc := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: &fakes.IDs{}, Mailer: h.mailer, Renderer: fakes.Renderer{}, Hasher: fakes.Hasher{}, Cipher: fakes.Cipher{}})
+	st := must(svc.GetSMTPSettings(h.ctx)).Settings
+	st.Enabled, st.Host, st.Username = true, "relay.example.com", "me@example.com"
+	pw := "a mail password"
+	st = must(svc.UpdateSMTPSettings(h.ctx, st, &pw)).Settings
+	st.Username = ""
+	empty := ""
+	v := must(svc.UpdateSMTPSettings(h.ctx, st, &empty))
+	if v.PasswordSet || v.Settings.Username != "" || !v.Settings.Enabled {
+		t.Fatalf("after removing the login: %+v", v)
+	}
+}

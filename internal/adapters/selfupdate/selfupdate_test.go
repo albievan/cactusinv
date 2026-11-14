@@ -117,7 +117,11 @@ func TestCanInstall(t *testing.T) {
 	if p := newInstaller("", running(t)).CanInstall(); !strings.Contains(p, "VERSION file") {
 		t.Fatalf("no dist: %q", p)
 	}
-	if got := selfupdate.DistURL("https://raw.githubusercontent.com/albievan/cactusinv/main/VERSION"); got != "https://raw.githubusercontent.com/albievan/cactusinv/main/dist/" {
+	// GitHub's releases are GitHub Releases (M48); a self-hosted VERSION keeps dist/ beside it.
+	if got := selfupdate.DistURL("https://raw.githubusercontent.com/albievan/cactusinv/main/VERSION"); got != "https://github.com/albievan/cactusinv/releases/download/v{version}/" {
+		t.Fatal(got)
+	}
+	if got := selfupdate.DistURL("https://updates.example.com/cactusinv/VERSION"); got != "https://updates.example.com/cactusinv/dist/" {
 		t.Fatal(got)
 	}
 	if selfupdate.DistURL("https://example.com/latest.txt") != "" || selfupdate.AssetName("windows", "amd64") != "cactusinv-windows-amd64.exe" {
@@ -157,5 +161,34 @@ func TestInstallNeedsTheReleaseSignature(t *testing.T) {
 	// The real installer carries the release key.
 	if k := selfupdate.ReleaseKeyForTest(); len(k) != ed25519.PublicKeySize {
 		t.Fatalf("release key is %d bytes", len(k))
+	}
+}
+
+// A release is fetched from the folder named by its version (GitHub Releases, M48), and a
+// version that is not one is never put in a URL.
+func TestInstallFetchesTheVersionsRelease(t *testing.T) {
+	body := script("1.16.0")
+	h := sha256.Sum256(body)
+	sum := hex.EncodeToString(h[:])
+	asset := selfupdate.AssetName(runtime.GOOS, runtime.GOARCH)
+	sums := []byte(sum + "  " + asset + "\n")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/releases/download/v1.16.0/SHA256SUMS", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(sums) })
+	mux.HandleFunc("/releases/download/v1.16.0/SHA256SUMS.sig", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(base64.StdEncoding.EncodeToString(ed25519.Sign(testPriv, sums))))
+	})
+	mux.HandleFunc("/releases/download/v1.16.0/"+asset, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) })
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	exe := running(t)
+	in := newInstaller(srv.URL+"/releases/download/v{version}/", exe)
+	if err := in.Install(context.Background(), "1.16.0", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(exe); string(got) != string(body) { //nolint:gosec // the test's own file
+		t.Fatal("not installed")
+	}
+	if err := newInstaller(srv.URL+"/releases/download/v{version}/", running(t)).Install(context.Background(), "1.16.0/../x", nil); err == nil || !strings.Contains(err.Error(), "not a release version") {
+		t.Fatalf("a path in the version: %v", err)
 	}
 }

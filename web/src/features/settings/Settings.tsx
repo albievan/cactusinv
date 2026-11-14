@@ -322,8 +322,33 @@ function EmailServer() {
           {(f) => <input id={f} className="form-control" autoComplete="off" spellCheck={false} placeholder={userSaved ? '•••••••• saved' : ''} value={username} onChange={(x) => setUsername(x.target.value)} />}
         </Field>
         <Field label="Password" hint={e.passwordSet ? 'A password is saved (encrypted). Leave empty to keep it.' : 'Stored encrypted.'}>
-          {(f) => <input id={f} type="password" className="form-control" autoComplete="new-password" placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={(x) => setPassword(x.target.value)} />}
+          {(f) => <PasswordInput id={f} autoComplete="new-password" required={false} placeholder={e.passwordSet ? '•••••••• saved' : ''} value={password} onChange={setPassword} />}
         </Field>
+        {(userSaved || e.passwordSet) && can('settings.email') && (
+          <div className="w-100">
+            <ConfirmButton
+              className="btn btn-sm btn-outline-danger"
+              label="Remove saved login"
+              title="Remove the saved user name and password?"
+              message={<>The mail server is then used without signing in, as a relay that needs no login expects. A server such as Gmail or Microsoft 365 will refuse to send until a user name and password are saved again.</>}
+              confirmLabel="Remove login"
+              onConfirm={async () => {
+                setErr(null)
+                setMsg('')
+                try {
+                  const next = await unwrap(api.PUT('/settings/email', { body: { ...e, username: '', password: '' } }))
+                  setE(next)
+                  setSaved(JSON.stringify(next))
+                  setPassword('')
+                  setUsername('')
+                  setMsg('The saved login was removed.')
+                } catch (x) {
+                  setErr(x as Error)
+                }
+              }}
+            />
+          </div>
+        )}
         <div>
           <Field label="Send as" hint='e.g. "Example Ltd <billing@example.com>". Defaults to the user name. The provider decides the sender it shows; see the setup guide.'>{(f) => <input id={f} className="form-control" value={e.from} onChange={(x) => set({ from: x.target.value })} />}</Field>
           {e.warnings.length > 0 && (

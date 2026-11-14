@@ -859,10 +859,22 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 47.1 | System Settings split into tabs **Web settings** (external address, HTTPS only, behind Cloudflare), **Sessions**, **Folders**, **Version**; the open tab is in the address (`?tab=…`, Web settings by default); one form behind the first three, so Save stores every tab's changes (unsaved changes survive a tab switch); Version has no Save | done | Vitest `SystemSettings.test.tsx` (tabs, address, cross-tab save, each test on its tab); Chrome on an isolated preview with a mock API |
 | 47.2 | Docs (README, ARCHITECTURE §17, PLAN), VERSION 1.27.0, gate, signed binaries, commit, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 51.4 s; "No vulnerabilities found."; contracts in sync; web 132 tests, build OK; `make dist` 1.27.0 (build 51), signature verified |
 
+### M48 — Releases on GitHub Releases; remove the saved mail login (Albie, 2026-11-14) — v1.28.0
+
+> "complete all Recommended next steps" — the engineering ones: binaries as GitHub Releases so the repository stops growing, and clearing the saved mail login. (Key backups, the end-to-end check on the live site, the outside check and HSTS on 17 November are the owner's; the Mac copy and the next feature are the owner's decisions.)
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 48.1 | `dist/` no longer committed (`.gitignore`, removed from the index); `make release` publishes `dist/` (binaries, SHA256SUMS, its signature) as the GitHub Release `v<VERSION>` from the pushed commit, refusing unpushed or mismatched builds | done | the v1.28.0 release on GitHub |
+| 48.2 | The installer fetches a release from `…/releases/download/v{version}/` for GitHub's VERSION file (a self-hosted VERSION keeps `dist/` beside it); the version must be `n.n.n` before it goes in a URL; the signature check is unchanged | done | `TestInstallFetchesTheVersionsRelease`, `TestCanInstall` |
+| 48.3 | Settings → E-mail server: **Remove saved login** (after a confirmation) clears the user name and password for a relay that needs no sign-in; the password box has the eye button | done | `TestSMTPLoginCanBeRemoved`, Vitest |
+| 48.4 | Docs (README, ARCHITECTURE §19, PLAN), VERSION 1.28.0, gate, release, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 49.4 s; "No vulnerabilities found."; contracts in sync; web 133 tests, build OK; `make dist` 1.28.0 (build 52), signature verified; `make release` published v1.28.0 |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-14 | Release binaries are published as GitHub Releases, not committed (replaces the M31 decision) | each release added about 70 MB to every clone; the signed checksum list keeps the same trust, the history up to v1.27.0 stays as it is |
 | 2026-11-14 | Releases are signed with an Ed25519 key kept by the owner; the public key is compiled in | the checksums came from the same place as the binaries, so whoever could change one could change both; a signature only the owner can make closes that |
 | 2026-11-14 | HSTS is a System Setting, off by default | the k3s default certificate is self-signed: HSTS would stop browsers letting users past its warning; it is for installations with a trusted certificate |
 | 2026-11-14 | One external address for every link in e-mails, in System Settings | the address is the installation's own (not backed up or carried in settings files) and is needed by scheduled e-mails, which have no browser |
@@ -899,7 +911,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 2026-11-12 | Invoices → Scheduled lists the next invoice of each schedule still to be raised (one per schedule), not invoices already raised; a paused schedule shows what it would raise if resumed now | the owner asked for scheduled invoices "not yet generated only, even if the schedule is paused"; one per schedule because a recurrence has no end to list; resuming skips the periods missed while paused, so the stored pending period would be wrong |
 | 2026-11-12 | A sample is built and rendered in memory, issued as `SAMPLE`, and never stored | a preview must not use a gap-free invoice number, write a run record or reach the outbox |
 | 2026-11-12 | An issued invoice's notes may change (audited); nothing else on it may | The owner's monthly remarks live in the notes and must reach a resend; they carry no money, number or tax |
-| 2026-11-12 | Releases are binaries committed in `dist/` on `main` with SHA256SUMS | The owner asked for releases published this way; no CI exists. Cost: about 100 MB of history per release |
+| 2026-11-12 | (Replaced by M48: GitHub Releases) Releases are binaries committed in `dist/` on `main` with SHA256SUMS | The owner asked for releases published this way; no CI exists. Cost: about 100 MB of history per release |
 | 2026-10-15 | Modular monolith, one binary (ADR-001) | "Simple invoice system"; hexagonal layers without microservice overhead |
 | 2026-10-15 | MariaDB 11 + goose + sqlc(mysql engine) + go-sql-driver/mysql (ADR-002) | MariaDB mandated; versioned migrations and type-checked queries |
 | 2026-10-15 | Explicit price per currency, no FX (ADR-003) | Albie asked to "charge in multi currency"; FX on invoices is a source of disputes and stale rates |
@@ -1040,5 +1052,4 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 - (Decided: a restore keeps pending e-mails, releases are signed, HSTS is a System Setting — M45; a generated first password and `/metrics` behind a token, M40; an expired quote cannot be accepted or converted but is renewed, M41; `.env` stays as it is, M41.)
 - (M40/M41) The committed `.env` names `/data/k3s/...` folders for the Docker targets; the owner's Mac install keeps its data in `./data` and `./secrets`, so a Docker deploy there needs `DATA_DIR`, `MARIADB_DATA_DIR`, `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` in the environment (the M40 guard stops it otherwise). The owner chose to leave `.env` as it is.
 - (M41–M43) Customer links (quote answers, "I have paid", password resets) need an address customers can reach and a certificate their browsers trust: set Settings → Quotes → Address customers reach this app on, and a real certificate (`K8S_TLS_CERT`/`K8S_TLS_KEY`).
-- (M38) A saved mail user name can only be replaced, not emptied, from the form (as with the password). A relay that needs no sign-in would need a way to clear both — add a "Remove" if someone needs it.
 - (Overdue reminders: decided **no** — M8. VAT: configurable, default 0 — M8.)

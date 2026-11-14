@@ -48,7 +48,8 @@ Released into the public domain — see [LICENSE](LICENSE).
   password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
   Outlook / Microsoft 365 and other servers; once saved, the user name and the password are
   not shown again (leave the box empty to keep them, type to replace); the password is stored encrypted, and is only ever
-  sent to the server it was saved for (changing the host or user name asks for it again). cactusInv
+  sent to the server it was saved for (changing the host or user name asks for it again).
+  **Remove saved login** clears both, for a relay that needs no sign-in. cactusInv
   sends From the **Send as** address, but the provider decides the sender it shows: Gmail
   sends as the signed-in account unless Send as is a verified alias (Gmail → Settings →
   Accounts → Send mail as), and Microsoft 365 may refuse unless it is the mailbox's own
@@ -289,7 +290,7 @@ Settings → System Settings → **Check for updates** says when a newer version
 
 **A standalone server** (the `cactusinv` binary run on a machine, not in a container) installs
 it itself: an administrator presses **Install and restart**, then confirms. It takes a backup (when a backup key is
-set up), downloads the new binary for its OS and CPU from `dist/` on GitHub, checks it against
+set up), downloads the new binary for its OS and CPU from that version's GitHub Release, checks it against
 the published SHA-256 — whose list must carry the owner's signature (`SHA256SUMS.sig`, from
 v1.26.0; an unsigned or wrongly signed release is refused) — and by running it, keeps the old one as `cactusinv.old` beside it, and
 restarts in place (same process, so systemd or a terminal stays attached). The new version
@@ -328,10 +329,13 @@ tables it does not know.
 
 ### Publishing a release
 
-Bump `VERSION`, run `make dist` (it builds `dist/cactusinv-<os>-<arch>` for Linux, macOS and
-Windows on amd64 and arm64, and `dist/SHA256SUMS`, numbered as the next commit), then commit
-and push to `main`. Standalone servers offer it from then on; containers get it with
-`./deploy.sh --upgrade`. Each release adds about 100 MB of binaries to the repository.
+Bump `VERSION` and run `make dist`: it builds `dist/cactusinv-<os>-<arch>` for Linux, macOS
+and Windows on amd64 and arm64 (numbered as the next commit), `dist/SHA256SUMS` and its
+signature `dist/SHA256SUMS.sig` (made with the release key, see `tools/releasesign`). Commit
+and push to `main`, then run `make release`: it publishes `dist/` as the GitHub Release
+`v<VERSION>` (`gh` signed in). Standalone servers offer it from then on; containers get it
+with `./deploy.sh --upgrade`. Since v1.28.0 the binaries are not committed (`dist/` is
+ignored), so the repository no longer grows by them; releases up to v1.27.0 are in its history.
 
 ## Configuration — `.env`
 
@@ -371,7 +375,7 @@ On k3s/k8s these are not used: the data lives in volume claims (see
 |---|---|---|
 | `TZ` | `Africa/Johannesburg` | IANA time zone (e.g. `Europe/London`, `UTC`). Used for `BACKUP_TIMES`, log times, and the business time zone until one is saved in Settings → Business. An unknown name stops the app at start-up. |
 | `CACTUSINV_LOG_LEVEL` | `info` | How much the app logs (JSON on stdout): `debug`, `info`, `warn` or `error`. Anything else means `info`. Logs never contain e-mail addresses, bank details or secrets. |
-| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `https` URL (plain `http` only to `localhost`, since the server installs what it downloads) of a file whose first line is a version like `1.19.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs from the `dist/` folder beside that file. `off` = never check. Only read when someone presses the button. |
+| `CACTUSINV_UPDATE_URL` | empty | Where Settings → System Settings → **Check for updates** reads the newest version: an `https` URL (plain `http` only to `localhost`, since the server installs what it downloads) of a file whose first line is a version like `1.19.0`. Empty = the `VERSION` file on GitHub's `main` branch (what `--upgrade` installs). A standalone server installs the release published for it: GitHub Releases for the default, the `dist/` folder beside the file for any other (a mirror you host). `off` = never check. Only read when someone presses the button. |
 | `CACTUSINV_COOKIE_SECURE` | `true` | `true` marks the sign-in cookie HTTPS-only. Keep it `true` behind HTTPS (a TLS proxy or ingress) and for `http://localhost`, which Chrome and Firefox treat as secure (if sign-in fails on
 `localhost` in another browser, set `false`). Over plain `http://` on another address (e.g. `http://192.168.1.72:30080`) sign-in is refused with "Sign-in needs HTTPS": use HTTPS (on k3s/k8s, `K8S_HTTPS=true`; see [HTTPS on k3s/k8s](#https-on-k3sk8s)), or set `false` on a network you trust. |
 | `CACTUSINV_TRUSTED_PROXIES` | empty (k3s/k8s: `10.42.0.0/16`) | Reverse proxies (addresses or CIDRs, comma-separated) whose `X-Forwarded-For` names the client. The sign-in rate limit counts per client address; without this, everyone behind an ingress shares its address, so one person's wrong passwords would lock everyone out. Only list proxies you run: a listed address can name any client. |

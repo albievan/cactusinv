@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -36,9 +37,21 @@ func AssetName(goos, goarch string) string {
 	return name
 }
 
-// DistURL is the dist/ folder beside a VERSION file URL ("" when the URL does not name
-// a VERSION file, so there is nothing to install from).
+// gitHubVersion is the VERSION file on GitHub's main branch (release.DefaultURL); its
+// releases are published as GitHub Releases (M48), not committed beside it.
+const (
+	gitHubVersion  = "https://raw.githubusercontent.com/albievan/cactusinv/main/VERSION"
+	gitHubReleases = "https://github.com/albievan/cactusinv/releases/download/v{version}/"
+)
+
+// DistURL is where the files of a release are published for a VERSION file URL: for the
+// one on GitHub, that release's GitHub Release (with {version} in it); for any other, the
+// dist/ folder beside it (a self-hosted mirror). "" when the URL names no VERSION file, so
+// there is nothing to install from.
 func DistURL(versionURL string) string {
+	if versionURL == gitHubVersion {
+		return gitHubReleases
+	}
 	base, ok := strings.CutSuffix(versionURL, "/VERSION")
 	if !ok || base == "" {
 		return ""
@@ -46,11 +59,15 @@ func DistURL(versionURL string) string {
 	return base + "/dist/"
 }
 
+// versionRe is a release version as published ("1.27.0"): nothing else goes in a URL.
+var versionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
 // Installer implements ports.Upgrader for the running binary.
 type Installer struct {
 	dist      string
 	container bool
 	client    *http.Client
+	base      string // dist with the version being installed filled in (Install)
 	exe       string // the running binary, symlinks resolved ("" when unknown)
 	exeErr    error
 	key       ed25519.PublicKey // checks SHA256SUMS.sig (releasePublicKey)
@@ -98,6 +115,10 @@ func (i *Installer) Install(ctx context.Context, version string, progress func(d
 	if p := i.CanInstall(); p != "" {
 		return errors.New(p)
 	}
+	if !versionRe.MatchString(version) {
+		return fmt.Errorf("selfupdate: %q is not a release version", version)
+	}
+	i.base = strings.ReplaceAll(i.dist, "{version}", version)
 	asset := AssetName(runtime.GOOS, runtime.GOARCH)
 	sums, err := i.checksums(ctx)
 	if err != nil {
@@ -124,7 +145,7 @@ func (i *Installer) Install(ctx context.Context, version string, progress func(d
 }
 
 func (i *Installer) get(ctx context.Context, name string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, i.dist+name, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, i.base+name, nil)
 	if err != nil {
 		return nil, fmt.Errorf("selfupdate: %w", err)
 	}
