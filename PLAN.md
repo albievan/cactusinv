@@ -870,10 +870,43 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 48.3 | Settings → E-mail server: **Remove saved login** (after a confirmation) clears the user name and password for a relay that needs no sign-in; the password box has the eye button | done | `TestSMTPLoginCanBeRemoved`, Vitest |
 | 48.4 | Docs (README, ARCHITECTURE §19, PLAN), VERSION 1.28.0, gate, release, upgrade both installs | done | 2026-11-14: `make check` exit 0 — 0 lint issues; domain 96.6 %, app 87.2 %; integration ok 49.4 s; "No vulnerabilities found."; contracts in sync; web 133 tests, build OK; `make dist` 1.28.0 (build 52), signature verified; `make release` published v1.28.0 |
 
+### M49 — Install instructions for every system (Albie, 2026-11-15)
+
+> "add install instructions here [System Settings → Version] and also on the login screen below 'Free and open source: github.com/albievan/cactusinv', make sure to cover all architectures"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 49.1 | `setup.sh` (Linux, macOS; amd64/arm64, Rosetta-aware): newest (or `CACTUSINV_VERSION`) release into the current folder, release signature checked with OpenSSL 3 (else says so), SHA-256 checked, old program kept as `cactusinv.old` | done | live v1.28.0 release: macOS (OpenSSL 3 and LibreSSL), Debian 12 and Alpine on arm64; a tampered SHA256SUMS is refused |
+| 49.2 | `setup.ps1` (Windows PowerShell; amd64/arm64): same, checksum only (no Ed25519 in Windows PowerShell) | done | parses in PowerShell 7 (container); not run on Windows |
+| 49.3 | `DeploymentInfo.platform` (GOOS/GOARCH) so Version marks this server's commands | done | contract regenerated |
+| 49.4 | Web `InstallCommands`: the two setup scripts and one file per OS × CPU (6), each with a copy button; Version tab ("Install or update by hand", "This server" badge on a standalone server; a container's note says it is for another computer) and sign-in page (collapsed below the source link) | done | Vitest `install.test.tsx` (assets per platform, copy, sign-in order), `SystemSettings.test.tsx` (8 rows, badge, container); headless browser at 1400 px and 390 px (no sideways scroll) |
+| 49.5 | README "Installing the program": the commands, the MariaDB databases and grants (incl. `cactusinv_restore`), the secrets and a first start | done | the first-start example run against a throwaway MariaDB 11: starts, `admin` signs in, no errors |
+
+### M50 — Edit the ad-hoc customer from their quote (Albie, 2026-11-15)
+
+> "i want to be able to edit the ad-hoc customer" (on a quote for an ad-hoc customer)
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 50.1 | Domain `Quote.PartyChanged`: an open quote (draft/sent, not expired) takes the edited ad-hoc details; a sent one goes back to draft like any edit; answered, converted and expired quotes keep what they printed | done | `TestAdhocEditRefreshesOpenQuotes` |
+| 50.2 | `UpdateAdhocCustomer` refreshes the customer's open quotes in the same transaction (audited as quote.updated); a save without a change touches none | done | same test (draft and sent changed, accepted and expired kept, unchanged save keeps the version) |
+| 50.3 | Quote page: **Edit customer** (quotes.edit; not once converted) opens the ad-hoc sheet with a note on what saving does to this quote; a notice after saving | done | Vitest `Quotes.test.tsx` (sent quote → draft with new name; accepted note; none when converted) |
+| 50.4 | Docs (README Quotes, OpenAPI description, PLAN) | done | `make check` |
+
+### M51 — Ad-hoc customers on the Customers page (Albie, 2026-11-15) — v1.29.0
+
+> "add a filter to the customer page to view ad-hoc customers not converted to real customers, then add the ability to edit the ad-hoc customers here, then update documentation, commit code and release it to 10.101.18.101"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 51.1 | Customers page: filter **Customers / Ad-hoc (not yet customers)** (radio pills, `?show=adhoc`; only with quotes.view); the ad-hoc view lists those not converted (the API's default) with **Edit** (quotes.edit; M50's re-printing of open quotes, explained in the sheet) and **Make customer** (customers.create) | done | Vitest `Customers.test.tsx` (filter and address, not-converted query, edit saves, permissions) |
+| 51.2 | Docs (README Quotes, PLAN), VERSION 1.29.0 (M49–M51), gate, signed release, upgrade 10.101.18.101 with a backup first | done | 2026-11-15: `make check` exit 0 — 0 lint issues; domain 96.3 %, app 87.2 %; integration ok 45.0 s; "No vulnerabilities found."; contracts in sync; web 143 tests, build OK; `make dist` 1.29.0 (build 54), signature verified; GitHub Release v1.29.0 |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-15 | Editing an ad-hoc customer re-prints only their open quotes | an open quote can be edited anyway (and a sent one goes back to draft); a quote the customer answered, or that was converted or expired, is a record of what they saw |
 | 2026-11-14 | The Mac's Docker install stays as it is beside the server (owner's decision) | the server at invoice.primesoft.co.za is reached by customers; the Mac copy is the owner's to use |
 | 2026-11-14 | Release binaries are published as GitHub Releases, not committed (replaces the M31 decision) | each release added about 70 MB to every clone; the signed checksum list keeps the same trust, the history up to v1.27.0 stays as it is |
 | 2026-11-14 | Releases are signed with an Ed25519 key kept by the owner; the public key is compiled in | the checksums came from the same place as the binaries, so whoever could change one could change both; a signature only the owner can make closes that |

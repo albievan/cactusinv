@@ -7,9 +7,9 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner, quoteStageLabels } from '../../components/ui'
-import { IconCheck, IconEdit, IconFilePdf, IconInvoice, IconPersonPlus, IconRenew, IconSend, IconTrash, IconBan } from '../../components/icons'
+import { IconCheck, IconEdit, IconFilePdf, IconInvoice, IconPersonPlus, IconRenew, IconSend, IconTrash, IconBan, IconUser } from '../../components/icons'
 import { actionLabel } from '../invoices/InvoiceDetail'
-import { ConvertSheet } from './AdhocCustomers'
+import { AdhocSheet, ConvertSheet } from './AdhocCustomers'
 
 const tnum = { fontVariantNumeric: 'tabular-nums' } as const
 
@@ -24,6 +24,7 @@ export function QuoteDetail() {
   const [sendOpen, setSendOpen] = useState(false)
   const [declineOpen, setDeclineOpen] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [editingCustomer, setEditingCustomer] = useState(false)
 
   if (loading && !data) return <Spinner />
   if (!data) return <Page title="Quote" back="/quotes"><ErrorBanner error={error} /></Page>
@@ -106,6 +107,9 @@ export function QuoteDetail() {
           <Can need="quotes.send"><button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => setSendOpen(true)}><IconSend width={15} /> E-mail</button></Can>
         )}
         {open && <Can need="quotes.edit"><Link to={`/quotes/${id}/edit`} className="btn btn-sm btn-outline-primary"><IconEdit width={15} /> Edit</Link></Can>}
+        {adhocOnly && data.adhocCustomer && !data.adhocCustomer.customerId && (
+          <Can need="quotes.edit"><button className="btn btn-sm btn-outline-primary" disabled={busy} onClick={() => setEditingCustomer(true)}><IconUser width={15} /> Edit customer</button></Can>
+        )}
         {open && (
           <Can need="quotes.outcome">
             <button className="btn btn-sm btn-outline-success" disabled={busy} onClick={() => act(() => unwrap(api.POST('/quotes/{id}/accept', path)), `${qt.number} marked accepted.`)}><IconCheck width={15} /> Accepted</button>
@@ -229,6 +233,22 @@ export function QuoteDetail() {
         await unwrap(api.POST('/quotes/{id}/decline', { ...path, body: { reason } }))
         setDeclineOpen(false)
       }, `${qt.number} marked declined.`)} />
+      {editingCustomer && data.adhocCustomer && (
+        <AdhocSheet
+          initial={data.adhocCustomer}
+          note={open
+            ? <>Saving prints the new name, attention and address on this quote and their other open quotes.{qt.status === 'sent' && ' This quote was sent, so it becomes a draft again: e-mail it once more so the customer sees the change.'}</>
+            : <>This quote is {(quoteStageLabels[qt.stage] ?? qt.stage).toLowerCase()} and keeps the details it printed. Their open quotes and new quotes get the new ones.</>}
+          onClose={() => setEditingCustomer(false)}
+          onSaved={(a) => {
+            setEditingCustomer(false)
+            setNotice(open
+              ? `${a.name} saved: this quote shows the new details${qt.status === 'sent' ? ' and is a draft again, ready to e-mail once more' : ''}.`
+              : `${a.name} saved. This quote keeps the details it printed.`)
+            reload()
+          }}
+        />
+      )}
       {converting && data.adhocCustomer && (
         <ConvertSheet adhoc={data.adhocCustomer} onClose={() => setConverting(false)} onDone={(c) => { setConverting(false); setNotice(`${c.name} is now customer ${c.code}: this quote can be turned into an invoice.`); reload() }} />
       )}

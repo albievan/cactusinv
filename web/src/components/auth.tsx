@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { InstallCommands } from './install'
 import { api, ApiError, setUnauthorizedHandler, unwrap } from '../lib/api/client'
 import { useVersion } from '../lib/version'
 import { Wordmark } from './Logo'
@@ -203,6 +204,18 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
               <IconGitHub /> github.com/albievan/cactusinv
             </a>
           </p>
+          <details className="mt-3 small text-cream">
+            <summary className="fw-semibold text-white py-2" style={{ cursor: 'pointer' }}>
+              Install cactusInv on your own computer or server
+            </summary>
+            <p className="mt-2 mb-3">
+              Run one command in the folder you want cactusInv in. The setup scripts pick the right file for the system and
+              check it; the other commands download one particular file. cactusInv also needs a MariaDB 11 database:{' '}
+              <a href={`${REPO_URL}#installing-the-program`} target="_blank" rel="noreferrer" className="link-light text-decoration-underline">installing the program</a>.
+              Or run it in Docker or Kubernetes with <code className="text-cream">deploy.sh</code>.
+            </p>
+            <InstallCommands dark />
+          </details>
         </div>
         <WaveLines />
       </section>

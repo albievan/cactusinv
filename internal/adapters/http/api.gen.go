@@ -1012,6 +1012,11 @@ type DeploymentInfo struct {
 	InvoicesDir     string `json:"invoicesDir"`
 	InvoicesHostDir string `json:"invoicesHostDir"`
 
+	// Platform The operating system and processor this server runs on (Go GOOS/GOARCH): System Settings → Version marks its install command.
+	//
+	// Example: linux/amd64
+	Platform string `json:"platform"`
+
 	// Target dockerdesktop, k3s, k8s, or "" when unknown.
 	Target string `json:"target"`
 }

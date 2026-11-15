@@ -188,3 +188,48 @@ test('a quote the customer accepted through the link says so', async () => {
   render(<App />)
   expect(await screen.findByText('by the customer (e-mail link)')).toBeInTheDocument()
 })
+
+test('the ad-hoc customer is edited from their quote; a sent quote shows the new details as a draft again', async () => {
+  const puts: Record<string, unknown>[] = []
+  let detail = { quote: quote({ billTo: { ...party, name: 'Ah-hoc customet' } }), events: [], emails: [], adhocCustomer: { ...adhoc, name: 'Ah-hoc customet' } }
+  mockFetch({
+    ...base,
+    'GET /api/v1/quotes/q1': () => json(detail)(),
+    'PUT /api/v1/adhoc-customers/a1': async (req) => {
+      const body = (await req.json()) as Record<string, unknown>
+      puts.push(body)
+      detail = { ...detail, quote: quote({ status: 'draft', stage: 'draft', billTo: { ...party, name: 'Ad-hoc customer' } }), adhocCustomer: { ...adhoc, name: 'Ad-hoc customer', version: 2 } }
+      return json(detail.adhocCustomer)()
+    },
+  })
+  window.history.pushState({}, '', '/quotes/q1')
+  render(<App />)
+  expect(await screen.findByText('Ah-hoc customet')).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Edit customer' }))
+  const sheet = screen.getByRole('dialog', { name: 'Edit Ah-hoc customet' })
+  expect(within(sheet).getByText(/This quote was sent, so it becomes a draft again/)).toBeInTheDocument()
+  const name = within(sheet).getByLabelText('Name')
+  await userEvent.clear(name)
+  await userEvent.type(name, 'Ad-hoc customer')
+  await userEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+  await vi.waitFor(() => expect(puts).toEqual([expect.objectContaining({ id: 'a1', name: 'Ad-hoc customer', version: 1 })]))
+  expect(await screen.findByText('Ad-hoc customer saved: this quote shows the new details and is a draft again, ready to e-mail once more.')).toBeInTheDocument()
+  expect(screen.getByText('Ad-hoc customer', { selector: '.fw-semibold' })).toBeInTheDocument()
+})
+
+test('an accepted quote keeps its details when the ad-hoc customer is edited; a converted one has no Edit customer', async () => {
+  mockFetch({
+    ...base,
+    'GET /api/v1/quotes/q1': json({ quote: quote({ status: 'accepted', stage: 'accepted' }), events: [], emails: [], adhocCustomer: adhoc }),
+    'GET /api/v1/quotes/q2': json({ quote: quote({ id: 'q2', customerId: 'c9' }), events: [], emails: [], adhocCustomer: { ...adhoc, customerId: 'c9' } }),
+  })
+  window.history.pushState({}, '', '/quotes/q1')
+  const { unmount } = render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: 'Edit customer' }))
+  expect(within(screen.getByRole('dialog')).getByText(/This quote is accepted and keeps the details it printed/)).toBeInTheDocument()
+  unmount()
+  window.history.pushState({}, '', '/quotes/q2')
+  render(<App />)
+  expect(await screen.findByText('ABCD-1234-EF56')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Edit customer' })).not.toBeInTheDocument()
+})

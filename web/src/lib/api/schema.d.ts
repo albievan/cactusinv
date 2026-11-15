@@ -982,7 +982,7 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getAdhocCustomer"];
-        /** @description Not once made a customer. The currency is fixed once they have a quote. */
+        /** @description Not once made a customer. The currency is fixed once they have a quote. The new name, attention and address are printed on their open quotes (draft and sent, not expired; a sent quote becomes a draft again); answered, converted and expired quotes keep theirs (M50). */
         put: operations["updateAdhocCustomer"];
         post?: never;
         /** @description Only an ad-hoc customer no quote was made out to. */
@@ -1976,6 +1976,11 @@ export interface components {
         DeploymentInfo: {
             /** @description dockerdesktop, k3s, k8s, or "" when unknown. */
             target: string;
+            /**
+             * @description The operating system and processor this server runs on (Go GOOS/GOARCH): System Settings → Version marks its install command.
+             * @example linux/amd64
+             */
+            platform: string;
             /** @description The backups folder inside the container. */
             backupDir: string;
             /** @description The invoice export folder inside the container. */

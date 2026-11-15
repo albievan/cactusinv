@@ -76,12 +76,60 @@ func (s *Service) UpdateAdhocCustomer(ctx context.Context, a domain.AdhocCustome
 		if err := r.AdhocCustomers.Update(ctx, a); err != nil {
 			return err
 		}
-		return s.audit(ctx, r, "adhoc_customer.updated", "adhoc_customer", a.ID, a.Name)
+		if err := s.audit(ctx, r, "adhoc_customer.updated", "adhoc_customer", a.ID, a.Name); err != nil {
+			return err
+		}
+		return s.refreshAdhocQuotes(ctx, r, a)
 	})
 	if err != nil {
 		return domain.AdhocCustomer{}, wrap("app.UpdateAdhocCustomer", err)
 	}
 	return s.GetAdhocCustomer(ctx, a.ID)
+}
+
+// refreshAdhocQuotes prints the edited ad-hoc customer's details on its quotes that can still
+// change (draft and sent, not expired; M50): fixing a name or address fixes the open quotes.
+func (s *Service) refreshAdhocQuotes(ctx context.Context, r ports.Repos, a domain.AdhocCustomer) error {
+	b, err := s.business(ctx, r)
+	if err != nil {
+		return err
+	}
+	today, party := s.today(b), domain.Party{Name: a.Name, Address: a.Address, Attention: a.Attention}
+	for _, status := range []domain.QuoteStatus{domain.QuoteDraft, domain.QuoteSent} {
+		var ids []string
+		for page := (ports.Page{Limit: 200}); ; page.Offset += page.Limit {
+			qs, total, err := r.Quotes.List(ctx, ports.QuoteFilter{AdhocCustomerID: a.ID, Status: status, Page: page})
+			if err != nil {
+				return err
+			}
+			for _, q := range qs {
+				ids = append(ids, q.ID)
+			}
+			if len(qs) == 0 || page.Offset+len(qs) >= total {
+				break
+			}
+		}
+		for _, id := range ids {
+			q, err := r.Quotes.Get(ctx, id) // with its lines
+			if err != nil {
+				return err
+			}
+			changed, err := q.PartyChanged(party, today, s.now())
+			if err != nil {
+				return err
+			}
+			if !changed {
+				continue
+			}
+			if err := r.Quotes.Update(ctx, q); err != nil {
+				return err
+			}
+			if err := s.quoteEvent(ctx, r, q.ID, "updated", q.Number+": the ad-hoc customer's details changed"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // DeleteAdhocCustomer removes an ad-hoc customer no quote was made out to.

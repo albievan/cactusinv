@@ -175,6 +175,22 @@ func (q *Quote) apply(c QuoteContent) error {
 	return nil
 }
 
+// PartyChanged gives the quote the edited details of the ad-hoc customer it is for (M50):
+// only while it can still change and has not expired, since an answered, converted or
+// expired quote keeps what it printed. Like any edit, a sent quote goes back to draft (the
+// customer has not seen the new details). It reports whether the quote changed.
+func (q *Quote) PartyChanged(p Party, today Date, now time.Time) (bool, error) {
+	if !q.Editable() || q.Expired(today) || q.BillTo == p {
+		return false, nil
+	}
+	c := q.Content()
+	c.BillTo = p
+	if err := q.Update(c, now); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Content is the quote's editable content (to start a revision from).
 func (q *Quote) Content() QuoteContent {
 	return QuoteContent{

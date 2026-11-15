@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"time"
 
@@ -231,7 +232,7 @@ func toAPISystemSettings(v app.SystemView) SystemSettings {
 		SessionIdleMinutes: int(s.SessionIdle / time.Minute), SessionMaxHours: int((s.SessionMax + time.Hour - 1) / time.Hour),
 		BackupHostDir: s.BackupHostDir, InvoicesHostDir: s.InvoicesHostDir, ExternalUrl: s.ExternalURL, Hsts: s.HSTS, BehindCloudflare: s.BehindCloudflare, Version: s.Version,
 		Deployment: DeploymentInfo{
-			Target: d.Target, BackupDir: d.BackupDir, InvoicesDir: d.InvoicesDir, BackupHostDir: d.BackupHostDir, InvoicesHostDir: d.InvoicesHostDir,
+			Target: d.Target, Platform: runtime.GOOS + "/" + runtime.GOARCH, BackupDir: d.BackupDir, InvoicesDir: d.InvoicesDir, BackupHostDir: d.BackupHostDir, InvoicesHostDir: d.InvoicesHostDir,
 		},
 		PendingFolders: v.PendingFolders(),
 	}

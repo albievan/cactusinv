@@ -1,22 +1,60 @@
 import { useEffect, useId, useState, type FormEvent } from 'react'
 import { Can } from '../../components/Access'
 import { useCan } from '../../components/auth'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api, unwrap, type Customer } from '../../lib/api/client'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { api, unwrap, type AdhocCustomer, type Customer } from '../../lib/api/client'
 import { useCurrencies } from '../../lib/lookups'
 import { useAsync } from '../../lib/useAsync'
 import { usePaged } from '../../lib/usePaged'
 import { Badge, ConfirmButton, Empty, ErrorBanner, ShowMore, Field, Page, SearchBox, Spinner, StickyActions } from '../../components/ui'
-import { IconDownload, IconPlus, IconSend } from '../../components/icons'
+import { IconDownload, IconEdit, IconPersonPlus, IconPlus, IconSend } from '../../components/icons'
+import { AdhocSheet, ConvertSheet } from '../quotes/AdhocCustomers'
 import { uuid } from '../../lib/uuid'
 
+const shows = [
+  { key: 'customers', label: 'Customers' },
+  { key: 'adhoc', label: 'Ad-hoc (not yet customers)' },
+] as const
+
 export function CustomerList() {
+  const can = useCan()
+  const [params, setParams] = useSearchParams()
+  // Ad-hoc customers (M51): those not made customers yet, for whoever may see quotes.
+  const adhoc = params.get('show') === 'adhoc' && can('quotes.view')
   const [q, setQ] = useState('')
+  return (
+    <Page title="Customers" actions={<Can need="customers.create"><Link to="/customers/new" className="btn btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
+      {can('quotes.view') && (
+        <div role="radiogroup" aria-label="Show" className="d-flex flex-wrap gap-2 mb-3">
+          {shows.map((s) => {
+            const on = (s.key === 'adhoc') === adhoc
+            return (
+              <button
+                key={s.key}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                className={`btn rounded-pill fw-semibold ${on ? 'btn-primary' : 'btn-outline-secondary bg-white'}`}
+                style={{ minHeight: 44 }}
+                onClick={() => { setQ(''); setParams(s.key === 'adhoc' ? { show: 'adhoc' } : {}, { replace: true }) }}
+              >
+                {s.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      <SearchBox value={q} onChange={setQ} placeholder={adhoc ? 'Search ad-hoc customers' : 'Search customers'} />
+      {adhoc ? <AdhocList q={q} /> : <Customers q={q} />}
+    </Page>
+  )
+}
+
+function Customers({ q }: { q: string }) {
   const list = usePaged((offset, limit) => unwrap(api.GET('/customers', { params: { query: { q: q || undefined, includeInactive: true, limit, offset } } })), [q])
   const { data, error, loading } = list
   return (
-    <Page title="Customers" actions={<Can need="customers.create"><Link to="/customers/new" className="btn btn-primary"><IconPlus width={16} height={16} /> New customer</Link></Can>}>
-      <SearchBox value={q} onChange={setQ} placeholder="Search customers" />
+    <>
       <ErrorBanner error={error} />
       {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No customers yet.</Empty> : (
         <div className="card overflow-hidden">
@@ -51,7 +89,79 @@ export function CustomerList() {
         </div>
       )}
     <ShowMore list={list} />
-    </Page>
+    </>
+  )
+}
+
+/**
+ * AdhocList shows the ad-hoc customers not made customers yet (M51), each with Edit (their
+ * open quotes print the new details) and Make customer.
+ */
+function AdhocList({ q }: { q: string }) {
+  const nav = useNavigate()
+  const [editing, setEditing] = useState<AdhocCustomer>()
+  const [converting, setConverting] = useState<AdhocCustomer>()
+  const [notice, setNotice] = useState('')
+  const list = usePaged((offset, limit) => unwrap(api.GET('/adhoc-customers', { params: { query: { q: q || undefined, limit, offset } } })), [q])
+  const { data, error, loading, reload } = list
+  return (
+    <>
+      <p className="small text-body-secondary">
+        People you quoted who are not customers yet. Edit one to correct their details: their open quotes print the new ones.
+        Make one a customer when a quote turns into a sale.
+      </p>
+      <ErrorBanner error={error} />
+      {notice && <div role="status" className="mb-3 rounded-3 border-start border-4 border-primary bg-white p-3 small fw-medium text-primary-emphasis shadow-sm">{notice}</div>}
+      {loading && !data ? <Spinner /> : data?.items.length === 0 ? <Empty>No ad-hoc customers waiting to become customers.</Empty> : (
+        <div className="card overflow-hidden">
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0 small" style={{ minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>E-mail</th>
+                  <th>Currency</th>
+                  <th>Attention</th>
+                  <th><span className="visually-hidden">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {data?.items.map((a) => (
+                  <tr key={a.id}>
+                    <td className="fw-medium">{a.name}</td>
+                    <td className="text-body-secondary">{a.email}</td>
+                    <td><span className="badge rounded-pill bg-primary-subtle text-primary-emphasis border border-primary-subtle">{a.currency}</span></td>
+                    <td className="text-body-secondary">{a.attention}</td>
+                    <td className="text-end">
+                      <div className="d-inline-flex flex-wrap justify-content-end gap-2">
+                        <Can need="quotes.edit">
+                          <button className="btn btn-sm btn-outline-primary" onClick={() => setEditing(a)} aria-label={`Edit ${a.name}`}><IconEdit width={14} /> Edit</button>
+                        </Can>
+                        <Can need="customers.create">
+                          <button className="btn btn-sm btn-primary" onClick={() => setConverting(a)} aria-label={`Make ${a.name} a customer`}><IconPersonPlus width={14} /> Make customer</button>
+                        </Can>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      <ShowMore list={list} />
+      {editing && (
+        <AdhocSheet
+          initial={editing}
+          note="Saving prints the new name, attention and address on their open quotes (draft and sent; a sent one becomes a draft again, to e-mail once more). Answered, converted and expired quotes keep what they printed."
+          onClose={() => setEditing(undefined)}
+          onSaved={(a) => { setEditing(undefined); setNotice(`${a.name} saved.`); reload() }}
+        />
+      )}
+      {converting && (
+        <ConvertSheet adhoc={converting} onClose={() => setConverting(undefined)} onDone={(c) => { setConverting(undefined); nav(`/customers/${c.id}`) }} />
+      )}
+    </>
   )
 }
 

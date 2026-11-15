@@ -110,7 +110,14 @@ Released into the public domain — see [LICENSE](LICENSE).
   currency (each price can be changed), with VAT, notes (as on invoices), a reference and
   terms. A quote is for a customer or an **ad-hoc customer** — someone who is not a customer
   yet, with just a name and currency (contact details optional); add one on the spot from the
-  quote editor or under Quotes → *Ad-hoc customers*. Each quote is numbered (`Q-17/26`; its own
+  quote editor or under Quotes → *Ad-hoc customers*, and correct one with **Edit customer** on
+  any of their quotes, under *Ad-hoc customers*, or on **Customers → Ad-hoc (not yet
+  customers)** — the Customers page filter that lists the ad-hoc customers not made customers
+  yet, each with **Edit** and **Make customer** (needs *quotes.view*; Edit needs *quotes.edit*;
+  the filter is in the address, `/customers?show=adhoc`): the new name, attention and address are
+  printed on their open quotes (draft and sent, not expired — a sent one becomes a draft again,
+  to e-mail once more), while accepted, declined, converted and expired quotes keep what they
+  printed. Each quote is numbered (`Q-17/26`; its own
   sequence) and valid until its date plus the days set in **Settings → Quotes**, which also
   holds the quote number format, the **quote e-mail** (subject and body with
   `{{quote_number}}`, `{{valid_until}}`, `{{total}}`, …) and the terms printed on every new
@@ -283,6 +290,64 @@ node that runs the app (on a single-node k3s, that node). On a multi-node cluste
 node (`kubectl get pod -o wide`) or use the Ingress (`K8S_HTTPS=true`). Behind NAT or a proxy, clients
 share one address and so share its limit of 10 failed password attempts a minute; a
 signed-in user also has a limit of their own.
+
+## Installing the program
+
+Besides Docker and Kubernetes (`deploy.sh`, above), cactusInv runs as one program on Linux, macOS or
+Windows, on Intel/AMD or ARM 64-bit processors. Run one of these in the folder you want it in; the
+same commands update it (the old program is kept as `cactusinv.old`). The sign-in page and
+Settings → System Settings → Version show them too, with a copy button each.
+
+**Setup script** — picks the right file itself, checks the checksum and (with OpenSSL 3) the release
+signature:
+
+| System | Command |
+|---|---|
+| Linux and macOS · any processor | `curl -fsSL https://raw.githubusercontent.com/albievan/cactusinv/main/setup.sh \| sh` |
+| Windows (PowerShell) · any processor | `irm https://raw.githubusercontent.com/albievan/cactusinv/main/setup.ps1 \| iex` |
+
+`CACTUSINV_VERSION=1.28.0` (`$env:CACTUSINV_VERSION` on Windows) fetches that release instead of the
+newest. Windows PowerShell cannot check the Ed25519 signature, only the checksum.
+
+**One particular file** of the newest release (check it against `SHA256SUMS` on the release page):
+
+| System | Command |
+|---|---|
+| Linux · Intel/AMD 64-bit (amd64, x86_64) | `curl -fL -o cactusinv https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-linux-amd64 && chmod +x cactusinv` |
+| Linux · ARM 64-bit (arm64, aarch64: Raspberry Pi 4/5, Graviton) | `curl -fL -o cactusinv https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-linux-arm64 && chmod +x cactusinv` |
+| macOS · Apple Silicon (M1–M4, darwin arm64) | `curl -fL -o cactusinv https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-darwin-arm64 && chmod +x cactusinv` |
+| macOS · Intel (darwin amd64) | `curl -fL -o cactusinv https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-darwin-amd64 && chmod +x cactusinv` |
+| Windows · Intel/AMD 64-bit (amd64, x64) | `Invoke-WebRequest -UseBasicParsing -OutFile cactusinv.exe https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-windows-amd64.exe` |
+| Windows · ARM 64-bit (arm64: Snapdragon, Surface Pro X) | `Invoke-WebRequest -UseBasicParsing -OutFile cactusinv.exe https://github.com/albievan/cactusinv/releases/latest/download/cactusinv-windows-arm64.exe` |
+
+**First start.** The program needs a MariaDB 11 database and user (by default both `cactusinv` on
+`localhost:3306`; see Configuration for `CACTUSINV_DB_*`), plus the restore staging database
+`cactusinv_restore` (Backup and restore). As MariaDB root:
+
+```sql
+CREATE DATABASE cactusinv CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE cactusinv_restore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'cactusinv'@'%' IDENTIFIED BY 'the-database-password';
+GRANT ALL PRIVILEGES ON cactusinv.* TO 'cactusinv'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, LOCK TABLES, TRIGGER
+  ON cactusinv_restore.* TO 'cactusinv'@'%';
+```
+
+It also needs a folder of secrets with at least `db_password` (the database user's password) and
+`admin_password` (the first administrator's password, changed at the first sign-in). For example,
+on Linux or macOS:
+
+```
+mkdir -p secrets data/invoices data/backups
+printf '%s' 'the-database-password' > secrets/db_password
+printf '%s' 'a-first-admin-password' > secrets/admin_password
+CACTUSINV_SECRETS_DIR=./secrets CACTUSINV_INVOICES_DIR=./data/invoices \
+CACTUSINV_BACKUP_DIR=./data/backups CACTUSINV_COOKIE_SECURE=false ./cactusinv serve
+```
+
+Then open http://localhost:8080 and sign in as `admin`. `CACTUSINV_COOKIE_SECURE=false` is only for
+plain http on your own computer; behind HTTPS leave it out. A standalone server installs later
+releases itself (Upgrading, below).
 
 ## Upgrading
 

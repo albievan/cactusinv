@@ -9,7 +9,7 @@ afterEach(() => {
 })
 
 const deployment = {
-  target: 'dockerdesktop', backupDir: '/data/backups', invoicesDir: '/data/invoices',
+  target: 'dockerdesktop', platform: 'linux/amd64', backupDir: '/data/backups', invoicesDir: '/data/invoices',
   backupHostDir: '/Users/albie/cactusInv/data/backups', invoicesHostDir: '/Users/albie/cactusInv/data/invoices',
 }
 const saved = { sessionIdleMinutes: 0, sessionMaxHours: 168, backupHostDir: '', invoicesHostDir: '', version: 0, deployment, pendingFolders: false }
@@ -160,4 +160,33 @@ test('System Settings are in tabs: Web settings, Sessions, Folders, Version; the
   await userEvent.click(screen.getByRole('tab', { name: 'Web settings' }))
   expect(window.location.search).toBe('')
   expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+})
+
+test('Version lists the install command for every system and marks this server\'s', async () => {
+  routes({ ...saved, deployment: { ...deployment, target: '', platform: 'linux/arm64' } })
+  window.history.pushState({}, '', '/settings/system?tab=version')
+  render(<App />)
+  expect(await screen.findByRole('heading', { name: 'Install or update by hand' })).toBeInTheDocument()
+  for (const label of [
+    'Linux and macOS · any processor', 'Windows (PowerShell) · any processor',
+    'Linux · Intel/AMD 64-bit (amd64, x86_64)', 'Linux · ARM 64-bit (arm64, aarch64: Raspberry Pi 4/5, Graviton)',
+    'macOS · Apple Silicon (M1–M4, darwin arm64)', 'macOS · Intel (darwin amd64)',
+    'Windows · Intel/AMD 64-bit (amd64, x64)', 'Windows · ARM 64-bit (arm64: Snapdragon, Surface Pro X)',
+  ]) {
+    expect(screen.getByRole('button', { name: `Copy the command for ${label}` })).toBeInTheDocument()
+  }
+  // This server (linux/arm64): the Linux/macOS script and the Linux ARM file, nothing else.
+  const marked = screen.getAllByText('This server').map((b) => b.closest('li')?.textContent ?? '')
+  expect(marked).toHaveLength(2)
+  expect(marked[0]).toContain('Linux and macOS · any processor')
+  expect(marked[1]).toContain('Linux · ARM 64-bit')
+  expect(screen.getByText(/releases\/latest\/download\/cactusinv-windows-arm64\.exe/)).toBeInTheDocument()
+})
+
+test('in a container the install commands are for another computer: none is marked', async () => {
+  routes({ ...saved, deployment: { ...deployment, target: 'k3s' } })
+  window.history.pushState({}, '', '/settings/system?tab=version')
+  render(<App />)
+  expect(await screen.findByText(/This installation is a container image/)).toBeInTheDocument()
+  expect(screen.queryByText('This server')).not.toBeInTheDocument()
 })

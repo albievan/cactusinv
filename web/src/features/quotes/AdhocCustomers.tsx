@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Can } from '../../components/Access'
 import { useCan } from '../../components/auth'
@@ -73,8 +73,8 @@ export function AdhocCustomers() {
   )
 }
 
-/** AdhocSheet adds or edits an ad-hoc customer. */
-export function AdhocSheet({ initial, onClose, onSaved }: { initial: AdhocCustomer; onClose: () => void; onSaved: (a: AdhocCustomer) => void }) {
+/** AdhocSheet adds or edits an ad-hoc customer; note says what saving does to the quote it was opened from. */
+export function AdhocSheet({ initial, onClose, onSaved, note }: { initial: AdhocCustomer; onClose: () => void; onSaved: (a: AdhocCustomer) => void; note?: ReactNode }) {
   const { currencies } = useCurrencies()
   const [a, setA] = useState(initial)
   const [err, setErr] = useState<Error | null>(null)
@@ -99,6 +99,7 @@ export function AdhocSheet({ initial, onClose, onSaved }: { initial: AdhocCustom
     <Sheet title={a.id ? `Edit ${initial.name}` : 'New ad-hoc customer'} open onClose={onClose}>
       <form onSubmit={save} className="vstack gap-3">
         <ErrorBanner error={err} />
+        {note && <p className="small text-body-secondary mb-0">{note}</p>}
         <Field label="Name">{(f) => <input id={f} className="form-control" value={a.name} onChange={(e) => set({ name: e.target.value })} required maxLength={200} />}</Field>
         <div className="row row-cols-1 row-cols-sm-2 g-3">
           <Field label="Attention">{(f) => <input id={f} className="form-control" value={a.attention} onChange={(e) => set({ attention: e.target.value })} />}</Field>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { InstallCommands } from '../../../components/install'
 import { useSearchParams } from 'react-router-dom'
 import { api, unwrap, type Schemas } from '../../../lib/api/client'
 import { useAsync } from '../../../lib/useAsync'
@@ -101,7 +102,7 @@ function SystemForm() {
       ))}
     </div>
     <div id="system-panel" role="tabpanel" aria-labelledby={`system-tab-${tab}`} className="vstack gap-3">
-    {tab === 'version' ? <VersionCard target={d.target} /> : (
+    {tab === 'version' ? <VersionCard target={d.target} platform={d.platform} /> : (
     <form onSubmit={submit} className="vstack gap-3" aria-labelledby="system-heading">
       <fieldset disabled={!edit} className="vstack gap-3">
       <ErrorBanner error={err} />
@@ -223,7 +224,7 @@ function SystemForm() {
 }
 
 /** VersionCard shows the running version and, when asked, whether a newer one is published. */
-function VersionCard({ target }: { target: string }) {
+function VersionCard({ target, platform }: { target: string; platform: string }) {
   const ver = useAsync(() => unwrap(api.GET('/version')), [])
   const [check, setCheck] = useState<UpdateCheck | null>(null)
   const [err, setErr] = useState<Error | null>(null)
@@ -276,6 +277,20 @@ function VersionCard({ target }: { target: string }) {
           </p>
         </div>
       )}
+      <hr className="my-1" />
+      <div className="vstack gap-2">
+        <h4 id="install-heading" className="fs-6 fw-semibold mb-0">Install or update by hand</h4>
+        <p className="small text-body-secondary mb-0">
+          {target
+            ? 'This installation is a container image, upgraded with deploy.sh. These commands install cactusinv as a standalone program on another computer.'
+            : 'Run one command on the computer cactusInv runs on, in its folder, then restart cactusinv. Your data stays where it is.'}{' '}
+          The setup scripts pick the right file for the system and check it against the release's signed checksums; the other
+          commands download one particular file as <code>cactusinv</code> (<code>cactusinv.exe</code> on Windows). A first
+          install also needs a MariaDB 11 database:{' '}
+          <a href="https://github.com/albievan/cactusinv#installing-the-program" target="_blank" rel="noreferrer" className="text-decoration-underline">installing the program</a>.
+        </p>
+        <InstallCommands platform={target ? '' : platform} />
+      </div>
     </section>
   )
 }

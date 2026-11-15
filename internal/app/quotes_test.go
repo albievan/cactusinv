@@ -379,3 +379,46 @@ func must2q(v []domain.Quote, n int, err error) ([]domain.Quote, int) {
 	}
 	return v, n
 }
+
+// Editing an ad-hoc customer prints the new details on its open quotes (M50): a draft and a
+// sent quote change (the sent one becomes a draft again, unseen by the customer); an
+// accepted and an expired quote keep what they printed.
+func TestAdhocEditRefreshesOpenQuotes(t *testing.T) {
+	h := newHarness(t).seed()
+	a := must(h.svc.CreateAdhocCustomer(h.ctx, domain.AdhocCustomer{Name: "Ah-hoc customet", Attention: "albie@example.com", Currency: "USD"}))
+	in := app.QuoteInput{AdhocCustomerID: a.ID, Lines: []app.LineInput{{ProductID: h.usersP.ID, Quantity: 1000}}}
+	draft := must(h.svc.CreateQuote(h.ctx, in))
+	sent := must(h.svc.CreateQuote(h.ctx, in))
+	_ = must(h.svc.SendQuote(h.ctx, sent.ID, app.SendInput{To: []string{"albie@example.com"}}))
+	accepted := must(h.svc.CreateQuote(h.ctx, in))
+	_ = must(h.svc.AcceptQuote(h.ctx, accepted.ID))
+	today := domain.DateOf(h.clock.Now())
+	old := in
+	old.IssueDate, old.ValidUntil = today.AddDays(-40), today.AddDays(-10)
+	expired := must(h.svc.CreateQuote(h.ctx, old))
+
+	a.Name, a.Address, a.Attention = "Ad-hoc customer", "1 Main Rd", "Albie"
+	a = must(h.svc.UpdateAdhocCustomer(h.ctx, a))
+	want := domain.Party{Name: "Ad-hoc customer", Address: "1 Main Rd", Attention: "Albie"}
+	for _, c := range []struct {
+		id      string
+		changed bool
+		status  domain.QuoteStatus
+	}{
+		{draft.ID, true, domain.QuoteDraft},
+		{sent.ID, true, domain.QuoteDraft},
+		{accepted.ID, false, domain.QuoteAccepted},
+		{expired.ID, false, domain.QuoteDraft},
+	} {
+		q := must(h.svc.GetQuote(h.ctx, c.id)).Quote
+		if (q.BillTo == want) != c.changed || q.Status != c.status || len(q.Lines) != 1 {
+			t.Errorf("%s: billTo %+v, status %s, %d lines", q.Number, q.BillTo, q.Status, len(q.Lines))
+		}
+	}
+	// Saving again without a change touches no quote.
+	before := must(h.svc.GetQuote(h.ctx, draft.ID)).Quote.Version
+	_ = must(h.svc.UpdateAdhocCustomer(h.ctx, a))
+	if after := must(h.svc.GetQuote(h.ctx, draft.ID)).Quote.Version; after != before {
+		t.Fatalf("an unchanged save changed the quote: version %d → %d", before, after)
+	}
+}
