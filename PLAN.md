@@ -939,6 +939,17 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 54.2 | Docs (README, PLAN), VERSION 1.31.1, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 148 tests) |
 | 54.3 | Docs catch up with M53: CLAUDE.md and ARCHITECTURE §10 name Podman and `.env.local`; binaries rebuilt from the pushed commit | done | `make check` exit 0; `make dist` signature verified |
 
+### M55 — Upgrade tab; tabs readable in dark mode (Albie, 2026-11-15) — v1.32.0
+
+> "add how to upgrade to new version as a new tab, then make the tabs readable by a human"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 55.1 | Upgrade steps as data (`upgradeSteps.ts`): Standalone program (Check for updates → Install and restart, or the setup script again, restart, check), Docker, Podman, k3s (on the server or over SSH), Kubernetes (cluster and registry first); Windows through Ubuntu on WSL 2; a particular version with `--to` / `CACTUSINV_VERSION` | done | Vitest: every way and computer starts with Check for updates; containers have `--upgrade` with their target and `--version`; Windows opens Ubuntu |
+| 55.2 | A third tab **Upgrade** (installed as, run the steps on); an install made with deploy.sh opens it at its own platform; the sign-in summary reads *Install or upgrade cactusInv…* | done | Vitest `install.test.tsx` (12 tests) |
+| 55.3 | The tabs were unreadable in dark mode: the theme turns `.bg-white` dark (`app.scss`) while `text-dark` stayed dark. The tabs are now buttons with icons, the selected one filled (`btn-outline-light` on the green panel, `btn-outline-primary` in System Settings), the same in light and dark mode | done | browser (mock API), dark and light: selected black on #f8f9fa, the others #f8f9fa on the green; no sideways scroll at 360 px |
+| 55.4 | Docs (README Upgrading, ARCHITECTURE, PLAN), VERSION 1.32.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 |
+
 ## Decisions
 
 | Date | Decision | Why |

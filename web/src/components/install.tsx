@@ -1,11 +1,14 @@
 import { useId, useState, type ReactNode } from 'react'
 import { containerPlatformOf, containerPlatforms, containerSteps, hostOSLabels, type ContainerPlatform, type HostOS, type Step } from './containerSteps'
+import { upgradeMethods, upgradeSteps, type UpgradeMethod } from './upgradeSteps'
 
-// How to install cactusInv, shown on the sign-in page and in System Settings → Version, in two
-// tabs. Standalone: the install command for the cactusinv program, one per operating system and
-// processor; the setup scripts (setup.sh, setup.ps1 at the repository root) pick the right file
-// and check it, the others fetch one particular file of the newest GitHub Release. Container:
-// step by step with deploy.sh on Docker, Podman, k3s or Kubernetes (containerSteps.ts).
+// How to install and upgrade cactusInv, shown on the sign-in page and in System Settings →
+// Version, in three tabs. Standalone: the install command for the cactusinv program, one per
+// operating system and processor; the setup scripts (setup.sh, setup.ps1 at the repository root)
+// pick the right file and check it, the others fetch one particular file of the newest GitHub
+// Release. Container: step by step with deploy.sh on Docker, Podman, k3s or Kubernetes
+// (containerSteps.ts). Upgrade: step by step to a newer version, per way it was installed
+// (upgradeSteps.ts).
 
 const RAW = 'https://raw.githubusercontent.com/albievan/cactusinv/main'
 const LATEST = 'https://github.com/albievan/cactusinv/releases/latest/download'
@@ -210,14 +213,43 @@ function ContainerGuide({ initial, dark }: { initial: ContainerPlatform | ''; da
   )
 }
 
-type InstallTab = 'standalone' | 'container'
+/** UpgradeGuide is the step-by-step upgrade for the way cactusInv was installed and an operating system. */
+function UpgradeGuide({ initial, dark }: { initial: UpgradeMethod; dark: boolean }) {
+  const [method, setMethod] = useState<UpgradeMethod>(initial)
+  const [os, setOS] = useState<HostOS>(guessHostOS)
+  const m = upgradeMethods.find((u) => u.key === method) ?? upgradeMethods[0]!
+  const shownOS = m.os.includes(os) ? os : 'linux'
+  return (
+    <div className="vstack gap-3">
+      <p className={`small mb-0 ${dark ? 'text-cream' : 'text-body-secondary'}`}>
+        Upgrading keeps your data, settings and users, and takes a backup first. Choose how this cactusInv was installed.
+      </p>
+      <Choice legend="Installed as" options={upgradeMethods.map((u) => ({ key: u.key, label: u.label }))} value={method} onChange={setMethod} dark={dark} />
+      <Choice legend="Run the steps on" options={m.os.map((o) => ({ key: o, label: hostOSLabels[o] }))} value={shownOS} onChange={setOS} dark={dark} />
+      <ol className="list-unstyled vstack gap-3 mb-0" aria-label={`Upgrade steps: ${m.label} on ${hostOSLabels[shownOS]}`}>
+        {upgradeSteps(method, shownOS).map((s, i) => <StepItem key={s.title} step={s} n={i + 1} dark={dark} />)}
+      </ol>
+    </div>
+  )
+}
+
+type InstallTab = 'standalone' | 'container' | 'upgrade'
+
+const installTabs: { key: InstallTab; label: string; icon: string }[] = [
+  { key: 'standalone', label: 'Standalone', icon: 'bi-download' },
+  { key: 'container', label: 'Container', icon: 'bi-box-seam' },
+  { key: 'upgrade', label: 'Upgrade', icon: 'bi-arrow-up-circle' },
+]
 
 /**
- * InstallCommands shows how to install cactusInv in two tabs: Standalone (the program, a command
- * per operating system and processor, each with a copy button) and Container (step by step with
- * deploy.sh). platform ("linux/amd64") marks the matching standalone rows with badge; target
- * (dockerdesktop, podman, k3s, k8s) opens the Container tab at that platform; standaloneIntro
- * goes above the standalone commands; dark styles it for the sign-in page's green panel.
+ * InstallCommands shows how to install and upgrade cactusInv in three tabs: Standalone (the
+ * program, a command per operating system and processor, each with a copy button), Container
+ * (step by step with deploy.sh) and Upgrade (step by step to a newer version). platform
+ * ("linux/amd64") marks the matching standalone rows with badge; target (dockerdesktop, podman,
+ * k3s, k8s) opens the Container tab at that platform and Upgrade at that way of installing;
+ * standaloneIntro goes above the standalone commands; dark styles it for the sign-in page's green
+ * panel. The tabs are buttons with fixed colours: the selected one is filled, so it reads in
+ * light and dark mode alike.
  */
 export function InstallCommands({ platform = '', dark = false, badge = 'This server', target = '', standaloneIntro }: {
   platform?: string; dark?: boolean; badge?: string; target?: string; standaloneIntro?: ReactNode
@@ -225,11 +257,10 @@ export function InstallCommands({ platform = '', dark = false, badge = 'This ser
   const initial = containerPlatformOf(target)
   const [tab, setTab] = useState<InstallTab>(initial ? 'container' : 'standalone')
   const id = useId()
-  const tabs: { key: InstallTab; label: string }[] = [{ key: 'standalone', label: 'Standalone' }, { key: 'container', label: 'Container' }]
   return (
     <div className="vstack gap-3">
-      <div className={`nav ${dark ? 'nav-pills' : 'nav-tabs'}`} role="tablist">
-        {tabs.map((t) => (
+      <div className="d-flex flex-wrap gap-2" role="tablist" aria-label="Install or upgrade">
+        {installTabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -237,10 +268,11 @@ export function InstallCommands({ platform = '', dark = false, badge = 'This ser
             id={`${id}-${t.key}-tab`}
             aria-controls={`${id}-${t.key}`}
             aria-selected={tab === t.key}
-            className={`nav-link ${tab === t.key ? 'active' : ''} ${dark ? (tab === t.key ? 'bg-white text-dark' : 'text-white') : ''}`}
+            className={`btn fw-semibold d-inline-flex align-items-center gap-2 px-3 ${dark ? 'btn-outline-light' : 'btn-outline-primary'} ${tab === t.key ? 'active' : ''}`}
             style={{ minHeight: 44 }}
             onClick={() => setTab(t.key)}
           >
+            <i className={`bi ${t.icon}`} aria-hidden="true" />
             {t.label}
           </button>
         ))}
@@ -251,8 +283,10 @@ export function InstallCommands({ platform = '', dark = false, badge = 'This ser
             {standaloneIntro}
             <StandaloneCommands platform={platform} dark={dark} badge={badge} />
           </>
-        ) : (
+        ) : tab === 'container' ? (
           <ContainerGuide initial={initial} dark={dark} />
+        ) : (
+          <UpgradeGuide initial={initial || 'standalone'} dark={dark} />
         )}
       </div>
     </div>

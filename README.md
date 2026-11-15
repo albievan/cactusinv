@@ -300,7 +300,7 @@ signed-in user also has a limit of their own.
 
 `deploy.sh` is a bash script: on Windows run it in Ubuntu on WSL 2 (`wsl --install -d
 Ubuntu-24.04` in PowerShell as administrator). The same steps, with copy buttons, per platform
-and computer, are on the sign-in page (under *Install cactusInv on your own computer or server*,
+and computer, are on the sign-in page (under *Install or upgrade cactusInv on your own computer or server*,
 across the whole green side) and in System Settings → Version (Container tab).
 
 **Docker on one computer** (Linux, or Windows/macOS with Docker Desktop; on Windows turn on
@@ -432,7 +432,11 @@ releases itself (Upgrading, below).
 
 ## Upgrading
 
-Settings → System Settings → **Check for updates** says when a newer version is published.
+Settings → System Settings → **Check for updates** says when a newer version is published. The
+**Upgrade** tab on the sign-in page (*Install or upgrade cactusInv on your own computer or
+server*) and in System Settings → Version gives the steps for each way of installing — standalone
+program, Docker, Podman, k3s or Kubernetes — from Linux, Windows or macOS, each command with a
+copy button.
 
 **A standalone server** (the `cactusinv` binary run on a machine, not in a container) installs
 it itself: an administrator presses **Install and restart**, then confirms. It takes a backup (when a backup key is

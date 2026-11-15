@@ -370,8 +370,9 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 The deployment-level `.env` (what each value does, `K8S_STORAGE_CLASS`) is documented in the
 README, "Configuration — `.env`"; a git-ignored `.env.local` beside it overrides it per machine
 (read first, so `--upgrade`'s clean-tree check still passes). Step-by-step container installs per
-platform and computer are data in `web/src/components/containerSteps.ts`, shown on the sign-in
-page and in System Settings → Version, and summarised in the README.
+platform and computer are data in `web/src/components/containerSteps.ts`, and upgrades per way of
+installing in `upgradeSteps.ts`, shown on the sign-in page and in System Settings → Version
+(Standalone, Container and Upgrade tabs), and summarised in the README.
 
 Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (optional) — files or Vault keys
 (ADR-006). Session tokens are random and stored hashed, so no signing key exists.

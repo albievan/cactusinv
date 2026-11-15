@@ -4,6 +4,7 @@ import { App } from '../App'
 import { json, mockFetch } from '../test/fetch'
 import { containerPlatformOf, containerPlatforms, containerSteps } from './containerSteps'
 import { fileCommands, InstallCommands, setupCommands, suits } from './install'
+import { upgradeMethods, upgradeSteps } from './upgradeSteps'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -35,7 +36,7 @@ test('the copy button puts the command on the clipboard', async () => {
 test('the sign-in page offers the install commands below the source link', async () => {
   mockFetch({ 'GET /api/v1/auth/me': json({ type: 'u', title: 'Sign in required', status: 401 }, 401) })
   render(<App />)
-  const summary = await screen.findByText('Install cactusInv on your own computer or server')
+  const summary = await screen.findByText('Install or upgrade cactusInv on your own computer or server')
   const [source] = screen.getAllByText(/Free and open source/)
   expect((source?.compareDocumentPosition(summary) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   await userEvent.click(summary)
@@ -92,4 +93,49 @@ test('an installation made with deploy.sh opens the Container tab at its platfor
   render(<InstallCommands target="podman" />)
   expect(screen.getByRole('tab', { name: 'Container' })).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByRole('radio', { name: 'Podman' })).toBeChecked()
+})
+
+test('every way of installing has upgrade steps for each computer it lists', () => {
+  const flags: Record<string, string> = { docker: '--dockerdesktop', podman: '--podman', k3s: '--k3s', k8s: '--k8s' }
+  expect(upgradeMethods.map((m) => m.label)).toEqual(['Standalone program', 'Docker', 'Podman', 'k3s', 'Kubernetes'])
+  for (const m of upgradeMethods) {
+    for (const os of m.os) {
+      const steps = upgradeSteps(m.key, os)
+      const commands = steps.flatMap((s) => s.commands?.map((c) => c.command) ?? [])
+      expect(steps[0]?.title, `${m.key} on ${os}`).toBe('See whether a newer version is out')
+      if (m.key === 'standalone') {
+        expect(steps.some((s) => s.text?.includes('Install and restart'))).toBe(true)
+        expect(commands).toContain(os === 'windows'
+          ? 'irm https://raw.githubusercontent.com/albievan/cactusinv/main/setup.ps1 | iex'
+          : 'curl -fsSL https://raw.githubusercontent.com/albievan/cactusinv/main/setup.sh | sh')
+      } else {
+        expect(commands.some((c) => c.startsWith(`./deploy.sh --upgrade ${flags[m.key]}`)), `${m.key} on ${os}`).toBe(true)
+        expect(commands.some((c) => c.startsWith('./deploy.sh --version')), `${m.key} on ${os}`).toBe(true)
+        if (os === 'windows') expect(steps.some((s) => s.title === 'Open Ubuntu')).toBe(true)
+      }
+    }
+  }
+})
+
+test('the Upgrade tab shows the steps for how it was installed, each command copyable', async () => {
+  const user = userEvent.setup()
+  Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true })
+  render(<InstallCommands />)
+  expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Standalone', 'Container', 'Upgrade'])
+  await user.click(screen.getByRole('tab', { name: 'Upgrade' }))
+  expect(screen.getByRole('tab', { name: 'Upgrade' })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByRole('tab', { name: 'Upgrade' })).toHaveClass('active')
+  expect(screen.getByRole('radio', { name: 'Standalone program' })).toBeChecked()
+  await user.click(screen.getByRole('radio', { name: 'Linux' }))
+  expect(screen.getByRole('list', { name: 'Upgrade steps: Standalone program on Linux' })).toBeInTheDocument()
+
+  await user.click(screen.getByRole('radio', { name: 'Docker' }))
+  await user.click(screen.getByRole('button', { name: 'Copy: Upgrade (The newest version)' }))
+  expect(await navigator.clipboard.readText()).toBe('./deploy.sh --upgrade --dockerdesktop')
+})
+
+test('an installation made with deploy.sh opens Upgrade at its own platform', async () => {
+  render(<InstallCommands target="k3s" />)
+  await userEvent.click(screen.getByRole('tab', { name: 'Upgrade' }))
+  expect(screen.getByRole('radio', { name: 'k3s' })).toBeChecked()
 })

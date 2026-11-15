@@ -209,10 +209,10 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
           </div>
           <details className="mt-3 small text-cream">
             <summary className="fw-semibold text-white py-2" style={{ cursor: 'pointer' }}>
-              Install cactusInv on your own computer or server
+              Install or upgrade cactusInv on your own computer or server
             </summary>
             <p className="mt-2 mb-3">
-              As a standalone program, or in containers on Docker, Podman, k3s or Kubernetes, step by step for Linux and Windows.
+              As a standalone program, or in containers on Docker, Podman, k3s or Kubernetes, step by step for Linux and Windows; and how to upgrade to a new version.
             </p>
             <InstallCommands
               dark
