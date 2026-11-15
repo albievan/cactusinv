@@ -282,6 +282,54 @@ paths:
         '204': { description: Sent (servers before v1.6.1 answer without a body). }
         default: { $ref: '#/components/responses/Problem' }
 
+  /system/status:
+    get:
+      tags: [settings]
+      operationId: getSystemStatus
+      description: |
+        The Database & containers page (M57): the deployment, the database server's settings
+        and status, the services the application reaches (itself, MariaDB, the mail server,
+        Mailpit), its configuration without secrets, and which secrets it holds (never their
+        values). Read from inside the application's container.
+      responses:
+        '200':
+          description: The status.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemStatus' }
+        default: { $ref: '#/components/responses/Problem' }
+  /system/secrets/reveal:
+    post:
+      tags: [settings]
+      operationId: revealSecret
+      description: |
+        A secret's value, for Administrators and Admin settings, after the caller's own
+        current password (M57). Each view is audited (secret.viewed, the name only). Exempt
+        from Idempotency-Key (it carries a password).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevealSecretRequest' }
+      responses:
+        '200':
+          description: The value.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecretValue' }
+        default: { $ref: '#/components/responses/Problem' }
+  /system/health:
+    get:
+      tags: [dashboard]
+      operationId: getSystemHealth
+      description: The application's health checks and performance, for the dashboard (M57).
+      responses:
+        '200':
+          description: Health and performance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemHealth' }
+        default: { $ref: '#/components/responses/Problem' }
   /settings/system:
     get:
       tags: [settings]
@@ -3306,6 +3354,134 @@ components:
       required: [passphrase]
       properties:
         passphrase: { type: string, minLength: 16, maxLength: 1024 }
+    Setting:
+      type: object
+      required: [name, value]
+      properties:
+        name: { type: string }
+        value: { type: string }
+    RuntimeInfo:
+      type: object
+      required: [goroutines, heapBytes, sysBytes, gcRuns, cpus, goVersion, os, arch, hostname]
+      properties:
+        goroutines: { type: integer }
+        heapBytes: { type: integer, format: int64 }
+        sysBytes: { type: integer, format: int64 }
+        gcRuns: { type: integer, format: int64 }
+        cpus: { type: integer }
+        goVersion: { type: string }
+        os: { type: string }
+        arch: { type: string }
+        hostname: { type: string }
+        startedAt: { type: string, format: date-time }
+    DBPool:
+      type: object
+      required: [maxOpen, open, inUse, idle, waitCount, waitMs]
+      properties:
+        maxOpen: { type: integer, description: 0 = no limit. }
+        open: { type: integer }
+        inUse: { type: integer }
+        idle: { type: integer }
+        waitCount: { type: integer, format: int64 }
+        waitMs: { type: integer, format: int64 }
+    DatabaseInfo:
+      type: object
+      required: [host, port, name, user, error, version, versionComment, uptimeSeconds, pingMs, sizeBytes, tables, connections, maxConnections, maxUsedConnections, queries, slowQueries, charset, collation, timeZone, pool, variables, status]
+      properties:
+        host: { type: string }
+        port: { type: integer }
+        name: { type: string }
+        user: { type: string }
+        error: { type: string, description: Why the database could not be read ("" when it could). }
+        version: { type: string }
+        versionComment: { type: string }
+        uptimeSeconds: { type: integer, format: int64 }
+        pingMs: { type: number, format: double }
+        sizeBytes: { type: integer, format: int64 }
+        tables: { type: integer }
+        connections: { type: integer, format: int64 }
+        maxConnections: { type: integer, format: int64 }
+        maxUsedConnections: { type: integer, format: int64 }
+        queries: { type: integer, format: int64 }
+        slowQueries: { type: integer, format: int64 }
+        charset: { type: string }
+        collation: { type: string }
+        timeZone: { type: string }
+        pool: { $ref: '#/components/schemas/DBPool' }
+        variables: { type: array, items: { $ref: '#/components/schemas/Setting' }, description: Every global variable, by name. }
+        status: { type: array, items: { $ref: '#/components/schemas/Setting' }, description: Every global status counter, by name. }
+    ServiceInfo:
+      type: object
+      required: [name, role, state, detail, latencyMs]
+      properties:
+        name: { type: string }
+        role: { type: string }
+        state: { type: string, enum: [running, unreachable, not configured] }
+        detail: { type: string }
+        latencyMs: { type: number, format: double }
+    SecretInfo:
+      type: object
+      required: [key, description, present]
+      properties:
+        key: { type: string }
+        description: { type: string }
+        present: { type: boolean }
+    SystemStatus:
+      type: object
+      required: [target, version, build, container, runtime, uptimeSeconds, database, services, configuration, secrets]
+      properties:
+        target: { type: string, description: 'dockerdesktop, podman, k3s, k8s; "" when run by hand.' }
+        version: { type: string }
+        build: { type: string }
+        container: { type: boolean }
+        runtime: { $ref: '#/components/schemas/RuntimeInfo' }
+        uptimeSeconds: { type: integer, format: int64 }
+        database: { $ref: '#/components/schemas/DatabaseInfo' }
+        services: { type: array, items: { $ref: '#/components/schemas/ServiceInfo' } }
+        configuration: { type: array, items: { $ref: '#/components/schemas/Setting' }, description: The application's configuration (environment), without secrets. }
+        secrets: { type: array, items: { $ref: '#/components/schemas/SecretInfo' } }
+    RevealSecretRequest:
+      type: object
+      required: [key, currentPassword]
+      properties:
+        key: { type: string, maxLength: 64 }
+        currentPassword: { type: string, maxLength: 1024 }
+    SecretValue:
+      type: object
+      required: [key, value]
+      properties:
+        key: { type: string }
+        value: { type: string }
+    HealthCheck:
+      type: object
+      required: [name, state, detail]
+      properties:
+        name: { type: string }
+        state: { type: string, enum: [ok, warning, failed] }
+        detail: { type: string }
+    RequestInfo:
+      type: object
+      required: [total, clientErrors, serverErrors, averageMs, p95Ms, lastMinute]
+      properties:
+        total: { type: integer, format: int64 }
+        clientErrors: { type: integer, format: int64 }
+        serverErrors: { type: integer, format: int64 }
+        averageMs: { type: number, format: double, description: Over the newest 1000 requests. }
+        p95Ms: { type: number, format: double, description: Over the newest 1000 requests. }
+        lastMinute: { type: integer, format: int64 }
+    SystemHealth:
+      type: object
+      required: [state, checks, uptimeSeconds, runtime, requests, dbPingMs, pool, outboxPending, outboxFailed]
+      properties:
+        state: { type: string, enum: [ok, warning, failed] }
+        checks: { type: array, items: { $ref: '#/components/schemas/HealthCheck' } }
+        uptimeSeconds: { type: integer, format: int64 }
+        runtime: { $ref: '#/components/schemas/RuntimeInfo' }
+        requests: { $ref: '#/components/schemas/RequestInfo' }
+        dbPingMs: { type: number, format: double }
+        pool: { $ref: '#/components/schemas/DBPool' }
+        outboxPending: { type: integer }
+        outboxFailed: { type: integer }
     DownloadBackupRequest:
       type: object
       required: [name]

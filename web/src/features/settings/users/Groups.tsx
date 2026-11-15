@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, unwrap } from '../../../lib/api/client'
 import { Empty, Field, Sheet } from '../../../components/ui'
 import { IconEdit, IconPlus, IconTrash } from '../../../components/icons'
-import { ADMINISTRATORS, accessSummary, areas, useSubmit, UserForm, withImplied, YourPassword, type Group, type PermissionInfo, type User } from './shared'
+import { ADMIN_SETTINGS_SUMMARY, ADMINISTRATORS, accessSummary, areas, useSubmit, UserForm, withImplied, YourPassword, type Group, type PermissionInfo, type User } from './shared'
 
 type GroupAction = { kind: 'new' } | { kind: 'edit' | 'delete'; group: Group }
 
@@ -31,7 +31,7 @@ export function GroupsAdmin({ groups, catalogue, users, meId, onChanged }: { gro
       </div>
       <p className="small text-body-secondary mb-0">
         A group gives its members access. A user may do what any of their groups allows; a user in no group can sign in but sees nothing. Administrators can do
-        everything, including users, groups, backups and restore.
+        everything, including users, groups, backups and restore. Admin settings can change every setting and view the container secrets.
       </p>
       {groups.length === 0 ? (
         <Empty>No groups.</Empty>
@@ -158,7 +158,7 @@ function PermissionPicker({ catalogue, value, onChange }: { catalogue: Permissio
   )
 }
 
-/** GroupSheet creates or edits a group; for Administrators only its members. */
+/** GroupSheet creates or edits a group; for the built-in groups only their members. */
 function GroupSheet({ group, catalogue, users, meId, onClose, onDone }: { group?: Group; catalogue: PermissionInfo[]; users: User[]; meId?: string; onClose: () => void; onDone: (g: Group) => void }) {
   const [name, setName] = useState(group?.name ?? '')
   const [description, setDescription] = useState(group?.description ?? '')
@@ -174,10 +174,14 @@ function GroupSheet({ group, catalogue, users, meId, onClose, onDone }: { group?
     onDone(saved)
   }, 'group')
   return (
-    <Sheet title={group ? (builtin ? 'Administrators: members' : `Edit ${group.name}`) : 'New group'} open onClose={onClose}>
+    <Sheet title={group ? (builtin ? `${group.name}: members` : `Edit ${group.name}`) : 'New group'} open onClose={onClose}>
       <UserForm submit={s.submit} err={s.err} busy={s.busy} label={group ? 'Save' : 'Create group'} onClose={onClose}>
         {builtin ? (
-          <p className="small text-body-secondary mb-0">Administrators can do everything, including users, groups, backups and restore. Only its members can change, and you cannot remove yourself.</p>
+          <p className="small text-body-secondary mb-0">
+            {group?.id === 'administrators'
+              ? 'Administrators can do everything, including users, groups, backups and restore. Only its members can change, and you cannot remove yourself.'
+              : `${ADMIN_SETTINGS_SUMMARY}. Only its members can change.`}
+          </p>
         ) : (
           <>
             <Field label="Name">{(f) => <input id={f} className="form-control" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} required />}</Field>
@@ -191,7 +195,7 @@ function GroupSheet({ group, catalogue, users, meId, onClose, onDone }: { group?
           <legend className="form-label fs-6">Members</legend>
           <div className="overflow-y-auto border rounded-3 bg-white px-3 py-1" style={{ maxHeight: '14rem' }}>
             {users.map((u) => {
-              const self = builtin && u.id === meId
+              const self = group?.id === 'administrators' && u.id === meId
               return (
                 <label key={u.id} className="d-flex align-items-center gap-2 small" style={{ minHeight: 40 }}>
                   <input

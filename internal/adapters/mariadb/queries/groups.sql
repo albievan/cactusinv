@@ -1,5 +1,5 @@
 -- name: ListAccessGroups :many
-SELECT * FROM access_groups ORDER BY builtin DESC, name, id;
+SELECT * FROM access_groups ORDER BY builtin DESC, id = 'administrators' DESC, name, id;
 
 -- name: GetAccessGroup :one
 SELECT * FROM access_groups WHERE id = ?;

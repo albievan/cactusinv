@@ -10,6 +10,7 @@ import { ColumnChart } from '../../components/charts/ColumnChart'
 import { Empty, ErrorBanner, Page, Spinner } from '../../components/ui'
 import { IconClockAlert, IconPlus } from '../../components/icons'
 import { actionLabel } from '../invoices/InvoiceDetail'
+import { HealthCard } from './Health'
 
 // Categorical slots validated with the dataviz validator (light surface): blue, orange.
 const INVOICED = '#2a78d6'
@@ -58,6 +59,7 @@ export function Dashboard() {
             <div><Upcoming data={data} /></div>
             <div><Activity data={data} /></div>
           </div>
+          <Can need="settings.database.view"><HealthCard /></Can>
         </div>
       )}
     </Page>

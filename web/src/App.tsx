@@ -17,6 +17,7 @@ import { AccountSettingsPage, BusinessSettingsPage, CurrencySettingsPage, EmailS
 import { BackupSettingsPage } from './features/settings/backup/Backup'
 import { ImportExportSettingsPage } from './features/settings/transfer/ImportExport'
 import { SystemSettingsPage } from './features/settings/system/SystemSettings'
+import { DatabaseStatusPage } from './features/settings/system/DatabaseStatus'
 import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
 import { QuoteList } from './features/quotes/QuoteList'
@@ -65,6 +66,7 @@ export function AppRoutes() {
           <Route path="currencies" element={need('settings.currencies.view', <CurrencySettingsPage />)} />
           <Route path="import-export" element={need(['settings.export', 'settings.import'], <ImportExportSettingsPage />)} />
           <Route path="system" element={need('settings.system.view', <SystemSettingsPage />)} />
+          <Route path="database" element={need('settings.database.view', <DatabaseStatusPage />)} />
           <Route path="users" element={need('administer', <UsersSettingsPage />)} />
           <Route path="backup" element={need('administer', <BackupSettingsPage />)} />
           <Route path="account" element={<AccountSettingsPage />} />

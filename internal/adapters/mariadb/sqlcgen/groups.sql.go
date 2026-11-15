@@ -176,7 +176,7 @@ func (q *Queries) ListAccessGroupPermissions(ctx context.Context) ([]AccessGroup
 }
 
 const listAccessGroups = `-- name: ListAccessGroups :many
-SELECT id, name, description, builtin, created_at, updated_at FROM access_groups ORDER BY builtin DESC, name, id
+SELECT id, name, description, builtin, created_at, updated_at FROM access_groups ORDER BY builtin DESC, id = 'administrators' DESC, name, id
 `
 
 func (q *Queries) ListAccessGroups(ctx context.Context) ([]AccessGroup, error) {

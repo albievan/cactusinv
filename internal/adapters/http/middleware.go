@@ -526,10 +526,12 @@ func (l *loginLimiter) middleware(next http.Handler) http.Handler {
 type metrics struct {
 	requests *prometheus.CounterVec
 	duration *prometheus.HistogramVec
+	stats    *RequestStats
 }
 
-func newMetrics(reg prometheus.Registerer) *metrics {
+func newMetrics(reg prometheus.Registerer, stats *RequestStats) *metrics {
 	m := &metrics{
+		stats: stats,
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "cactusinv_http_requests_total", Help: "HTTP requests by route and status.",
 		}, []string{"method", "route", "status"}),
@@ -554,7 +556,9 @@ func (m *metrics) route(next http.Handler) http.Handler {
 			route = route[i+1:]
 		}
 		m.requests.WithLabelValues(r.Method, route, strconv.Itoa(rec.status)).Inc()
-		m.duration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		took := time.Since(start)
+		m.duration.WithLabelValues(r.Method, route).Observe(took.Seconds())
+		m.stats.record(rec.status, took)
 	})
 }
 

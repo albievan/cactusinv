@@ -105,9 +105,9 @@ func (h *handlers) SetUserGroups(ctx context.Context, req SetUserGroupsRequestOb
 func toAPIGroup(g domain.Group) Group {
 	out := Group{
 		Id: g.ID, Name: g.Name, Description: g.Description, Builtin: g.Builtin, CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt,
-		Permissions: make([]string, len(g.Permissions)), MemberIds: append([]string{}, g.MemberIDs...),
+		Permissions: make([]string, len(g.Granted())), MemberIds: append([]string{}, g.MemberIDs...),
 	}
-	for i, p := range g.Permissions {
+	for i, p := range g.Granted() { // Admin settings: its fixed access
 		out.Permissions[i] = string(p)
 	}
 	return out
@@ -193,6 +193,9 @@ func reauthPath(r *http.Request) bool {
 		return false
 	}
 	if p == "/api/v1/groups" || (strings.HasPrefix(p, "/api/v1/groups/") && strings.HasSuffix(p, "/delete")) {
+		return true
+	}
+	if p == "/api/v1/system/secrets/reveal" { // a secret, after the viewer's password (M57)
 		return true
 	}
 	if p == "/api/v1/auth/login" || p == "/api/v1/auth/password" || p == "/api/v1/users" ||

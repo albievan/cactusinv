@@ -13,8 +13,11 @@ import (
 	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/filesecrets"
+	"github.com/albievan/cactusinv/internal/adapters/hostinfo"
+	"github.com/albievan/cactusinv/internal/adapters/mariadb"
 	"github.com/albievan/cactusinv/internal/adapters/release"
 	"github.com/albievan/cactusinv/internal/adapters/vault"
+	"github.com/albievan/cactusinv/internal/app"
 	"github.com/albievan/cactusinv/internal/domain"
 	"github.com/albievan/cactusinv/internal/ports"
 )
@@ -228,4 +231,83 @@ func loopback(host string) bool {
 	}
 	a, err := netip.ParseAddr(host)
 	return err == nil && a.IsLoopback()
+}
+
+// appSecrets are the secrets the application container holds, for the Database & containers
+// page (M57). db_root_password lives only in the MariaDB container.
+var appSecrets = []app.SecretInfo{
+	{Key: "db_password", Description: "The database password the application signs in to MariaDB with."},
+	{Key: "app_key", Description: "Encrypts the e-mail server password saved in Settings → E-mail server."},
+	{Key: "backup_key", Description: "Opens the stored backups (an age identity). Keep a copy off this machine."},
+	{Key: "smtp_password", Description: "The deployment's e-mail server password, used while none is saved in Settings."},
+	{Key: "admin_password", Description: "The first password of the default administrator (only until it is changed)."},
+	{Key: "metrics_token", Description: "The bearer token for GET /metrics (Prometheus)."},
+}
+
+// mailpitSMTPPort is the test mailbox's SMTP port beside the app (docker-compose.yml and
+// the Kubernetes manifest).
+const mailpitSMTPPort = 1025
+
+// systemDeps describes the running installation to the status pages (M57).
+func systemDeps(cfg config, db *sql.DB) app.SystemDeps {
+	d := app.SystemDeps{
+		Database: mariadb.Inspector{DB: db}, Host: hostinfo.Probe{StartedAt: startedAt}, Requests: requestStats,
+		Secrets: cfg.secrets, SecretKeys: appSecrets,
+		DBHost: cfg.DBHost, DBPort: cfg.DBPort, DBName: cfg.DBName, DBUser: cfg.DBUser,
+		MailHost: cfg.SMTPHost, MailPort: cfg.SMTPPort, Build: build, Container: cfg.Container,
+		Configuration: cfg.settings(),
+	}
+	if cfg.DeployTarget != "" {
+		d.MailpitHost, d.MailpitPort = "mailpit", mailpitSMTPPort
+	}
+	return d
+}
+
+// settings lists the configuration as the environment sets it, without secrets.
+func (c config) settings() []ports.Setting {
+	times := make([]string, len(c.BackupTimes))
+	for i, t := range c.BackupTimes {
+		times[i] = fmt.Sprintf("%02d:%02d", t.Hour, t.Minute)
+	}
+	proxies := make([]string, len(c.TrustedProxies))
+	for i, p := range c.TrustedProxies {
+		proxies[i] = p.String()
+	}
+	update := c.UpdateURL
+	if update == "" {
+		update = "off"
+	}
+	b := strconv.FormatBool
+	return []ports.Setting{
+		{Name: "CACTUSINV_HTTP_ADDR", Value: c.HTTPAddr},
+		{Name: "CACTUSINV_LOG_LEVEL", Value: c.LogLevel},
+		{Name: "CACTUSINV_DB_HOST", Value: c.DBHost},
+		{Name: "CACTUSINV_DB_PORT", Value: strconv.Itoa(c.DBPort)},
+		{Name: "CACTUSINV_DB_NAME", Value: c.DBName},
+		{Name: "CACTUSINV_DB_USER", Value: c.DBUser},
+		{Name: "CACTUSINV_RESTORE_DB_NAME", Value: c.RestoreDBName},
+		{Name: "CACTUSINV_SECRETS", Value: c.SecretsSource},
+		{Name: "CACTUSINV_SECRETS_DIR", Value: c.SecretsDir},
+		{Name: "CACTUSINV_SMTP_HOST", Value: c.SMTPHost},
+		{Name: "CACTUSINV_SMTP_PORT", Value: strconv.Itoa(c.SMTPPort)},
+		{Name: "CACTUSINV_SMTP_TLS", Value: c.SMTPTLS},
+		{Name: "CACTUSINV_SMTP_FROM", Value: c.SMTPFrom},
+		{Name: "CACTUSINV_INVOICES_DIR", Value: c.InvoicesDir},
+		{Name: "CACTUSINV_BACKUP_DIR", Value: c.BackupDir},
+		{Name: "CACTUSINV_BACKUP_TIMES", Value: strings.Join(times, ",")},
+		{Name: "CACTUSINV_BACKUP_RETENTION_DAYS", Value: strconv.Itoa(c.BackupRetentionDays)},
+		{Name: "CACTUSINV_BACKUP_MAX_UPLOAD_MB", Value: strconv.Itoa(c.BackupMaxUploadMB)},
+		{Name: "TZ", Value: c.BackupLocation.String()},
+		{Name: "CACTUSINV_WORKERS", Value: b(c.Workers)},
+		{Name: "CACTUSINV_MIGRATE_ON_START", Value: b(c.MigrateOnStart)},
+		{Name: "CACTUSINV_COOKIE_SECURE", Value: b(c.CookieSecure)},
+		{Name: "CACTUSINV_TRUSTED_PROXIES", Value: strings.Join(proxies, ",")},
+		{Name: "CACTUSINV_DEFAULT_ADMIN_USER", Value: c.DefaultAdminUser},
+		{Name: "CACTUSINV_UPDATE_URL", Value: update},
+		{Name: "CACTUSINV_CONTAINER", Value: b(c.Container)},
+		{Name: "CACTUSINV_DEPLOY_TARGET", Value: c.DeployTarget},
+		{Name: "CACTUSINV_HOST_PROJECT_DIR", Value: c.HostProjectDir},
+		{Name: "CACTUSINV_HOST_BACKUP_DIR", Value: c.HostBackupDir},
+		{Name: "CACTUSINV_HOST_INVOICES_DIR", Value: c.HostInvoicesDir},
+	}
 }

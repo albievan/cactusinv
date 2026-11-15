@@ -29,7 +29,8 @@ func TestGroupRepository(t *testing.T) {
 		}
 	}
 	gs := must(r.Groups.List(ctx))
-	if len(gs) != 1 || !gs[0].IsAdministrators() || !gs[0].Builtin || gs[0].Name != "Administrators" || len(gs[0].MemberIDs) != 0 {
+	if len(gs) != 2 || !gs[0].IsAdministrators() || !gs[0].Builtin || gs[0].Name != "Administrators" || len(gs[0].MemberIDs) != 0 ||
+		gs[1].ID != domain.AdminSettingsGroupID || !gs[1].Builtin || gs[1].Name != "Admin settings" { // 00029 (M57)
 		t.Fatalf("seeded = %+v", gs)
 	}
 	g := domain.Group{ID: "g-1", Name: "Accounts", Description: "Bills", Permissions: []domain.Permission{domain.PermAuditView, domain.PermInvoicesSend}, MemberIDs: []string{"u-a", "u-b"}, CreatedAt: at, UpdatedAt: at}

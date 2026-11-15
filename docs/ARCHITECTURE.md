@@ -385,6 +385,18 @@ Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (
   `cactusinv_emails_sent_total{result}`, `cactusinv_schedule_runs_total{result}`.
 - `/readyz` pings MariaDB and checks the invoices volume is writable.
 - OpenTelemetry tracing is deferred (PLAN → Later): one process, no fan-out to trace.
+- **Status and health in the app (M57)**: `app.SystemStatus`, `app.SystemHealth` and
+  `app.RevealSecret` (`internal/app/system_status.go`) read through ports in
+  `internal/ports/system.go`: `DatabaseInspector` (`mariadb.Inspector`: ping, `SHOW GLOBAL
+  VARIABLES/STATUS`, size from `information_schema`, `sql.DBStats`), `HostProbe`
+  (`adapters/hostinfo`: runtime, `statfs` free disk on unix, TCP reach) and
+  `RequestStatsSource` (`httpapi.RequestStats`, fed by the same route middleware as the
+  Prometheus metrics: totals, 4xx/5xx, average and p95 of the newest 1000, the last minute).
+  The composition root passes the non-secret configuration and the secret names
+  (`appSecrets`); values are read through `ports.Secrets` only on `POST
+  /system/secrets/reveal` (re-authentication, `reauthPath`, audited `secret.viewed`). Routes:
+  `GET /system/status`, `GET /system/health` (`settings.database.view`), reveal
+  (`settings.secrets.view`).
 
 ## 8. Frontend
 
@@ -601,8 +613,13 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   `app.operationAccess` (operation → any of its permissions; none = every signed-in user;
   missing = refused) in the strict-server middleware `sessionGate`. `403 no-access`.
   `TestEveryOperationHasAnAccessRule` reads the contract.
+- **Admin settings** (M57, migration 00029): a second built-in group, `admin-settings`. Its
+  access is `domain.AdminSettingsPermissions()` — every catalogue permission whose area starts
+  with *Settings:*, the dashboard and `settings.secrets.view` — computed in code
+  (`Group.Granted`), so it stores none. `settings.secrets.view` is not in the catalogue, so no
+  other group can be given it; Administrators have it.
 - **Use cases** (`internal/app/groups.go`): `ListGroups`, `CreateGroup`, `UpdateGroup`
-  (Administrators: members only), `DeleteGroup` (not Administrators), `SetUserGroups`;
+  (built-in groups: members only), `DeleteGroup` (not the built-in groups), `SetUserGroups`;
   `AddUser` takes group ids. Each re-authenticates (`reauthUser`), locks the active
   administrators (`LockActiveAdministrators`, `FOR UPDATE`) and audits `group.*` /
   `user.groups_changed`. User management takes the same lock.

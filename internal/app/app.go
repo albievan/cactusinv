@@ -43,6 +43,9 @@ type Deps struct {
 	Releases ports.ReleaseSource
 	// Upgrader installs a newer release in place (standalone binary only); nil = never.
 	Upgrader ports.Upgrader
+	// System is what the Database & containers page and the dashboard's health show (M57);
+	// zero shows what it can.
+	System SystemDeps
 }
 
 // Deployment describes the running deployment's folder mapping.
@@ -77,6 +80,7 @@ type Service struct {
 	releases ports.ReleaseSource
 	upgrader ports.Upgrader
 	upgrade  upgradeState
+	system   SystemDeps
 	// dummy is the hash checked for unknown logins (dummyHash).
 	dummyOnce sync.Once
 	dummy     string
@@ -99,7 +103,7 @@ func New(d Deps) *Service {
 	return &Service{
 		tx: d.Tx, clock: d.Clock, ids: d.IDs, mailer: d.Mailer, renderer: d.Renderer,
 		hasher: d.Hasher, archive: d.Archive, cipher: d.Cipher, log: d.Logger, ttl: d.SessionTTL,
-		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, version: d.Version, releases: d.Releases, upgrader: d.Upgrader, backupSlot: make(chan struct{}, 1),
+		backups: d.Backups, zone: d.TimeZone, deploy: d.Deployment, version: d.Version, releases: d.Releases, upgrader: d.Upgrader, system: d.System, backupSlot: make(chan struct{}, 1),
 	}
 }
 

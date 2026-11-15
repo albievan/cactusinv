@@ -98,8 +98,12 @@ export function areas(catalogue: PermissionInfo[]): { area: string; items: Permi
 const verbs: Record<string, string> = { view: 'view', edit: 'edit', send: 'e-mail', status: 'paid/overdue/void', manage: 'cancel & retry' }
 
 /** accessSummary says briefly what a group allows: "Invoices: view, e-mail · Audit log: view". */
+/** What the built-in Admin settings group allows (M57; its access is fixed by the server). */
+export const ADMIN_SETTINGS_SUMMARY = 'Every setting, the database and container status, and the container secrets (after their own password); not users, groups, backups or restore'
+
 export function accessSummary(g: Group, catalogue: PermissionInfo[]): string {
-  if (g.builtin) return 'Everything, including users, groups, backups and restore'
+  if (g.id === 'administrators') return 'Everything, including users, groups, backups and restore'
+  if (g.id === 'admin-settings') return ADMIN_SETTINGS_SUMMARY
   const has = withImplied(g.permissions, catalogue)
   const parts = areas(catalogue)
     .map(({ area, items }) => {

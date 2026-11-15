@@ -54,6 +54,10 @@ import (
 var (
 	version = "dev"
 	build   = "0"
+	// startedAt and requestStats feed the Database & containers page and the dashboard's
+	// health (M57).
+	startedAt    = time.Now()
+	requestStats = httpapi.NewRequestStats()
 )
 
 func main() {
@@ -185,6 +189,7 @@ func newService(ctx context.Context, cfg config, db *mariadbDB, log *slog.Logger
 			ProjectDir: cfg.HostProjectDir, BackupHostDir: cfg.HostBackupDir, InvoicesHostDir: cfg.HostInvoicesDir,
 		},
 	}
+	deps.System = systemDeps(cfg, db)
 	if cfg.UpdateURL != "" {
 		deps.Releases = release.New(cfg.UpdateURL)
 		deps.Upgrader = selfupdate.New(selfupdate.DistURL(cfg.UpdateURL), cfg.Container)
@@ -308,8 +313,8 @@ func serve(ctx context.Context, cfg config, log *slog.Logger) error {
 		return err
 	}
 	handler := httpapi.NewHandler(httpapi.Options{
-		MetricsToken: strings.TrimSpace(metricsToken),
-		Service:      svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, TrustedProxies: cfg.TrustedProxies, Registry: reg, Web: web.FS(), Version: version, Build: build,
+		MetricsToken: strings.TrimSpace(metricsToken), Stats: requestStats,
+		Service: svc, Clock: clock.System{}, Logger: log, CookieSecure: cfg.CookieSecure, TrustedProxies: cfg.TrustedProxies, Registry: reg, Web: web.FS(), Version: version, Build: build,
 		MaxUploadBytes: int64(cfg.BackupMaxUploadMB) << 20,
 		Ready:          map[string]httpapi.ReadyCheck{"database": store.Ping, "invoices": arch.Ping},
 	})

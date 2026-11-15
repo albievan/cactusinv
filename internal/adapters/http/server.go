@@ -46,6 +46,8 @@ type Options struct {
 	// MetricsToken guards GET /metrics: it answers only a request with
 	// "Authorization: Bearer <token>". Empty = no /metrics at all (M40).
 	MetricsToken string
+	// Stats counts the API requests for the dashboard (M57); nil counts into a new one.
+	Stats *RequestStats
 }
 
 // NewHandler builds the complete HTTP handler.
@@ -59,7 +61,10 @@ func NewHandler(o Options) http.Handler {
 	if o.MaxUploadBytes <= 0 {
 		o.MaxUploadBytes = DefaultMaxUploadBytes
 	}
-	m := newMetrics(o.Registry)
+	if o.Stats == nil {
+		o.Stats = NewRequestStats()
+	}
+	m := newMetrics(o.Registry, o.Stats)
 	h := &handlers{svc: o.Service, clock: o.Clock, cookies: cookieConfig{secure: o.CookieSecure}, version: o.Version, build: o.Build, maxUpload: o.MaxUploadBytes}
 	strict := NewStrictHandlerWithOptions(h, []StrictMiddlewareFunc{sessionGate}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestErrorHandler,

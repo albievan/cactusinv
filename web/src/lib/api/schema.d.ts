@@ -213,6 +213,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The Database & containers page (M57): the deployment, the database server's settings
+         *     and status, the services the application reaches (itself, MariaDB, the mail server,
+         *     Mailpit), its configuration without secrets, and which secrets it holds (never their
+         *     values). Read from inside the application's container.
+         */
+        get: operations["getSystemStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/secrets/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description A secret's value, for Administrators and Admin settings, after the caller's own
+         *     current password (M57). Each view is audited (secret.viewed, the name only). Exempt
+         *     from Idempotency-Key (it carries a password).
+         */
+        post: operations["revealSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The application's health checks and performance, for the dashboard (M57). */
+        get: operations["getSystemHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/settings/system": {
         parameters: {
             query?: never;
@@ -2906,6 +2966,149 @@ export interface components {
         ExportRequest: {
             passphrase: string;
         };
+        Setting: {
+            name: string;
+            value: string;
+        };
+        RuntimeInfo: {
+            goroutines: number;
+            /** Format: int64 */
+            heapBytes: number;
+            /** Format: int64 */
+            sysBytes: number;
+            /** Format: int64 */
+            gcRuns: number;
+            cpus: number;
+            goVersion: string;
+            os: string;
+            arch: string;
+            hostname: string;
+            /** Format: date-time */
+            startedAt?: string;
+        };
+        DBPool: {
+            /** @description 0 = no limit. */
+            maxOpen: number;
+            open: number;
+            inUse: number;
+            idle: number;
+            /** Format: int64 */
+            waitCount: number;
+            /** Format: int64 */
+            waitMs: number;
+        };
+        DatabaseInfo: {
+            host: string;
+            port: number;
+            name: string;
+            user: string;
+            /** @description Why the database could not be read ("" when it could). */
+            error: string;
+            version: string;
+            versionComment: string;
+            /** Format: int64 */
+            uptimeSeconds: number;
+            /** Format: double */
+            pingMs: number;
+            /** Format: int64 */
+            sizeBytes: number;
+            tables: number;
+            /** Format: int64 */
+            connections: number;
+            /** Format: int64 */
+            maxConnections: number;
+            /** Format: int64 */
+            maxUsedConnections: number;
+            /** Format: int64 */
+            queries: number;
+            /** Format: int64 */
+            slowQueries: number;
+            charset: string;
+            collation: string;
+            timeZone: string;
+            pool: components["schemas"]["DBPool"];
+            /** @description Every global variable */
+            variables: components["schemas"]["Setting"][];
+            /** @description Every global status counter */
+            status: components["schemas"]["Setting"][];
+        };
+        ServiceInfo: {
+            name: string;
+            role: string;
+            /** @enum {string} */
+            state: "running" | "unreachable" | "not configured";
+            detail: string;
+            /** Format: double */
+            latencyMs: number;
+        };
+        SecretInfo: {
+            key: string;
+            description: string;
+            present: boolean;
+        };
+        SystemStatus: {
+            /** @description dockerdesktop, podman, k3s, k8s; "" when run by hand. */
+            target: string;
+            version: string;
+            build: string;
+            container: boolean;
+            runtime: components["schemas"]["RuntimeInfo"];
+            /** Format: int64 */
+            uptimeSeconds: number;
+            database: components["schemas"]["DatabaseInfo"];
+            services: components["schemas"]["ServiceInfo"][];
+            /** @description The application's configuration (environment) */
+            configuration: components["schemas"]["Setting"][];
+            secrets: components["schemas"]["SecretInfo"][];
+        };
+        RevealSecretRequest: {
+            key: string;
+            currentPassword: string;
+        };
+        SecretValue: {
+            key: string;
+            value: string;
+        };
+        HealthCheck: {
+            name: string;
+            /** @enum {string} */
+            state: "ok" | "warning" | "failed";
+            detail: string;
+        };
+        RequestInfo: {
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            clientErrors: number;
+            /** Format: int64 */
+            serverErrors: number;
+            /**
+             * Format: double
+             * @description Over the newest 1000 requests.
+             */
+            averageMs: number;
+            /**
+             * Format: double
+             * @description Over the newest 1000 requests.
+             */
+            p95Ms: number;
+            /** Format: int64 */
+            lastMinute: number;
+        };
+        SystemHealth: {
+            /** @enum {string} */
+            state: "ok" | "warning" | "failed";
+            checks: components["schemas"]["HealthCheck"][];
+            /** Format: int64 */
+            uptimeSeconds: number;
+            runtime: components["schemas"]["RuntimeInfo"];
+            requests: components["schemas"]["RequestInfo"];
+            /** Format: double */
+            dbPingMs: number;
+            pool: components["schemas"]["DBPool"];
+            outboxPending: number;
+            outboxFailed: number;
+        };
         DownloadBackupRequest: {
             /** @description A stored backup's name. */
             name: string;
@@ -3399,6 +3602,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSystemStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The status. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    revealSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevealSecretRequest"];
+            };
+        };
+        responses: {
+            /** @description The value. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecretValue"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSystemHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Health and performance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemHealth"];
+                };
             };
             default: components["responses"]["Problem"];
         };

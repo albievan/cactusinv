@@ -91,7 +91,7 @@ func TestAccessFor(t *testing.T) {
 		}
 	}
 	admin := AccessFor([]Group{{ID: AdministratorsGroupID, Builtin: true}})
-	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsBanksDelete) || len(admin.Permissions()) != len(Permissions) {
+	if !admin.Administrator || !admin.Has(PermAdminister) || !admin.Has(PermSettingsBanksDelete) || !admin.Has(PermSettingsSecretsView) || len(admin.Permissions()) != len(Permissions)+1 {
 		t.Fatalf("administrators must have everything: %+v", admin)
 	}
 	if !slices.IsSorted(admin.Permissions()) {
@@ -137,5 +137,37 @@ func TestActionPermissionsImplyOnlyWhatTheyNeed(t *testing.T) {
 				t.Errorf("%s implies the action %s: only seeing may be implied", i.Key, q)
 			}
 		}
+	}
+}
+
+// TestAdminSettingsGroup (M57): every Settings permission, the dashboard and the secrets,
+// computed in code; not users, groups, backups or restore; the secrets cannot be granted.
+func TestAdminSettingsGroup(t *testing.T) {
+	a := AccessFor([]Group{{ID: AdminSettingsGroupID, Builtin: true}})
+	for _, p := range []Permission{
+		PermSettingsBusiness, PermSettingsEmail, PermSettingsSystemEdit, PermSettingsImport, PermSettingsBanksDelete,
+		PermSettingsDatabaseView, PermSettingsSecretsView, PermDashboardView, PermSettingsQuotes,
+	} {
+		if !a.Has(p) {
+			t.Fatalf("admin settings lacks %s", p)
+		}
+	}
+	for _, p := range []Permission{PermAdminister, PermInvoicesView, PermCustomersEdit} {
+		if a.Has(p) {
+			t.Fatalf("admin settings must not have %s", p)
+		}
+	}
+	if a.Administrator || !slices.Equal(a.Permissions(), AdminSettingsPermissions()) {
+		t.Fatalf("access %+v", a.Permissions())
+	}
+	if PermSettingsSecretsView.Known() || !PermSettingsDatabaseView.Known() {
+		t.Fatal("the secrets are not grantable; the database page is")
+	}
+	g := Group{Name: "x", Permissions: []Permission{PermSettingsSecretsView}}
+	if g.Normalize() == nil {
+		t.Fatal("a group was given the secrets")
+	}
+	if !IsBuiltinGroup(AdminSettingsGroupID) || !IsBuiltinGroup(AdministratorsGroupID) || IsBuiltinGroup("g1") {
+		t.Fatal("builtin ids")
 	}
 }

@@ -82,7 +82,7 @@ func TestGroupLifecycle(t *testing.T) {
 	if u := must(h.svc.Authenticate(h.ctx, tok)); len(u.Access.Permissions()) != 0 {
 		t.Fatalf("access after delete = %+v", u.Access)
 	}
-	if gs := must(h.svc.ListGroups(ctx)); len(gs) != 1 || !gs[0].IsAdministrators() || !slices.Equal(gs[0].MemberIDs, sortedIDs(admin.ID, other.ID)) {
+	if gs := must(h.svc.ListGroups(ctx)); len(gs) != 2 || !gs[0].IsAdministrators() || gs[1].ID != domain.AdminSettingsGroupID || !slices.Equal(gs[0].MemberIDs, sortedIDs(admin.ID, other.ID)) {
 		t.Fatalf("groups = %+v", gs)
 	}
 }
@@ -90,6 +90,35 @@ func TestGroupLifecycle(t *testing.T) {
 func sortedIDs(ids ...string) []string {
 	slices.Sort(ids)
 	return ids
+}
+
+// TestAdminSettingsGroup (M57): only its members change; it cannot be deleted; a member may
+// change every setting and see the secrets, but not users, groups or backups.
+func TestAdminSettingsGroup(t *testing.T) {
+	h := newHarness(t)
+	ctx, _, _ := h.users()
+	clerk := must(h.svc.AddUser(ctx, "clerk@example.com", "a first password!", adminPW, nil))
+	g := must(h.svc.UpdateGroup(ctx, domain.AdminSettingsGroupID, app.GroupInput{
+		Name: "Renamed", Permissions: []domain.Permission{domain.PermAuditView}, MemberIDs: []string{clerk.ID},
+	}, adminPW))
+	if g.Name != "Admin settings" || !g.Builtin || len(g.Permissions) != 0 || !slices.Equal(g.MemberIDs, []string{clerk.ID}) {
+		t.Fatalf("group = %+v", g)
+	}
+	if err := h.svc.DeleteGroup(ctx, domain.AdminSettingsGroupID, adminPW); !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("delete: %v", err)
+	}
+	must0(t, h.svc.ChangePassword(h.ctx, clerk.ID, "", "a first password!", "the clerk's own one"))
+	u := must(h.svc.Authenticate(h.ctx, h.login("clerk@example.com", "the clerk's own one")))
+	for _, op := range []string{"updateBusiness", "updateEmailSettings", "updateSystemSettings", "getSystemStatus", "revealSecret", "getSystemHealth", "getDashboard"} {
+		if err := app.SessionAllows(u, op); err != nil {
+			t.Fatalf("%s: %v", op, err)
+		}
+	}
+	for _, op := range []string{"listUsers", "createGroup", "listBackups", "applyRestore", "installUpdate", "listInvoices"} {
+		if err := app.SessionAllows(u, op); !errors.Is(err, domain.ErrNoAccess) {
+			t.Fatalf("%s: %v", op, err)
+		}
+	}
 }
 
 func TestAdministratorsGroup(t *testing.T) {

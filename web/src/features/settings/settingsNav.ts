@@ -1,5 +1,5 @@
 import { useCan } from '../../components/auth'
-import { IconArchive, IconBank, IconBuilding, IconQuote, IconServer, IconSettings, IconShield, IconTransfer, IconUser } from '../../components/icons'
+import { IconArchive, IconBank, IconBuilding, IconDatabase, IconQuote, IconServer, IconSettings, IconShield, IconTransfer, IconUser } from '../../components/icons'
 import type { Icon } from '../../components/icons'
 
 /** A Settings sub-page: its route, its label in the sidebar and on More, and what it holds. */
@@ -25,6 +25,7 @@ export const settingsNav: SettingsItem[] = [
   { path: 'currencies', label: 'Currencies & bank accounts', hint: 'Currencies and the bank account printed for each', icon: IconBank, need: 'settings.currencies.view' },
   { path: 'import-export', label: 'Import/Export Settings', hint: 'Customers, products, schedules and the settings as one file', icon: IconTransfer, need: ['settings.export', 'settings.import'] },
   { path: 'system', label: 'System Settings', hint: 'Session timeouts and the folders for backups and the invoice export', icon: IconSettings, need: 'settings.system.view' },
+  { path: 'database', label: 'Database & containers', hint: 'The database and the containers: settings, status and secrets', icon: IconDatabase, need: 'settings.database.view' },
   { path: 'users', label: 'Users & groups', hint: 'Who can sign in and what each group may do', icon: IconUser, need: 'administer' },
   { path: 'backup', label: 'Backup & restore', hint: 'Encrypted backups, downloads, and restoring from a file', icon: IconArchive, need: 'administer' },
   { path: 'account', label: 'Your account', hint: 'Your password', icon: IconShield },

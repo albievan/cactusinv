@@ -90,7 +90,10 @@ func newState() *state {
 		customers: map[string]domain.Customer{}, products: map[string]domain.Product{},
 		invoices: map[string]domain.Invoice{}, seq: 1, schedules: map[string]domain.Schedule{},
 		emails: map[string]domain.EmailMessage{}, users: map[string]domain.User{},
-		groups:   map[string]domain.Group{domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}}},
+		groups: map[string]domain.Group{
+			domain.AdministratorsGroupID: {ID: domain.AdministratorsGroupID, Name: "Administrators", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}},
+			domain.AdminSettingsGroupID:  {ID: domain.AdminSettingsGroupID, Name: "Admin settings", Builtin: true, Permissions: []domain.Permission{}, MemberIDs: []string{}},
+		},
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
 		quoteTokens: map[string]string{}, invTokens: map[string]string{}, resets: map[string]domain.PasswordReset{},
@@ -1846,6 +1849,12 @@ func (r groups) List(_ context.Context) ([]domain.Group, error) {
 		slices.SortFunc(out, func(a, b domain.Group) int {
 			if a.Builtin != b.Builtin {
 				if a.Builtin {
+					return -1
+				}
+				return 1
+			}
+			if a.IsAdministrators() != b.IsAdministrators() {
+				if a.IsAdministrators() {
 					return -1
 				}
 				return 1

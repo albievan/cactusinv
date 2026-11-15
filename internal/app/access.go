@@ -84,6 +84,7 @@ var operationAccess = map[string][]domain.Permission{
 	"exportsettings": {domain.PermSettingsExport}, "importsettings": {domain.PermSettingsImport},
 	"getsystemsettings": {domain.PermSettingsSystemView}, "updatesystemsettings": {domain.PermSettingsSystemEdit},
 	"checkforupdate": {domain.PermSettingsSystemView}, "getupdateprogress": {domain.PermSettingsSystemView}, "installupdate": {domain.PermAdminister},
+	"getsystemstatus": {domain.PermSettingsDatabaseView}, "getsystemhealth": {domain.PermSettingsDatabaseView}, "revealsecret": {domain.PermSettingsSecretsView},
 }
 
 // OperationKnown reports whether an operation has an access rule (for the contract test).

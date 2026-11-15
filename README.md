@@ -169,6 +169,25 @@ Released into the public domain — see [LICENSE](LICENSE).
   existing files into an empty new folder. On Kubernetes the folders are volume claims. It also
   shows the running version, and **Check for updates** says whether a newer one is published and
   the command that upgrades to it (`./deploy.sh --upgrade`; see [Upgrading](#upgrading)).
+- **Database & containers** — Settings → Database & containers (M57), for Administrators,
+  **Admin settings** and any group given *See the database and container status*: the
+  containers and services as cactusInv reaches them from inside its container (itself, MariaDB,
+  the e-mail server and the Mailpit test mailbox, each *Running*, *Unreachable* or *Not
+  configured* — the app has no rights over Docker or the cluster, so it checks them over the
+  network); the database (server, address, size, uptime, connections, queries, character set,
+  time zone, the app's connection pool, and every MariaDB variable and status value, behind a
+  filter); the application (version, host, uptime, memory); its configuration (the
+  `CACTUSINV_*` environment, no secrets); and the **secrets** the container holds
+  (`db_password`, `app_key`, `backup_key`, `smtp_password`, `admin_password`,
+  `metrics_token`; `db_root_password` lives only in the MariaDB container). **View** next to a
+  secret asks for **your own password** again and shows the value for a minute; only
+  Administrators and members of Admin settings see it, and every view is in the audit log
+  (`secret.viewed`, the name only).
+- **Application health** on the dashboard (same people): the overall state; checks for the
+  database, the e-mail server, the outbox, automatic sending, backups and free disk (a warning
+  below 2 GB free, a failure below 200 MB); and performance — uptime, requests (and in the last
+  minute), average and 95th-percentile response time, server errors, database response time,
+  memory, goroutines and the outbox. It reads again every 30 seconds.
 - **Users and access groups** — Settings → Users & groups: add users, **edit** them (user
   name, first and last name, e-mail address), reset a password, disable and enable, or
   **delete** them; create groups, choose what each group may do — each action on its own
@@ -700,6 +719,13 @@ comes from their **groups** (ADR-012):
   and shown greyed. A change applies at once.
 - **Administrators** is built in: it can do everything, including users, groups, backups,
   restore and installing updates. Only its members can change, and you cannot remove yourself from it.
+- **Admin settings** is built in too (M57): its members change **every setting** (Business,
+  Quotes, E-mail server, Currencies & bank accounts, Import/Export, System Settings), see
+  Database & containers and the dashboard with its health, and may **view the container
+  secrets** (after their own password). It does not give users, groups, backups, restore or
+  installing updates — those stay with Administrators. New settings permissions reach it
+  automatically; only its members change. The secrets include `admin_password` and
+  `backup_key`, so put only trusted people in it.
 - A user in **no group** can sign in but sees nothing (the Add user form warns). **Access…**
   on a user's row sets their groups.
 - **Edit** (pencil) changes a user's user name, first and last name and e-mail address; a new

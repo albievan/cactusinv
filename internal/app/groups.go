@@ -52,12 +52,15 @@ func (s *Service) CreateGroup(ctx context.Context, in GroupInput, currentPasswor
 }
 
 // UpdateGroup replaces a group's name, description, permissions and members. For the
-// built-in Administrators group only the members change (it always has everything), and
-// nobody removes themselves from it.
+// built-in groups only the members change (Administrators always has everything, Admin
+// settings its fixed access), and nobody removes themselves from Administrators.
 func (s *Service) UpdateGroup(ctx context.Context, id string, in GroupInput, currentPassword string) (domain.Group, error) {
 	g := domain.Group{ID: id, Name: in.Name, Description: in.Description, Permissions: in.Permissions, MemberIDs: in.MemberIDs}
-	if id == domain.AdministratorsGroupID {
-		g.Name, g.Permissions = "Administrators", nil // only the members are taken
+	if domain.IsBuiltinGroup(id) {
+		g.Permissions = nil // only the members are taken; the name is kept below
+		if g.Name == "" {
+			g.Name = id
+		}
 	}
 	if err := g.Normalize(); err != nil {
 		return domain.Group{}, wrap("app.UpdateGroup", err)
@@ -105,7 +108,7 @@ func (s *Service) UpdateGroup(ctx context.Context, id string, in GroupInput, cur
 
 // DeleteGroup removes a group that is not built in; its members lose what it gave them.
 func (s *Service) DeleteGroup(ctx context.Context, id, currentPassword string) error {
-	if id == domain.AdministratorsGroupID {
+	if domain.IsBuiltinGroup(id) {
 		return wrap("app.DeleteGroup", domain.ErrForbidden)
 	}
 	g, err := s.tx.Repos().Groups.Get(ctx, id)

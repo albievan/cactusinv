@@ -181,6 +181,27 @@ func (e EmailStatus) Valid() bool {
 	}
 }
 
+// Defines values for HealthCheckState.
+const (
+	HealthCheckStateFailed  HealthCheckState = "failed"
+	HealthCheckStateOk      HealthCheckState = "ok"
+	HealthCheckStateWarning HealthCheckState = "warning"
+)
+
+// Valid indicates whether the value is a known member of the HealthCheckState enum.
+func (e HealthCheckState) Valid() bool {
+	switch e {
+	case HealthCheckStateFailed:
+		return true
+	case HealthCheckStateOk:
+		return true
+	case HealthCheckStateWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InvoiceStage.
 const (
 	InvoiceStageDraft   InvoiceStage = "draft"
@@ -517,6 +538,27 @@ func (e ScheduleStatus) Valid() bool {
 	}
 }
 
+// Defines values for ServiceInfoState.
+const (
+	ServiceInfoStateNotConfigured ServiceInfoState = "not configured"
+	ServiceInfoStateRunning       ServiceInfoState = "running"
+	ServiceInfoStateUnreachable   ServiceInfoState = "unreachable"
+)
+
+// Valid indicates whether the value is a known member of the ServiceInfoState enum.
+func (e ServiceInfoState) Valid() bool {
+	switch e {
+	case ServiceInfoStateNotConfigured:
+		return true
+	case ServiceInfoStateRunning:
+		return true
+	case ServiceInfoStateUnreachable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SettingsFileFormat.
 const (
 	CactusinvSettings SettingsFileFormat = "cactusinv-settings"
@@ -577,6 +619,27 @@ func (e SettingsSection) Valid() bool {
 	case SettingsSectionQuoteSettings:
 		return true
 	case SettingsSectionSchedules:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SystemHealthState.
+const (
+	SystemHealthStateFailed  SystemHealthState = "failed"
+	SystemHealthStateOk      SystemHealthState = "ok"
+	SystemHealthStateWarning SystemHealthState = "warning"
+)
+
+// Valid indicates whether the value is a known member of the SystemHealthState enum.
+func (e SystemHealthState) Valid() bool {
+	switch e {
+	case SystemHealthStateFailed:
+		return true
+	case SystemHealthStateOk:
+		return true
+	case SystemHealthStateWarning:
 		return true
 	default:
 		return false
@@ -952,6 +1015,18 @@ type CustomerList struct {
 	Total int        `json:"total"`
 }
 
+// DBPool defines model for DBPool.
+type DBPool struct {
+	Idle  int `json:"idle"`
+	InUse int `json:"inUse"`
+
+	// MaxOpen 0 = no limit.
+	MaxOpen   int   `json:"maxOpen"`
+	Open      int   `json:"open"`
+	WaitCount int64 `json:"waitCount"`
+	WaitMs    int64 `json:"waitMs"`
+}
+
 // Dashboard defines model for Dashboard.
 type Dashboard struct {
 	Activity []AuditEntry `json:"activity"`
@@ -982,6 +1057,38 @@ type Dashboard struct {
 	// UpcomingInvoices The next invoices the schedules will raise
 	UpcomingInvoices []UpcomingInvoice `json:"upcomingInvoices"`
 	UpcomingRuns     []Schedule        `json:"upcomingRuns"`
+}
+
+// DatabaseInfo defines model for DatabaseInfo.
+type DatabaseInfo struct {
+	Charset     string `json:"charset"`
+	Collation   string `json:"collation"`
+	Connections int64  `json:"connections"`
+
+	// Error Why the database could not be read ("" when it could).
+	Error              string  `json:"error"`
+	Host               string  `json:"host"`
+	MaxConnections     int64   `json:"maxConnections"`
+	MaxUsedConnections int64   `json:"maxUsedConnections"`
+	Name               string  `json:"name"`
+	PingMs             float64 `json:"pingMs"`
+	Pool               DBPool  `json:"pool"`
+	Port               int     `json:"port"`
+	Queries            int64   `json:"queries"`
+	SizeBytes          int64   `json:"sizeBytes"`
+	SlowQueries        int64   `json:"slowQueries"`
+
+	// Status Every global status counter
+	Status        []Setting `json:"status"`
+	Tables        int       `json:"tables"`
+	TimeZone      string    `json:"timeZone"`
+	UptimeSeconds int64     `json:"uptimeSeconds"`
+	User          string    `json:"user"`
+
+	// Variables Every global variable
+	Variables      []Setting `json:"variables"`
+	Version        string    `json:"version"`
+	VersionComment string    `json:"versionComment"`
 }
 
 // Debtor defines model for Debtor.
@@ -1157,6 +1264,16 @@ type GroupRequest struct {
 	Name            string   `json:"name"`
 	Permissions     []string `json:"permissions"`
 }
+
+// HealthCheck defines model for HealthCheck.
+type HealthCheck struct {
+	Detail string           `json:"detail"`
+	Name   string           `json:"name"`
+	State  HealthCheckState `json:"state"`
+}
+
+// HealthCheckState defines model for HealthCheck.State.
+type HealthCheckState string
 
 // ImportCounts defines model for ImportCounts.
 type ImportCounts struct {
@@ -1694,6 +1811,19 @@ type RecurrenceFrequency string
 // RecurrenceWeekendRule Monthly, quarterly and yearly: when the day falls on a Saturday or Sunday, previous-friday runs on the Friday before (the first of a month can move into the previous month) and none runs on that day. The run keeps the period of its day. Omitted on create: previous-friday; omitted on update: unchanged. Weekly and once are always none.
 type RecurrenceWeekendRule string
 
+// RequestInfo defines model for RequestInfo.
+type RequestInfo struct {
+	// AverageMs Over the newest 1000 requests.
+	AverageMs    float64 `json:"averageMs"`
+	ClientErrors int64   `json:"clientErrors"`
+	LastMinute   int64   `json:"lastMinute"`
+
+	// P95Ms Over the newest 1000 requests.
+	P95Ms        float64 `json:"p95Ms"`
+	ServerErrors int64   `json:"serverErrors"`
+	Total        int64   `json:"total"`
+}
+
 // ResetPasswordRequest defines model for ResetPasswordRequest.
 type ResetPasswordRequest struct {
 	// CurrentPassword Your own password.
@@ -1750,6 +1880,12 @@ type RestoreTableCount struct {
 	Name   string `json:"name"`
 }
 
+// RevealSecretRequest defines model for RevealSecretRequest.
+type RevealSecretRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	Key             string `json:"key"`
+}
+
 // RunPreview defines model for RunPreview.
 type RunPreview struct {
 	Runs []time.Time `json:"runs"`
@@ -1765,6 +1901,20 @@ type RunPreview struct {
 
 // RunPreviewWeekendRule The weekend rule the runs were computed with — the recurrence's own, or the default a new schedule would get.
 type RunPreviewWeekendRule string
+
+// RuntimeInfo defines model for RuntimeInfo.
+type RuntimeInfo struct {
+	Arch       string    `json:"arch"`
+	Cpus       int       `json:"cpus"`
+	GcRuns     int64     `json:"gcRuns"`
+	GoVersion  string    `json:"goVersion"`
+	Goroutines int       `json:"goroutines"`
+	HeapBytes  int64     `json:"heapBytes"`
+	Hostname   string    `json:"hostname"`
+	Os         string    `json:"os"`
+	StartedAt  time.Time `json:"startedAt,omitempty"`
+	SysBytes   int64     `json:"sysBytes"`
+}
 
 // Schedule defines model for Schedule.
 type Schedule struct {
@@ -1875,6 +2025,19 @@ type ScheduleRun struct {
 // ScheduleStatus defines model for ScheduleStatus.
 type ScheduleStatus string
 
+// SecretInfo defines model for SecretInfo.
+type SecretInfo struct {
+	Description string `json:"description"`
+	Key         string `json:"key"`
+	Present     bool   `json:"present"`
+}
+
+// SecretValue defines model for SecretValue.
+type SecretValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // SendRequest defines model for SendRequest.
 type SendRequest struct {
 	Body string   `json:"body,omitempty"`
@@ -1887,6 +2050,24 @@ type SendRequest struct {
 	SendAt  *time.Time `json:"sendAt,omitempty"`
 	Subject string     `json:"subject,omitempty"`
 	To      []string   `json:"to,omitempty"`
+}
+
+// ServiceInfo defines model for ServiceInfo.
+type ServiceInfo struct {
+	Detail    string           `json:"detail"`
+	LatencyMs float64          `json:"latencyMs"`
+	Name      string           `json:"name"`
+	Role      string           `json:"role"`
+	State     ServiceInfoState `json:"state"`
+}
+
+// ServiceInfoState defines model for ServiceInfo.State.
+type ServiceInfoState string
+
+// Setting defines model for Setting.
+type Setting struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // SettingsExportRequest defines model for SettingsExportRequest.
@@ -2042,6 +2223,22 @@ type StatementSummary struct {
 	Total Decimal `json:"total"`
 }
 
+// SystemHealth defines model for SystemHealth.
+type SystemHealth struct {
+	Checks        []HealthCheck     `json:"checks"`
+	DbPingMs      float64           `json:"dbPingMs"`
+	OutboxFailed  int               `json:"outboxFailed"`
+	OutboxPending int               `json:"outboxPending"`
+	Pool          DBPool            `json:"pool"`
+	Requests      RequestInfo       `json:"requests"`
+	Runtime       RuntimeInfo       `json:"runtime"`
+	State         SystemHealthState `json:"state"`
+	UptimeSeconds int64             `json:"uptimeSeconds"`
+}
+
+// SystemHealthState defines model for SystemHealth.State.
+type SystemHealthState string
+
 // SystemSettings defines model for SystemSettings.
 type SystemSettings struct {
 	// BackupHostDir Host folder mapped to the backups folder ("" = the deployment's, .env BACKUP_DIR).
@@ -2069,6 +2266,24 @@ type SystemSettings struct {
 	// SessionMaxHours A sign-in ends this many hours after it started.
 	SessionMaxHours int `json:"sessionMaxHours"`
 	Version         int `json:"version"`
+}
+
+// SystemStatus defines model for SystemStatus.
+type SystemStatus struct {
+	Build string `json:"build"`
+
+	// Configuration The application's configuration (environment)
+	Configuration []Setting     `json:"configuration"`
+	Container     bool          `json:"container"`
+	Database      DatabaseInfo  `json:"database"`
+	Runtime       RuntimeInfo   `json:"runtime"`
+	Secrets       []SecretInfo  `json:"secrets"`
+	Services      []ServiceInfo `json:"services"`
+
+	// Target dockerdesktop, podman, k3s, k8s; "" when run by hand.
+	Target        string `json:"target"`
+	UptimeSeconds int64  `json:"uptimeSeconds"`
+	Version       string `json:"version"`
 }
 
 // TestEmailRequest defines model for TestEmailRequest.
@@ -2570,6 +2785,9 @@ type UpdateSystemSettingsJSONRequestBody = SystemSettings
 // SendStatementsJSONRequestBody defines body for SendStatements for application/json ContentType.
 type SendStatementsJSONRequestBody SendStatementsJSONBody
 
+// RevealSecretJSONRequestBody defines body for RevealSecret for application/json ContentType.
+type RevealSecretJSONRequestBody = RevealSecretRequest
+
 // AddUserJSONRequestBody defines body for AddUser for application/json ContentType.
 type AddUserJSONRequestBody = NewUserRequest
 
@@ -2935,6 +3153,15 @@ type ServerInterface interface {
 
 	// (POST /statements/send)
 	SendStatements(w http.ResponseWriter, r *http.Request)
+
+	// (GET /system/health)
+	GetSystemHealth(w http.ResponseWriter, r *http.Request)
+
+	// (POST /system/secrets/reveal)
+	RevealSecret(w http.ResponseWriter, r *http.Request)
+
+	// (GET /system/status)
+	GetSystemStatus(w http.ResponseWriter, r *http.Request)
 
 	// (GET /users)
 	ListUsers(w http.ResponseWriter, r *http.Request)
@@ -6029,6 +6256,48 @@ func (siw *ServerInterfaceWrapper) SendStatements(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// GetSystemHealth operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevealSecret operation middleware
+func (siw *ServerInterfaceWrapper) RevealSecret(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevealSecret(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSystemStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSystemStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSystemStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUsers operation middleware
 func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -6364,6 +6633,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/email", wrapper.GetEmailSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/email", wrapper.UpdateEmailSettings)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/settings/email/test", wrapper.SendTestEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/system/status", wrapper.GetSystemStatus)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/system/secrets/reveal", wrapper.RevealSecret)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/system/health", wrapper.GetSystemHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system", wrapper.GetSystemSettings)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/settings/system", wrapper.UpdateSystemSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings/system/update", wrapper.CheckForUpdate)
@@ -11166,6 +11438,121 @@ func (response SendStatementsdefaultApplicationProblemPlusJSONResponse) VisitSen
 	return err
 }
 
+type GetSystemHealthRequestObject struct {
+}
+
+type GetSystemHealthResponseObject interface {
+	VisitGetSystemHealthResponse(w http.ResponseWriter) error
+}
+
+type GetSystemHealth200JSONResponse SystemHealth
+
+func (response GetSystemHealth200JSONResponse) VisitGetSystemHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemHealthdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSystemHealthdefaultApplicationProblemPlusJSONResponse) VisitGetSystemHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevealSecretRequestObject struct {
+	Body *RevealSecretJSONRequestBody
+}
+
+type RevealSecretResponseObject interface {
+	VisitRevealSecretResponse(w http.ResponseWriter) error
+}
+
+type RevealSecret200JSONResponse SecretValue
+
+func (response RevealSecret200JSONResponse) VisitRevealSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RevealSecretdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RevealSecretdefaultApplicationProblemPlusJSONResponse) VisitRevealSecretResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemStatusRequestObject struct {
+}
+
+type GetSystemStatusResponseObject interface {
+	VisitGetSystemStatusResponse(w http.ResponseWriter) error
+}
+
+type GetSystemStatus200JSONResponse SystemStatus
+
+func (response GetSystemStatus200JSONResponse) VisitGetSystemStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSystemStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSystemStatusdefaultApplicationProblemPlusJSONResponse) VisitGetSystemStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListUsersRequestObject struct {
 }
 
@@ -12076,6 +12463,15 @@ type StrictServerInterface interface {
 
 	// (POST /statements/send)
 	SendStatements(ctx context.Context, request SendStatementsRequestObject) (SendStatementsResponseObject, error)
+
+	// (GET /system/health)
+	GetSystemHealth(ctx context.Context, request GetSystemHealthRequestObject) (GetSystemHealthResponseObject, error)
+
+	// (POST /system/secrets/reveal)
+	RevealSecret(ctx context.Context, request RevealSecretRequestObject) (RevealSecretResponseObject, error)
+
+	// (GET /system/status)
+	GetSystemStatus(ctx context.Context, request GetSystemStatusRequestObject) (GetSystemStatusResponseObject, error)
 
 	// (GET /users)
 	ListUsers(ctx context.Context, request ListUsersRequestObject) (ListUsersResponseObject, error)
@@ -15367,6 +15763,85 @@ func (sh *strictHandler) SendStatements(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SendStatementsResponseObject); ok {
 		if err := validResponse.VisitSendStatementsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSystemHealth operation middleware
+func (sh *strictHandler) GetSystemHealth(w http.ResponseWriter, r *http.Request) {
+	var request GetSystemHealthRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSystemHealth(ctx, request.(GetSystemHealthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSystemHealth")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSystemHealthResponseObject); ok {
+		if err := validResponse.VisitGetSystemHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RevealSecret operation middleware
+func (sh *strictHandler) RevealSecret(w http.ResponseWriter, r *http.Request) {
+	var request RevealSecretRequestObject
+
+	var body RevealSecretJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevealSecret(ctx, request.(RevealSecretRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevealSecret")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevealSecretResponseObject); ok {
+		if err := validResponse.VisitRevealSecretResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSystemStatus operation middleware
+func (sh *strictHandler) GetSystemStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetSystemStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSystemStatus(ctx, request.(GetSystemStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSystemStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSystemStatusResponseObject); ok {
+		if err := validResponse.VisitGetSystemStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -60,7 +60,7 @@ func TestGroupRoutesAndAccess(t *testing.T) {
 	// A group that allows e-mailing invoices.
 	var list httpapi.GroupList
 	albie.ok(albie.do("GET", "/api/v1/groups", nil, &list), 200, "groups")
-	if len(list.Items) != 1 || !list.Items[0].Builtin || len(list.Permissions) < 18 {
+	if len(list.Items) != 2 || !list.Items[0].Builtin || list.Items[1].Id != "admin-settings" || !slices.Contains(list.Items[1].Permissions, "settings.secrets.view") || len(list.Permissions) < 18 {
 		t.Fatalf("groups = %+v", list)
 	}
 	body := obj{"name": "Accounts", "permissions": []string{"invoices.send"}, "memberIds": []string{carol.Id}, "currentPassword": albiePW}
@@ -102,8 +102,9 @@ func TestGroupRoutesAndAccess(t *testing.T) {
 
 	albie.ok(albie.do("POST", "/api/v1/groups/administrators/delete", obj{"currentPassword": albiePW}, &p), 403, "delete Administrators")
 	albie.ok(albie.do("POST", "/api/v1/groups/"+g.Id+"/delete", obj{"currentPassword": albiePW}, nil), 204, "delete group")
+	albie.ok(albie.do("POST", "/api/v1/groups/admin-settings/delete", obj{"currentPassword": albiePW}, &p), 403, "delete Admin settings")
 	albie.ok(albie.do("GET", "/api/v1/groups", nil, &list), 200, "groups")
-	if len(list.Items) != 1 {
+	if len(list.Items) != 2 {
 		t.Fatalf("groups = %+v", list.Items)
 	}
 }

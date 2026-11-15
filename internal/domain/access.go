@@ -79,6 +79,11 @@ const (
 	PermSettingsQuotes           Permission = "settings.quotes"
 	PermSettingsSystemView       Permission = "settings.system.view"
 	PermSettingsSystemEdit       Permission = "settings.system.edit"
+	PermSettingsDatabaseView     Permission = "settings.database.view"
+
+	// PermSettingsSecretsView is seeing the container secrets' values (M57). It cannot be
+	// granted: Administrators and the built-in Admin settings group have it.
+	PermSettingsSecretsView Permission = "settings.secrets.view"
 
 	// PermAdminister is users, groups, backups and restore. It cannot be granted: a user
 	// has it only as a member of the Administrators group.
@@ -88,6 +93,28 @@ const (
 // AdministratorsGroupID is the built-in group that has every permission, administration
 // included. It cannot be renamed, changed or deleted and always keeps an active member.
 const AdministratorsGroupID = "administrators"
+
+// AdminSettingsGroupID is the built-in group that changes every setting and sees the
+// container secrets (M57). Its access is AdminSettingsPermissions, kept in code so a new
+// settings permission reaches it; only its members change.
+const AdminSettingsGroupID = "admin-settings"
+
+// IsBuiltinGroup reports whether id is a built-in group (not renamed, changed or deleted).
+func IsBuiltinGroup(id string) bool { return id == AdministratorsGroupID || id == AdminSettingsGroupID }
+
+// AdminSettingsPermissions is the Admin settings group's access: every Settings
+// permission, the dashboard and the container secrets — not users, groups, backups or
+// restore, which stay with Administrators.
+func AdminSettingsPermissions() []Permission {
+	out := []Permission{PermDashboardView, PermSettingsSecretsView}
+	for _, p := range Permissions {
+		if strings.HasPrefix(p.Area, "Settings:") {
+			out = append(out, p.Key)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
 
 // PermissionInfo describes a grantable permission for the group editor.
 type PermissionInfo struct {
@@ -173,6 +200,8 @@ var Permissions = []PermissionInfo{
 
 	{PermSettingsSystemView, "Settings: System Settings", "See System Settings", nil},
 	{PermSettingsSystemEdit, "Settings: System Settings", "Change session timeouts and folder mappings", []Permission{PermSettingsSystemView}},
+
+	{PermSettingsDatabaseView, "Settings: Database & containers", "See the database and container status, and the application's health", nil},
 }
 
 // quotePick is what writing a quote needs: to see quotes, and to pick customers and
@@ -237,10 +266,11 @@ type Group struct {
 	ID          string
 	Name        string
 	Description string
-	// Builtin is set for the Administrators group only.
+	// Builtin is set for the Administrators and Admin settings groups.
 	Builtin bool
 	// Permissions are those granted (implied ones are added when access is computed). The
-	// Administrators group stores none: it has everything.
+	// built-in groups store none: Administrators has everything, Admin settings
+	// AdminSettingsPermissions (see Granted).
 	Permissions []Permission
 	// MemberIDs are the ids of the users in the group, sorted.
 	MemberIDs []string
@@ -250,6 +280,15 @@ type Group struct {
 
 // IsAdministrators reports whether g is the built-in Administrators group.
 func (g Group) IsAdministrators() bool { return g.ID == AdministratorsGroupID }
+
+// Granted is what the group gives its members (before implied permissions are added):
+// AdminSettingsPermissions for Admin settings, its stored permissions otherwise.
+func (g Group) Granted() []Permission {
+	if g.ID == AdminSettingsGroupID {
+		return AdminSettingsPermissions()
+	}
+	return g.Permissions
+}
 
 // HasMember reports whether the user is in the group.
 func (g Group) HasMember(userID string) bool { return slices.Contains(g.MemberIDs, userID) }
@@ -300,7 +339,7 @@ func AccessFor(groups []Group) Access {
 		if g.IsAdministrators() {
 			a.Administrator = true
 		}
-		ps = append(ps, g.Permissions...)
+		ps = append(ps, g.Granted()...)
 	}
 	a.granted = WithImplied(ps)
 	return a
@@ -311,16 +350,17 @@ func (a Access) Has(p Permission) bool {
 	return a.Administrator || slices.Contains(a.granted, p)
 }
 
-// Permissions lists the grantable permissions the access includes, sorted (every one for
-// an administrator).
+// Permissions lists the permissions the access includes, sorted (every grantable one and
+// the secrets for an administrator).
 func (a Access) Permissions() []Permission {
 	if !a.Administrator {
 		return slices.Clone(a.granted)
 	}
-	out := make([]Permission, len(Permissions))
-	for i, p := range Permissions {
-		out[i] = p.Key
+	out := make([]Permission, 0, len(Permissions)+1)
+	for _, p := range Permissions {
+		out = append(out, p.Key)
 	}
+	out = append(out, PermSettingsSecretsView)
 	slices.Sort(out)
 	return out
 }
