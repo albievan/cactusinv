@@ -15,7 +15,7 @@ Details: `docs/ENGINEERING_PRINCIPLES.md` (why), `docs/ARCHITECTURE.md` (how),
 | Database | MariaDB 11, `goose` migrations in `migrations/`, `sqlc` (mysql engine) |
 | API | OpenAPI 3.0 design-first `api/openapi/cactusinv.yaml`, `oapi-codegen` strict server |
 | Secrets | files in `/run/secrets` (Docker/K8s secrets); HashiCorp Vault KV v2 optional |
-| Deploy | `deploy.sh` → Docker Desktop, k3s or k8s; defaults in `.env` |
+| Deploy | `deploy.sh` → Docker Desktop, Podman, k3s or k8s; defaults in `.env`, per machine in `.env.local` |
 | Licence | public domain (SQLite-style blessing) |
 | Frontend | React 18 + TS + Vite 5 + Bootstrap 5.3 (Sass theme) + Bootstrap Icons in `web/`, mobile-first (360 px up) |
 
@@ -49,7 +49,7 @@ make check        # the quality bar
 make test         # unit tests
 make test-int     # integration tests (Docker)
 make install      # ./deploy.sh --install --dockerdesktop
-./deploy.sh --install|--uninstall|--delete-uninstall --dockerdesktop|--k3s|--k8s [--ssh-access user@host]
+./deploy.sh --install|--uninstall|--delete-uninstall --dockerdesktop|--podman|--k3s|--k8s [--ssh-access user@host]
 ```
 
 ## 5. Never

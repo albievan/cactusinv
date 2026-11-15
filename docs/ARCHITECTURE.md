@@ -55,7 +55,7 @@ cactusInv/
 ├── web/                           # React + TS + Vite + Bootstrap 5.3 (mobile-first); dist embedded
 ├── deploy/mariadb/initdb/         # creates the restore staging database on a new install
 ├── deploy/k8s/cactusinv.yaml      # k3s/k8s manifests (rendered from .env)
-├── deploy.sh  docker-compose.yml  .env   # one-script deployment; .env = defaults
+├── deploy.sh  docker-compose.yml  .env   # one-script deployment; .env = defaults, .env.local = this machine's
 ├── docs/                          # this file, ENGINEERING_PRINCIPLES.md, PLACEHOLDERS.md, adr/
 ├── Dockerfile  Makefile  sqlc.yaml  .golangci.yml
 ├── PLAN.md  CLAUDE.md  README.md  LICENSE
@@ -368,7 +368,10 @@ middleware calling `app.SessionAllows`): a user who must change their password r
 | `CACTUSINV_DEPLOY_TARGET` / `_HOST_PROJECT_DIR` / `_HOST_BACKUP_DIR` / `_HOST_INVOICES_DIR` | set by `deploy.sh` for System Settings (folder mapping) | – |
 
 The deployment-level `.env` (what each value does, `K8S_STORAGE_CLASS`) is documented in the
-README, "Configuration — `.env`".
+README, "Configuration — `.env`"; a git-ignored `.env.local` beside it overrides it per machine
+(read first, so `--upgrade`'s clean-tree check still passes). Step-by-step container installs per
+platform and computer are data in `web/src/components/containerSteps.ts`, shown on the sign-in
+page and in System Settings → Version, and summarised in the README.
 
 Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (optional) — files or Vault keys
 (ADR-006). Session tokens are random and stored hashed, so no signing key exists.
@@ -445,10 +448,10 @@ system setting in `lib/theme.ts` alone and refuses a stored theme. The server se
 
 ## 10. Deployment, backups and the invoice archive
 
-| Concern | Docker Desktop / Engine | k3s / Kubernetes |
+| Concern | Docker Desktop / Engine, Podman | k3s / Kubernetes |
 |---|---|---|
-| Entry point | `./deploy.sh --install --dockerdesktop` | `./deploy.sh --install --k3s` / `--k8s` |
-| Definition | `docker-compose.yml` + `.env` | `deploy/k8s/cactusinv.yaml` rendered from `.env` |
+| Entry point | `./deploy.sh --install --dockerdesktop` / `--podman` (`podman compose`, rootless) | `./deploy.sh --install --k3s` / `--k8s` |
+| Definition | `docker-compose.yml` + `.env.local` (this machine, git-ignored) over `.env` | `deploy/k8s/cactusinv.yaml` rendered from `.env.local` over `.env` |
 | Image | built by Compose | built for the node's arch; k3s: `k3s ctr images import`; k8s: pushed to `K8S_REGISTRY` |
 | Database data | `${MARIADB_DATA_DIR}` bind mount | PVC `mariadb-data` |
 | Invoice PDFs | `${INVOICES_DIR}` bind mount | PVC `invoices` |

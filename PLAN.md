@@ -937,6 +937,7 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 |---|---|---|---|
 | 54.1 | The 36rem limit stays on the heading, the text and the feature pills (a readable line); *Install cactusInv on your own computer or server* (Standalone and Container tabs, steps, commands) spans the whole green side; the side keeps its bottom padding on large screens | done | browser (mock API): at 1440 px the steps are 864 px wide (was 576), at 1920 px 1184 px; no sideways scroll |
 | 54.2 | Docs (README, PLAN), VERSION 1.31.1, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 148 tests) |
+| 54.3 | Docs catch up with M53: CLAUDE.md and ARCHITECTURE §10 name Podman and `.env.local`; binaries rebuilt from the pushed commit | done | `make check` exit 0; `make dist` signature verified |
 
 ## Decisions
 
