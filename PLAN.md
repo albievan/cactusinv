@@ -929,6 +929,15 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 53.5 | Checked for real: Ubuntu 24.04, `apt install podman docker-compose-v2` (Podman 4.9.3, Compose 2.40), a normal user (rootless), the documented `.env.local`: `--install --podman` built the image, generated the secrets and backup key, started MariaDB, the app and Mailpit; `--status`, `--backup-now`, `--version` worked; admin signed in (204) with the generated password; `podman unshare ls` lists the backups; a second `--install` kept the data; the git tree stayed clean (upgrades work). Health checks need systemd timers (the test container had none, so they were run by hand); `make check` exit 0, web 148 tests. Browser (mock API): both tabs on the sign-in page and the Version tab, a Podman install opens Container at Podman, no sideways scroll at 360 px | done | 2026-11-15 |
 | 53.6 | Docs: README "Installing in containers, step by step", `--podman`, `.env.local`; PLAN; VERSION 1.31.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 148 tests); `make dist` 1.31.0 (build 56), signature verified; GitHub Release v1.31.0 |
 
+### M54 — Sign-in page: the install steps use the whole green side (Albie, 2026-11-15) — v1.31.1
+
+> "on the login page make use of the full width of the green section"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 54.1 | The 36rem limit stays on the heading, the text and the feature pills (a readable line); *Install cactusInv on your own computer or server* (Standalone and Container tabs, steps, commands) spans the whole green side; the side keeps its bottom padding on large screens | done | browser (mock API): at 1440 px the steps are 864 px wide (was 576), at 1920 px 1184 px; no sideways scroll |
+| 54.2 | Docs (README, PLAN), VERSION 1.31.1, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 148 tests) |
+
 ## Decisions
 
 | Date | Decision | Why |

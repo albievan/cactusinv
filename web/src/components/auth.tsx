@@ -174,36 +174,39 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
   return (
     <main className="d-flex min-vh-100 flex-column flex-lg-row">
       <section
-        className="position-relative overflow-hidden px-4 py-5 px-sm-5 py-lg-0 flex-lg-grow-1 text-cream"
+        className="position-relative overflow-hidden px-4 py-5 px-sm-5 pt-lg-0 flex-lg-grow-1 text-cream"
         style={{ background: 'linear-gradient(to bottom right, #244a38, #1b382b, #0d1d16)' }}
       >
-        <div className="position-relative z-1 mt-lg-5 pt-lg-5" style={{ maxWidth: '36rem' }}>
-          <div className="mb-5 d-lg-none">
-            <Wordmark dark />
+        <div className="position-relative z-1 mt-lg-5 pt-lg-5">
+          {/* The text keeps a readable width; the install steps below use the whole green section. */}
+          <div style={{ maxWidth: '36rem' }}>
+            <div className="mb-5 d-lg-none">
+              <Wordmark dark />
+            </div>
+            <h1 className="h1 fw-bold lh-sm text-white mb-0">Invoicing that runs itself</h1>
+            <p className="mt-4 mb-0 fs-6 lh-lg text-cream">
+              cactusInv issues your invoices, e-mails them on schedule and keeps every PDF on file. Customers are billed in
+              their own currency and paid into the matching bank account, and statements show at a glance who still owes what.
+            </p>
+            <ul className="list-unstyled d-flex flex-wrap gap-2 mt-4 mb-0 small">
+              {['Scheduled invoices & e-mails', 'Multi-currency with bank per currency', 'Statements & aging', 'Every PDF archived'].map((t) => (
+                <li key={t} className="rounded-pill border border-light border-opacity-25 px-3 py-1 text-cream">
+                  {t}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 mb-0 small text-cream">
+              Free and open source:{' '}
+              <a
+                href={REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="d-inline-flex align-items-center gap-1 fw-semibold link-light text-decoration-underline link-offset-2 link-underline-opacity-50 link-underline-opacity-100-hover"
+              >
+                <IconGitHub /> github.com/albievan/cactusinv
+              </a>
+            </p>
           </div>
-          <h1 className="h1 fw-bold lh-sm text-white mb-0">Invoicing that runs itself</h1>
-          <p className="mt-4 mb-0 fs-6 lh-lg text-cream">
-            cactusInv issues your invoices, e-mails them on schedule and keeps every PDF on file. Customers are billed in
-            their own currency and paid into the matching bank account, and statements show at a glance who still owes what.
-          </p>
-          <ul className="list-unstyled d-flex flex-wrap gap-2 mt-4 mb-0 small">
-            {['Scheduled invoices & e-mails', 'Multi-currency with bank per currency', 'Statements & aging', 'Every PDF archived'].map((t) => (
-              <li key={t} className="rounded-pill border border-light border-opacity-25 px-3 py-1 text-cream">
-                {t}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 mb-0 small text-cream">
-            Free and open source:{' '}
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="d-inline-flex align-items-center gap-1 fw-semibold link-light text-decoration-underline link-offset-2 link-underline-opacity-50 link-underline-opacity-100-hover"
-            >
-              <IconGitHub /> github.com/albievan/cactusinv
-            </a>
-          </p>
           <details className="mt-3 small text-cream">
             <summary className="fw-semibold text-white py-2" style={{ cursor: 'pointer' }}>
               Install cactusInv on your own computer or server

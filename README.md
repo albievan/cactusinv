@@ -300,7 +300,8 @@ signed-in user also has a limit of their own.
 
 `deploy.sh` is a bash script: on Windows run it in Ubuntu on WSL 2 (`wsl --install -d
 Ubuntu-24.04` in PowerShell as administrator). The same steps, with copy buttons, per platform
-and computer, are on the sign-in page and in System Settings → Version (Container tab).
+and computer, are on the sign-in page (under *Install cactusInv on your own computer or server*,
+across the whole green side) and in System Settings → Version (Container tab).
 
 **Docker on one computer** (Linux, or Windows/macOS with Docker Desktop; on Windows turn on
 Settings → Resources → WSL integration → Ubuntu-24.04):
