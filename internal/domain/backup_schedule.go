@@ -83,6 +83,38 @@ type BackupFile struct {
 	Legacy bool      // a plaintext .sql.gz from the retired sidecar
 }
 
+// KeepNewestBackups is how many of the newest backups can never be deleted by hand (M52).
+const KeepNewestBackups = 5
+
+// SelectDeletable splits the chosen backups into those that may be deleted and those kept:
+// the KeepNewestBackups newest files are always kept, as is a name that is not a stored
+// backup. Both lists follow the order of chosen, without repeats.
+func SelectDeletable(files []BackupFile, chosen []string) (deletable, kept []string) {
+	sorted := slices.Clone(files)
+	slices.SortFunc(sorted, func(a, b BackupFile) int { return b.Time.Compare(a.Time) })
+	protected := map[string]bool{}
+	stored := map[string]bool{}
+	for i, f := range sorted {
+		stored[f.Name] = true
+		if i < KeepNewestBackups {
+			protected[f.Name] = true
+		}
+	}
+	seen := map[string]bool{}
+	for _, name := range chosen {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		if stored[name] && !protected[name] {
+			deletable = append(deletable, name)
+		} else {
+			kept = append(kept, name)
+		}
+	}
+	return deletable, kept
+}
+
 // SelectPrunable returns the files older than retentionDays at now. The newest file and
 // the newest encrypted backup are never pruned; retentionDays <= 0 prunes nothing.
 func SelectPrunable(files []BackupFile, now time.Time, retentionDays int) []string {

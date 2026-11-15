@@ -664,6 +664,13 @@ restore. No secret is in a backup.
   resume (a banner on every page). With `backup_key` set up, the current data is saved first
   as a **safety backup** ("Before a restore"), so a wrong restore can be undone. The audit log
   is never rewritten: the backup's entries are added to it.
+- **Delete backups** (Settings → Backup & restore): tick backups in the list (or the box in
+  its header for every one that may go) and press **Delete selected**. The **5 newest backups
+  are always kept** (marked *Always kept*; the server refuses them too), so of 7 backups with 6
+  ticked, the 2 oldest ticked are deleted. Before anything is deleted the current data is
+  saved as a **safety backup** ("Before deleting backups"); if that backup fails, or there is
+  no `backup_key`, nothing is deleted. Deleted files cannot be recovered; the audit log names
+  them and the safety backup.
 - From the command line (in the app container): `cactusinv backup create`, `backup list`,
   `backup create --out FILE --passphrase-file P`, `backup restore NAME|FILE|- [--yes]`
   (shows what restoring does and asks for `RESTORE`), `backup stage …` / `backup apply ID

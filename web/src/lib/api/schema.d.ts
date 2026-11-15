@@ -1288,6 +1288,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/backups/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Deletes the chosen stored backups (M52). The 5 newest backups are always kept (those
+         *     chosen among them are listed in kept). Before anything is deleted a safety backup (kind
+         *     predelete) is taken; if it fails, nothing is deleted. The newest five are decided
+         *     before that backup. 422 when none of the chosen may be deleted.
+         */
+        post: operations["deleteBackups"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/backups/export": {
         parameters: {
             query?: never;
@@ -1988,6 +2010,16 @@ export interface components {
             /** @description The host folder mapped to it now ("" on Kubernetes). */
             backupHostDir: string;
             invoicesHostDir: string;
+        };
+        DeleteBackupsRequest: {
+            names: string[];
+        };
+        DeletedBackups: {
+            deleted: string[];
+            /** @description Chosen but kept: among the 5 newest, or not a stored backup. */
+            kept: string[];
+            /** @description The backup taken just before deleting. */
+            safetyBackup: string;
         };
         /** @description A settings file (Settings → Import/Export). Every section is optional. */
         SettingsFile: {
@@ -2817,10 +2849,10 @@ export interface components {
              */
             schema: number;
             /**
-             * @description prerestore: the safety backup taken just before a restore.
+             * @description prerestore: the safety backup taken just before a restore; predelete: just before backups were deleted.
              * @enum {string}
              */
-            kind: "scheduled" | "manual" | "upload" | "prerestore" | "legacy";
+            kind: "scheduled" | "manual" | "upload" | "prerestore" | "predelete" | "legacy";
             /** @description A plaintext .sql.gz dump of the retired backup sidecar; restore it with deploy.sh. */
             legacy: boolean;
         };
@@ -5433,6 +5465,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreatedBackup"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteBackups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteBackupsRequest"];
+            };
+        };
+        responses: {
+            /** @description Deleted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletedBackups"];
                 };
             };
             default: components["responses"]["Problem"];

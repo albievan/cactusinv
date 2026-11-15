@@ -147,6 +147,22 @@ func (h *handlers) CreateBackup(ctx context.Context, _ CreateBackupRequestObject
 	return CreateBackup201JSONResponse{Name: b.Name, Size: b.Size, Sha256: b.SHA256, Schema: b.Schema}, nil
 }
 
+func (h *handlers) DeleteBackups(ctx context.Context, req DeleteBackupsRequestObject) (DeleteBackupsResponseObject, error) {
+	out, err := h.svc.DeleteBackups(ctx, req.Body.Names)
+	if err != nil {
+		return nil, err
+	}
+	return DeleteBackups200JSONResponse{Deleted: nonNil(out.Deleted), Kept: nonNil(out.Kept), SafetyBackup: out.SafetyBackup}, nil
+}
+
+// nonNil keeps an empty list a JSON [] rather than null.
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
 // ExportBackup streams the backup as it is written: ExportBackup runs in a goroutine
 // writing into a pipe, and the response starts once it has audited the download and named
 // the file. A failure mid-stream breaks the download (an age file that does not open), and

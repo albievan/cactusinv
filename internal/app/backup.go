@@ -9,6 +9,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/albievan/cactusinv/internal/domain"
@@ -394,6 +395,68 @@ func sortNewestFirst(files []BackupFileInfo) {
 			files[j], files[j-1] = files[j-1], files[j]
 		}
 	}
+}
+
+// DeletedBackups is the outcome of DeleteBackups.
+type DeletedBackups struct {
+	Deleted      []string
+	Kept         []string // chosen but kept: among the newest KeepNewestBackups, or not a stored backup
+	SafetyBackup string   // taken just before deleting
+}
+
+// DeleteBackups deletes the chosen stored backups (M52). The KeepNewestBackups newest are
+// always kept; before anything is deleted a safety backup (kind predelete) is taken, and if
+// it fails nothing is deleted. The newest five are decided before that backup, so of 7
+// backups with 6 chosen, the 2 oldest chosen go.
+func (s *Service) DeleteBackups(ctx context.Context, names []string) (DeletedBackups, error) {
+	unlock, err := s.lockBackups()
+	if err != nil {
+		return DeletedBackups{}, wrap("app.DeleteBackups", err)
+	}
+	defer unlock()
+	if len(names) == 0 || len(names) > 1000 {
+		return DeletedBackups{}, wrap("app.DeleteBackups", &domain.ValidationError{Field: "names", Reason: "choose between 1 and 1000 backups"})
+	}
+	files, err := s.backupFiles(ctx)
+	if err != nil {
+		return DeletedBackups{}, wrap("app.DeleteBackups", err)
+	}
+	refs := make([]domain.BackupFile, len(files))
+	for i, f := range files {
+		refs[i] = domain.BackupFile{Name: f.Name, Time: f.CreatedAt, Legacy: f.Legacy}
+	}
+	out := DeletedBackups{}
+	var deletable []string
+	deletable, out.Kept = domain.SelectDeletable(refs, names)
+	if len(deletable) == 0 {
+		return out, wrap("app.DeleteBackups", &domain.ValidationError{Field: "names", Reason: fmt.Sprintf("the %d newest backups are always kept: choose older ones", domain.KeepNewestBackups)})
+	}
+	if !s.safetyBackupPossible() {
+		return out, wrap("app.DeleteBackups", fmt.Errorf("%w: a safety backup is taken before deleting, which needs the backup key", domain.ErrNotConfigured))
+	}
+	b, err := s.createBackup(ctx, domain.BackupPreDelete)
+	if err != nil {
+		return out, wrap("app.DeleteBackups", fmt.Errorf("the safety backup before deleting failed, nothing was deleted: %w", err))
+	}
+	out.SafetyBackup = b.Name
+	var firstErr error
+	for _, name := range deletable {
+		if err := s.backups.Files.Remove(ctx, name); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			out.Kept = append(out.Kept, name)
+			continue
+		}
+		out.Deleted = append(out.Deleted, name)
+	}
+	if len(out.Deleted) > 0 {
+		summary := fmt.Sprintf("deleted %d backups (safety backup %s): %s", len(out.Deleted), b.Name, strings.Join(out.Deleted, ", "))
+		if err := s.auditNow(ctx, "backup.deleted", "backup", "", domain.TruncateUTF8(summary, 1000)); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return out, wrap("app.DeleteBackups", firstErr)
 }
 
 // RunDueBackups takes the scheduled backup of the current slot if no replica has taken it

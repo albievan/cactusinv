@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, idempotencyKey, unwrap, type Schemas } from '../../../lib/api/client'
 import { formatDateTime } from '../../../lib/format'
 import { useAsync } from '../../../lib/useAsync'
-import { Empty, ErrorBanner, Field, Sheet, Spinner } from '../../../components/ui'
+import { ConfirmButton, Empty, ErrorBanner, Field, Sheet, Spinner } from '../../../components/ui'
 import { useAuth } from '../../../components/auth'
 import { SettingsPage } from '../Settings'
 
@@ -24,6 +24,7 @@ const kindLabels: Record<string, string> = {
   manual: 'Manual',
   upload: 'Uploaded',
   prerestore: 'Before a restore',
+  predelete: 'Before deleting backups',
   legacy: 'Old plaintext dump',
 }
 
@@ -70,7 +71,7 @@ function BackupAndRestore() {
         overview.data && (
           <>
             <Actions ov={overview.data} onChanged={overview.reload} onUploaded={(name) => setRestoring({ name, needsPassphrase: true })} />
-            <StoredBackups ov={overview.data} onRestore={(f) => setRestoring({ name: f.name, needsPassphrase: f.kind === 'upload' })} />
+            <StoredBackups ov={overview.data} onChanged={overview.reload} onRestore={(f) => setRestoring({ name: f.name, needsPassphrase: f.kind === 'upload' })} />
           </>
         )
       )}
@@ -277,16 +278,70 @@ function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }
   )
 }
 
-function StoredBackups({ ov, onRestore }: { ov: Overview; onRestore: (f: BackupFile) => void }) {
+/** KEEP_NEWEST is how many of the newest backups can never be deleted here (M52; the server's rule). */
+export const KEEP_NEWEST = 5
+
+function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: (f: BackupFile) => void; onChanged: () => void }) {
+  const [chosen, setChosen] = useState<string[]>([])
+  const [err, setErr] = useState<Error | null>(null)
+  const [notice, setNotice] = useState('')
   if (ov.files.length === 0) return <Empty>No backups are stored yet.</Empty>
   const canRestore = (f: BackupFile) => !f.legacy && !ov.restoreUnavailable
+  // The files come newest first: the first KEEP_NEWEST are always kept.
+  const deletable = ov.files.slice(KEEP_NEWEST).map((f) => f.name)
+  const picked = chosen.filter((n) => deletable.includes(n))
+  const allPicked = deletable.length > 0 && picked.length === deletable.length
+  const toggle = (name: string, on: boolean) => setChosen((c) => (on ? [...c, name] : c.filter((n) => n !== name)))
+  const remove = async () => {
+    setErr(null)
+    setNotice('')
+    try {
+      const out = await unwrap(api.POST('/backups/delete', { body: { names: picked } }))
+      setChosen([])
+      setNotice(`Deleted ${out.deleted.length} backup${out.deleted.length === 1 ? '' : 's'}. Safety backup taken first: ${out.safetyBackup}.` +
+        (out.kept.length ? ` ${out.kept.length} kept (the ${KEEP_NEWEST} newest are always kept).` : ''))
+      onChanged()
+    } catch (x) {
+      setErr(x as Error)
+      onChanged()
+    }
+  }
   return (
+    <div className="vstack gap-2">
+      <ErrorBanner error={err} />
+      {notice && <p role="status" className="small text-success mb-0">{notice}</p>}
+      <div className="d-flex flex-wrap align-items-center gap-2">
+        <ConfirmButton
+          className="btn btn-sm btn-outline-danger"
+          disabled={picked.length === 0}
+          label={picked.length ? `Delete ${picked.length} selected` : 'Delete selected'}
+          title={`Delete ${picked.length} backup${picked.length === 1 ? '' : 's'}?`}
+          message={<>A safety backup of the current data is taken first; if it fails, nothing is deleted. The deleted files cannot be recovered. The {KEEP_NEWEST} newest backups are always kept.</>}
+          confirmLabel="Delete"
+          onConfirm={remove}
+        />
+        <span className="small text-body-secondary">
+          {deletable.length === 0
+            ? `There are ${ov.files.length} backups: the ${KEEP_NEWEST} newest are always kept, so none can be deleted yet.`
+            : `The ${KEEP_NEWEST} newest backups are always kept.`}
+        </span>
+      </div>
     <div className="card overflow-hidden">
       <div className="table-responsive">
       <table className="table table-hover align-middle mb-0 small">
         <caption className="visually-hidden">Stored backups</caption>
         <thead>
           <tr>
+            <th style={{ width: 44 }}>
+              <input
+                type="checkbox"
+                className="form-check-input"
+                aria-label="Select every backup that can be deleted"
+                disabled={deletable.length === 0}
+                checked={allPicked}
+                onChange={(e) => setChosen(e.target.checked ? deletable : [])}
+              />
+            </th>
             <th>Taken</th>
             <th>Kind</th>
             <th className="d-none d-md-table-cell">File</th>
@@ -297,10 +352,24 @@ function StoredBackups({ ov, onRestore }: { ov: Overview; onRestore: (f: BackupF
           </tr>
         </thead>
         <tbody>
-          {ov.files.map((f) => (
+          {ov.files.map((f, i) => (
             <tr key={f.name}>
+              <td>
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  aria-label={`Select ${f.name}`}
+                  disabled={i < KEEP_NEWEST}
+                  title={i < KEEP_NEWEST ? `The ${KEEP_NEWEST} newest backups are always kept` : undefined}
+                  checked={picked.includes(f.name)}
+                  onChange={(e) => toggle(f.name, e.target.checked)}
+                />
+              </td>
               <td className="text-nowrap">{formatDateTime(f.createdAt)}</td>
-              <td>{kindLabels[f.kind] ?? f.kind}</td>
+              <td>
+                {kindLabels[f.kind] ?? f.kind}
+                {i < KEEP_NEWEST && <span className="badge rounded-pill ms-2 bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">Always kept</span>}
+              </td>
               <td className="d-none d-md-table-cell text-break font-monospace fs-8">{f.name}</td>
               <td className="text-nowrap text-end">{formatSize(f.size)}</td>
               <td className="text-end">
@@ -317,6 +386,7 @@ function StoredBackups({ ov, onRestore }: { ov: Overview; onRestore: (f: BackupF
         </tbody>
       </table>
       </div>
+    </div>
     </div>
   )
 }

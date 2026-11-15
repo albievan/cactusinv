@@ -242,3 +242,47 @@ test('a failed scheduled backup shows its reason in words', async () => {
   render(<App />)
   expect(await screen.findByText(/Reason: the backups folder could not be written/)).toBeInTheDocument()
 })
+
+const seven = Array.from({ length: 7 }, (_, i) => {
+  const hh = String(10 - i).padStart(2, '0') // newest first
+  return { name: `cactusinv-20261114T${hh}0000Z-s28-manual.age`, size: 1000, createdAt: `2026-11-14T${hh}:00:00Z`, schema: 28, kind: 'manual', legacy: false }
+})
+
+test('backups are chosen and deleted, the five newest always kept, after a safety backup', async () => {
+  const bodies: unknown[] = []
+  let files = seven
+  routes({
+    'GET /api/v1/backups': () => json({ ...overview, files })(),
+    'POST /api/v1/backups/delete': async (req) => {
+      bodies.push(await req.json())
+      files = [{ ...seven[0]!, name: 'cactusinv-20261115T080000Z-s28-predelete.age', kind: 'predelete' }, ...seven.slice(0, 5), seven[6]!]
+      return json({ deleted: [seven[5]!.name], kept: [], safetyBackup: 'cactusinv-20261115T080000Z-s28-predelete.age' })()
+    },
+  })
+  window.history.pushState({}, '', '/settings/backup')
+  render(<App />)
+  const table = await screen.findByRole('table', { name: 'Stored backups' })
+  expect(within(table).getAllByText('Always kept')).toHaveLength(5)
+  for (const f of seven.slice(0, 5)) expect(within(table).getByRole('checkbox', { name: `Select ${f.name}` })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Delete selected' })).toBeDisabled()
+
+  // "Select all" takes only the two that may go.
+  await userEvent.click(within(table).getByRole('checkbox', { name: 'Select every backup that can be deleted' }))
+  expect(screen.getByRole('button', { name: 'Delete 2 selected' })).toBeEnabled()
+  await userEvent.click(within(table).getByRole('checkbox', { name: `Select ${seven[6]!.name}` }))
+  await userEvent.click(screen.getByRole('button', { name: 'Delete 1 selected' }))
+  const confirm = screen.getByRole('dialog', { name: 'Delete 1 backup?' })
+  expect(within(confirm).getByText(/A safety backup of the current data is taken first/)).toBeInTheDocument()
+  await userEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
+  await vi.waitFor(() => expect(bodies).toEqual([{ names: [seven[5]!.name] }]))
+  expect(await screen.findByText(/Deleted 1 backup. Safety backup taken first: cactusinv-20261115T080000Z-s28-predelete.age./)).toBeInTheDocument()
+  expect(await screen.findByText('Before deleting backups')).toBeInTheDocument()
+})
+
+test('with five backups or fewer nothing can be chosen', async () => {
+  routes({ 'GET /api/v1/backups': json({ ...overview, files: seven.slice(0, 5) }) })
+  window.history.pushState({}, '', '/settings/backup')
+  render(<App />)
+  expect(await screen.findByText(/There are 5 backups: the 5 newest are always kept, so none can be deleted yet./)).toBeInTheDocument()
+  expect(screen.getByRole('checkbox', { name: 'Select every backup that can be deleted' })).toBeDisabled()
+})

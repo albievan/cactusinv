@@ -902,10 +902,25 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 51.1 | Customers page: filter **Customers / Ad-hoc (not yet customers)** (radio pills, `?show=adhoc`; only with quotes.view); the ad-hoc view lists those not converted (the API's default) with **Edit** (quotes.edit; M50's re-printing of open quotes, explained in the sheet) and **Make customer** (customers.create) | done | Vitest `Customers.test.tsx` (filter and address, not-converted query, edit saves, permissions) |
 | 51.2 | Docs (README Quotes, PLAN), VERSION 1.29.0 (M49–M51), gate, signed release, upgrade 10.101.18.101 with a backup first | done | 2026-11-15: `make check` exit 0 — 0 lint issues; domain 96.3 %, app 87.2 %; integration ok 45.0 s; "No vulnerabilities found."; contracts in sync; web 143 tests, build OK; `make dist` 1.29.0 (build 54), signature verified; GitHub Release v1.29.0 |
 
+### M52 — Delete several backups, the five newest always kept (Albie, 2026-11-15) — v1.30.0
+
+> "add the ability to select multiple backup and delete them makes sure that the last 5 backups are not deleted e.g. if there's 7 backups and i select 6 then only the oldes of the backup i.e. 2 can be deleted, also make a backup before any deletion/restore."
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 52.1 | Domain: `KeepNewestBackups = 5`, `SelectDeletable` (the 5 newest and unknown names are kept); backup kind `predelete` | done | `TestSelectDeletable` (7 with 6 chosen → the oldest chosen goes; all 7 → 2; repeats, unknown, five only) |
+| 52.2 | `DeleteBackups` (administrators; the backup lock): decide the protected five, take a `predelete` safety backup, delete, audit `backup.deleted` with the names and the safety backup; nothing deletable → 422, no backup key or a failed safety backup → nothing deleted | done | `TestDeleteBackups`, `TestDeleteBackupsNeedsTheSafetyBackup` |
+| 52.3 | API `POST /backups/delete` → deleted, kept, safetyBackup; kind enum gains predelete | done | contract regenerated |
+| 52.4 | Backup page: a checkbox per backup (the 5 newest disabled, *Always kept*), select-all of those that may go, **Delete selected** with a confirmation naming the safety backup, a notice after | done | Vitest `Backup.test.tsx` (select-all takes 2 of 7, delete sends the chosen, five-or-fewer) |
+| 52.5 | Restores already take a safety backup first (prerestore, ADR-010) whenever a backup key is set; unchanged | done | `TestStageAndApplyRestore` |
+| 52.6 | Docs (README Backup and restore, OpenAPI, PLAN), VERSION 1.30.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 145 tests); `make dist` 1.30.0 (build 55), signature verified; GitHub Release v1.30.0 |
+| 52.7 | Checked on a real (throwaway) install: MariaDB 11, a real backup key, 8 real encrypted backups; the API asked to delete all 8 deleted the 3 oldest, kept the 5 newest, took `…-predelete.age` first; only the 5 newest chosen → 422, nothing changed; no server errors. The page in a browser (mock API): 5 marked Always kept, select-all took the 2 of 7 that may go | done | 2026-11-15 |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-15 | The five newest backups are decided before the pre-delete safety backup is taken | so the count the user sees is the one applied (7 backups, 6 chosen → 2 deleted), and the safety backup is extra |
 | 2026-11-15 | Editing an ad-hoc customer re-prints only their open quotes | an open quote can be edited anyway (and a sent one goes back to draft); a quote the customer answered, or that was converted or expired, is a record of what they saw |
 | 2026-11-14 | The Mac's Docker install stays as it is beside the server (owner's decision) | the server at invoice.primesoft.co.za is reached by customers; the Mac copy is the owner's to use |
 | 2026-11-14 | Release binaries are published as GitHub Releases, not committed (replaces the M31 decision) | each release added about 70 MB to every clone; the signed checksum list keeps the same trust, the history up to v1.27.0 stays as it is |

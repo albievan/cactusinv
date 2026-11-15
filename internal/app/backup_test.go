@@ -1004,3 +1004,69 @@ func TestRestoreStopsWhenTheSafetyBackupFails(t *testing.T) {
 		t.Fatalf("unknown id is refused before any backup: %v", err)
 	}
 }
+
+// Deleting chosen backups (M52): of 7 with 6 chosen, the 2 oldest chosen go and the 5 newest
+// stay; a predelete safety backup is taken first; with nothing deletable or no backup key,
+// nothing happens.
+func TestDeleteBackups(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	var names []string // oldest first
+	for i := range 7 {
+		n := domain.BackupName{CreatedAt: start.Add(time.Duration(i-10) * time.Hour), Schema: 13, Kind: domain.BackupManual}.String()
+		b.files.Put(n, []byte("x"), start)
+		names = append(names, n)
+	}
+	out := must(b.svc.DeleteBackups(b.ctx, names[1:]))
+	if !slices.Equal(out.Deleted, names[1:2]) || len(out.Kept) != 5 || !strings.HasSuffix(out.SafetyBackup, "-predelete.age") {
+		t.Fatalf("6 of 7 chosen: %+v", out)
+	}
+	left := must(b.svc.ListBackups(b.ctx)).Files
+	if len(left) != 7 || slices.ContainsFunc(left, func(f app.BackupFileInfo) bool { return f.Name == names[1] }) || left[0].Kind != domain.BackupPreDelete {
+		t.Fatalf("after: %+v", left)
+	}
+	if a := b.lastAudit(); a.Action != "backup.deleted" || !strings.Contains(a.Summary, names[1]) || !strings.Contains(a.Summary, out.SafetyBackup) {
+		t.Fatalf("audit: %+v", a)
+	}
+
+	// Only the five newest chosen (the safety backup counts now): refused, no new backup.
+	newest := make([]string, 0, 5)
+	for _, f := range left[:5] {
+		newest = append(newest, f.Name)
+	}
+	if _, err := b.svc.DeleteBackups(b.ctx, newest); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("only protected backups chosen: %v", err)
+	}
+	if n := len(must(b.svc.ListBackups(b.ctx)).Files); n != 7 {
+		t.Fatalf("a refused delete changed the backups: %d", n)
+	}
+	if _, err := b.svc.DeleteBackups(b.ctx, nil); !errors.Is(err, domain.ErrValidation) {
+		t.Fatalf("none chosen: %v", err)
+	}
+
+	// No backup key: no safety backup is possible, so nothing is deleted.
+	nokey := newBackupHarness(t, b.files, false, nil)
+	if _, err := nokey.svc.DeleteBackups(nokey.ctx, []string{names[0]}); !errors.Is(err, domain.ErrNotConfigured) {
+		t.Fatalf("without a key: %v", err)
+	}
+	if n := len(must(b.svc.ListBackups(b.ctx)).Files); n != 7 {
+		t.Fatalf("deleted without a safety backup: %d", n)
+	}
+}
+
+// A failed safety backup deletes nothing (M52).
+func TestDeleteBackupsNeedsTheSafetyBackup(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	var names []string
+	for i := range 6 {
+		n := domain.BackupName{CreatedAt: start.Add(time.Duration(i-10) * time.Hour), Schema: 13, Kind: domain.BackupManual}.String()
+		b.files.Put(n, []byte("x"), start)
+		names = append(names, n)
+	}
+	b.snap.Err = errors.New("database gone")
+	if _, err := b.svc.DeleteBackups(b.ctx, names[:1]); err == nil || !strings.Contains(err.Error(), "nothing was deleted") {
+		t.Fatalf("failed safety backup: %v", err)
+	}
+	if n := len(must(b.svc.ListBackups(b.ctx)).Files); n != 6 {
+		t.Fatalf("files after a failed safety backup: %d", n)
+	}
+}

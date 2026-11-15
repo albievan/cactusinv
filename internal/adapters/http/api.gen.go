@@ -44,6 +44,7 @@ func (e AuditMergeMode) Valid() bool {
 const (
 	Legacy     BackupFileKind = "legacy"
 	Manual     BackupFileKind = "manual"
+	Predelete  BackupFileKind = "predelete"
 	Prerestore BackupFileKind = "prerestore"
 	Scheduled  BackupFileKind = "scheduled"
 	Upload     BackupFileKind = "upload"
@@ -55,6 +56,8 @@ func (e BackupFileKind) Valid() bool {
 	case Legacy:
 		return true
 	case Manual:
+		return true
+	case Predelete:
 		return true
 	case Prerestore:
 		return true
@@ -739,7 +742,7 @@ type AuditVerification struct {
 type BackupFile struct {
 	CreatedAt time.Time `json:"createdAt"`
 
-	// Kind prerestore: the safety backup taken just before a restore.
+	// Kind prerestore: the safety backup taken just before a restore; predelete: just before backups were deleted.
 	Kind BackupFileKind `json:"kind"`
 
 	// Legacy A plaintext .sql.gz dump of the retired backup sidecar; restore it with deploy.sh.
@@ -751,7 +754,7 @@ type BackupFile struct {
 	Size   int64 `json:"size"`
 }
 
-// BackupFileKind prerestore: the safety backup taken just before a restore.
+// BackupFileKind prerestore: the safety backup taken just before a restore; predelete: just before backups were deleted.
 type BackupFileKind string
 
 // BackupOverview defines model for BackupOverview.
@@ -998,6 +1001,22 @@ type Decimal = string
 // DeclineRequest defines model for DeclineRequest.
 type DeclineRequest struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+// DeleteBackupsRequest defines model for DeleteBackupsRequest.
+type DeleteBackupsRequest struct {
+	Names []string `json:"names"`
+}
+
+// DeletedBackups defines model for DeletedBackups.
+type DeletedBackups struct {
+	Deleted []string `json:"deleted"`
+
+	// Kept Chosen but kept: among the 5 newest, or not a stored backup.
+	Kept []string `json:"kept"`
+
+	// SafetyBackup The backup taken just before deleting.
+	SafetyBackup string `json:"safetyBackup"`
 }
 
 // DeploymentInfo defines model for DeploymentInfo.
@@ -2422,6 +2441,9 @@ type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 // UpdateProfileJSONRequestBody defines body for UpdateProfile for application/json ContentType.
 type UpdateProfileJSONRequestBody = ProfileInput
 
+// DeleteBackupsJSONRequestBody defines body for DeleteBackups for application/json ContentType.
+type DeleteBackupsJSONRequestBody = DeleteBackupsRequest
+
 // ExportBackupJSONRequestBody defines body for ExportBackup for application/json ContentType.
 type ExportBackupJSONRequestBody = ExportRequest
 
@@ -2619,6 +2641,9 @@ type ServerInterface interface {
 
 	// (POST /backups)
 	CreateBackup(w http.ResponseWriter, r *http.Request, params CreateBackupParams)
+
+	// (POST /backups/delete)
+	DeleteBackups(w http.ResponseWriter, r *http.Request)
 
 	// (POST /backups/export)
 	ExportBackup(w http.ResponseWriter, r *http.Request)
@@ -3445,6 +3470,20 @@ func (siw *ServerInterfaceWrapper) CreateBackup(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateBackup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBackups operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBackups(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBackups(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6381,6 +6420,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/dashboard", wrapper.GetDashboard)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backups", wrapper.ListBackups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups", wrapper.CreateBackup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/delete", wrapper.DeleteBackups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/export", wrapper.ExportBackup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/uploads", wrapper.UploadBackup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/restores", wrapper.StageRestore)
@@ -7152,6 +7192,45 @@ type CreateBackupdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response CreateBackupdefaultApplicationProblemPlusJSONResponse) VisitCreateBackupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteBackupsRequestObject struct {
+	Body *DeleteBackupsJSONRequestBody
+}
+
+type DeleteBackupsResponseObject interface {
+	VisitDeleteBackupsResponse(w http.ResponseWriter) error
+}
+
+type DeleteBackups200JSONResponse DeletedBackups
+
+func (response DeleteBackups200JSONResponse) VisitDeleteBackupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteBackupsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteBackupsdefaultApplicationProblemPlusJSONResponse) VisitDeleteBackupsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11635,6 +11714,9 @@ type StrictServerInterface interface {
 	// (POST /backups)
 	CreateBackup(ctx context.Context, request CreateBackupRequestObject) (CreateBackupResponseObject, error)
 
+	// (POST /backups/delete)
+	DeleteBackups(ctx context.Context, request DeleteBackupsRequestObject) (DeleteBackupsResponseObject, error)
+
 	// (POST /backups/export)
 	ExportBackup(ctx context.Context, request ExportBackupRequestObject) (ExportBackupResponseObject, error)
 
@@ -12525,6 +12607,37 @@ func (sh *strictHandler) CreateBackup(w http.ResponseWriter, r *http.Request, pa
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateBackupResponseObject); ok {
 		if err := validResponse.VisitCreateBackupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteBackups operation middleware
+func (sh *strictHandler) DeleteBackups(w http.ResponseWriter, r *http.Request) {
+	var request DeleteBackupsRequestObject
+
+	var body DeleteBackupsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteBackups(ctx, request.(DeleteBackupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteBackups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteBackupsResponseObject); ok {
+		if err := validResponse.VisitDeleteBackupsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

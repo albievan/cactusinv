@@ -750,3 +750,34 @@ func TestForgedEndMarkerInTheRealFormat(t *testing.T) {
 		t.Fatal("the forged marker names the real original head")
 	}
 }
+
+// The five newest backups are never deleted by hand (M52): of 7, choosing 6 deletes the 2
+// oldest chosen; unknown names and repeats are kept once.
+func TestSelectDeletable(t *testing.T) {
+	base := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	var files []BackupFile
+	var names []string
+	for i := range 7 { // b0 oldest … b6 newest
+		n := fmt.Sprintf("b%d", i)
+		files = append(files, BackupFile{Name: n, Time: base.Add(time.Duration(i) * time.Hour)})
+		names = append(names, n)
+	}
+	del, kept := SelectDeletable(files, []string{"b6", "b5", "b4", "b3", "b2", "b1"})
+	if !slices.Equal(del, []string{"b1"}) || len(kept) != 5 {
+		t.Fatalf("6 of 7 chosen, b0 not: deletable %v kept %v", del, kept)
+	}
+	del, kept = SelectDeletable(files, names)
+	if !slices.Equal(del, []string{"b0", "b1"}) || !slices.Equal(kept, []string{"b2", "b3", "b4", "b5", "b6"}) {
+		t.Fatalf("all 7 chosen: deletable %v kept %v", del, kept)
+	}
+	del, kept = SelectDeletable(files, []string{"b0", "b0", "nope"})
+	if !slices.Equal(del, []string{"b0"}) || !slices.Equal(kept, []string{"nope"}) {
+		t.Fatalf("repeat and unknown: deletable %v kept %v", del, kept)
+	}
+	if del, _ := SelectDeletable(files[:5], names[:5]); len(del) != 0 {
+		t.Fatalf("five backups: none may go, got %v", del)
+	}
+	if n, err := ParseBackupName("cactusinv-20261115T081604Z-s28-predelete.age"); err != nil || n.Kind != BackupPreDelete {
+		t.Fatalf("predelete name: %+v %v", n, err)
+	}
+}
