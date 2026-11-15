@@ -181,8 +181,10 @@ export function StageTracker({ stage, issuedAt, sentAt, paidAt }: { stage: strin
  * ConfirmButton asks before an action that cannot be undone (or that e-mails or invoices for
  * real): the button opens a sheet with what will happen, and the action runs once from there.
  */
-export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, className, danger = true, disabled }: {
+export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, className, danger = true, disabled, ariaLabel }: {
   label: ReactNode
+  /** The button's name and tooltip when label is only an icon. */
+  ariaLabel?: string
   title: string
   message: ReactNode
   confirmLabel: string
@@ -204,7 +206,7 @@ export function ConfirmButton({ label, title, message, confirmLabel, onConfirm, 
   }
   return (
     <>
-      <button type="button" className={className ?? (danger ? 'btn btn-outline-danger' : 'btn btn-primary')} disabled={disabled || busy} onClick={() => setOpen(true)}>
+      <button type="button" className={className ?? (danger ? 'btn btn-outline-danger' : 'btn btn-primary')} disabled={disabled || busy} onClick={() => setOpen(true)} aria-label={ariaLabel} title={ariaLabel}>
         {label}
       </button>
       <Sheet title={title} open={open} onClose={() => !busy && setOpen(false)}>

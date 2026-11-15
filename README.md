@@ -649,8 +649,8 @@ install failed after five minutes with "unbound immediate PersistentVolumeClaims
 **Moving an existing install:** an install's claims keep the class they were created with
 (`deploy.sh` refuses a different one). `--delete-uninstall` deletes the namespace, and with it the claims, their data,
 the stored backups and the backup key. So take the backup **off the cluster** first:
-1. Settings → Backup & restore → **Download a backup**, with a passphrase you keep. The file
-   is saved on your computer.
+1. Settings → Backup & restore → **Back up now**, then the **Download** button (arrow down) on
+   that newest backup, with a passphrase you keep. The file is saved on your computer.
 2. `./deploy.sh --delete-uninstall --k3s --ssh-access root@<node>`.
 3. Set `K8S_VOLUME_DIR` (and leave `K8S_STORAGE_CLASS` empty).
 4. `./deploy.sh --install --k3s --ssh-access root@<node>`, sign in as `admin` with the printed password, then go to
@@ -740,11 +740,14 @@ restore. No secret is in a backup.
   the stored backups cannot be restored, and a key kept next to its backups protects nothing.
   A stored backup opens without the app: `age -d -i secrets/backup_key FILE.age | tar -xz`
   (JSON lines per table).
-- **Download a backup** (Settings → Backup & restore) makes a fresh backup encrypted with a
-  passphrase of at least 16 characters; nothing is stored on the server. The passphrase cannot
-  be recovered.
-- **Restore** (Settings → Backup & restore → Restore… on a stored backup, or Restore from file
-  for a downloaded one): the backup is decrypted, checked and loaded into a separate staging
+- **Each stored backup** has three small buttons, between its checkbox and *Taken*:
+  **Restore** (circular arrow), **Download** (arrow down) and **Delete** (bin).
+- **Download** decrypts the stored backup with `backup_key` and encrypts it again with a
+  passphrase of at least 16 characters as it downloads, so it can be restored here or on
+  another installation with that passphrase (an uploaded backup downloads as it is, with the
+  passphrase it was made with). The passphrase cannot be recovered. A download is recorded in
+  the audit log. For a backup of the data as it is now, press **Back up now** first.
+- **Restore** (the Restore button on a stored backup, or Restore from file for a downloaded one): the backup is decrypted, checked and loaded into a separate staging
   database first, and a preview shows what restoring changes — invoices created since the
   backup, whether your account is an active user in it, warnings. Applying it needs your password and the word
   `RESTORE`; it replaces the data in one transaction, never reuses invoice numbers, signs
@@ -752,8 +755,9 @@ restore. No secret is in a backup.
   resume (a banner on every page). With `backup_key` set up, the current data is saved first
   as a **safety backup** ("Before a restore"), so a wrong restore can be undone. The audit log
   is never rewritten: the backup's entries are added to it.
-- **Delete backups** (Settings → Backup & restore): tick backups in the list (or the box in
-  its header for every one that may go) and press **Delete selected**. The **5 newest backups
+- **Delete backups** (Settings → Backup & restore): the Delete button on a backup, or tick
+  backups in the list (or the box in its header for every one that may go) and press **Delete
+  selected**. The **5 newest backups
   are always kept** (marked *Always kept*; the server refuses them too), so of 7 backups with 6
   ticked, the 2 oldest ticked are deleted. Before anything is deleted the current data is
   saved as a **safety backup** ("Before deleting backups"); if that backup fails, or there is

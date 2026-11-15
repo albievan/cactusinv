@@ -1331,6 +1331,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/backups/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Streams a stored backup (M56). One encrypted to this server's key is decrypted and
+         *     encrypted again with the passphrase as it streams, so the download opens anywhere with
+         *     that passphrase; an uploaded backup (already encrypted with its own passphrase) is
+         *     sent as it is, and the passphrase is not needed. Old plaintext dumps are refused. The
+         *     download is recorded in the audit log before the first byte. Exempt from
+         *     Idempotency-Key (it carries a passphrase).
+         */
+        post: operations["downloadBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/backups/uploads": {
         parameters: {
             query?: never;
@@ -2881,6 +2905,12 @@ export interface components {
         };
         ExportRequest: {
             passphrase: string;
+        };
+        DownloadBackupRequest: {
+            /** @description A stored backup's name. */
+            name: string;
+            /** @description At least 16 characters; not needed for an uploaded backup. */
+            passphrase?: string;
         };
         StageRestoreRequest: {
             /** @description A stored backup's name. */
@@ -5509,6 +5539,32 @@ export interface operations {
         };
         responses: {
             /** @description The encrypted backup (age, passphrase). */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    downloadBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadBackupRequest"];
+            };
+        };
+        responses: {
+            /** @description The backup (age, passphrase). */
             200: {
                 headers: {
                     "Content-Disposition"?: string;

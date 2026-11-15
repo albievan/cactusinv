@@ -18,8 +18,9 @@ import (
 // their own body limit and deadlines (set through http.ResponseController); export and
 // upload are exempt from Idempotency-Key (their bodies are never buffered or stored).
 const (
-	pathExport  = "/api/v1/backups/export"
-	pathUploads = "/api/v1/backups/uploads"
+	pathExport   = "/api/v1/backups/export"
+	pathDownload = "/api/v1/backups/download"
+	pathUploads  = "/api/v1/backups/uploads"
 	// pathImportSettings takes a whole settings file (every customer), larger than maxBody.
 	pathImportSettings = "/api/v1/settings/import"
 )
@@ -46,7 +47,7 @@ func limitsFor(r *http.Request, maxUpload int64) routeLimits {
 		return routeLimits{body: maxUpload, read: 30 * time.Minute, written: 30 * time.Minute}
 	case r.Method == http.MethodPost && r.URL.Path == pathImportSettings:
 		return routeLimits{body: maxSettingsFile}
-	case r.Method == http.MethodPost && r.URL.Path == pathExport:
+	case r.Method == http.MethodPost && (r.URL.Path == pathExport || r.URL.Path == pathDownload):
 		return routeLimits{body: maxBody, written: app.DefaultExportTimeout + time.Minute}
 	case r.Method == http.MethodPost && (r.URL.Path == "/api/v1/restores" || strings.HasPrefix(r.URL.Path, "/api/v1/restores/")) ||
 		r.Method == http.MethodPost && r.URL.Path == "/api/v1/backups":
@@ -71,7 +72,7 @@ func skipsIdempotency(r *http.Request) bool {
 	if reauthPath(r) { // POST and PUT routes with the actor's password
 		return true
 	}
-	return r.Method == http.MethodPost && (p == pathExport || p == pathUploads || p == "/api/v1/restores")
+	return r.Method == http.MethodPost && (p == pathExport || p == pathDownload || p == pathUploads || p == "/api/v1/restores")
 }
 
 // abortOnError breaks the connection when the streamed body fails after the response
@@ -163,23 +164,48 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// ExportBackup streams the backup as it is written: ExportBackup runs in a goroutine
-// writing into a pipe, and the response starts once it has audited the download and named
-// the file. A failure mid-stream breaks the download (an age file that does not open), and
-// a client that goes away closes the pipe, which ends the export.
+// ExportBackup streams the backup as it is written (see stream).
 func (h *handlers) ExportBackup(ctx context.Context, req ExportBackupRequestObject) (ExportBackupResponseObject, error) {
+	name, body, err := stream(func(open func(string) (io.Writer, error)) error {
+		return h.svc.ExportBackup(ctx, req.Body.Passphrase, open)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return ExportBackup200ApplicationoctetStreamResponse{
+		Body: body, Headers: ExportBackup200ResponseHeaders{ContentDisposition: `attachment; filename="` + name + `"`},
+	}, nil
+}
+
+// DownloadBackup streams a stored backup, encrypted again with the passphrase (see stream).
+func (h *handlers) DownloadBackup(ctx context.Context, req DownloadBackupRequestObject) (DownloadBackupResponseObject, error) {
+	name, body, err := stream(func(open func(string) (io.Writer, error)) error {
+		return h.svc.DownloadBackup(ctx, req.Body.Name, req.Body.Passphrase, open)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return DownloadBackup200ApplicationoctetStreamResponse{
+		Body: body, Headers: DownloadBackup200ResponseHeaders{ContentDisposition: `attachment; filename="` + name + `"`},
+	}, nil
+}
+
+// stream runs write in a goroutine writing into a pipe, and returns once it has named the
+// file (after auditing the download) or failed. A failure mid-stream breaks the download (an
+// age file that does not open), and a client that goes away closes the pipe, which ends it.
+func stream(write func(open func(name string) (io.Writer, error)) error) (string, io.ReadCloser, error) {
 	pr, pw := io.Pipe()
 	named := make(chan string, 1)
 	failed := make(chan error, 1)
 	go func() {
 		defer func() {
 			if p := recover(); p != nil { // never take the process down; break the download
-				err := fmt.Errorf("export: panic: %v", p)
+				err := fmt.Errorf("download: panic: %v", p)
 				_ = pw.CloseWithError(err)
 				failed <- err
 			}
 		}()
-		err := h.svc.ExportBackup(ctx, req.Body.Passphrase, func(name string) (io.Writer, error) {
+		err := write(func(name string) (io.Writer, error) {
 			named <- name
 			return pw, nil
 		})
@@ -188,12 +214,10 @@ func (h *handlers) ExportBackup(ctx context.Context, req ExportBackupRequestObje
 	}()
 	select {
 	case name := <-named:
-		return ExportBackup200ApplicationoctetStreamResponse{
-			Body: abortOnError{pr}, Headers: ExportBackup200ResponseHeaders{ContentDisposition: `attachment; filename="` + name + `"`},
-		}, nil
+		return name, abortOnError{pr}, nil
 	case err := <-failed:
 		_ = pr.Close()
-		return nil, err
+		return "", nil, err
 	}
 }
 

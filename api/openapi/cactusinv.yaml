@@ -1633,6 +1633,32 @@ paths:
             application/octet-stream:
               schema: { type: string, format: binary }
         default: { $ref: '#/components/responses/Problem' }
+  /backups/download:
+    post:
+      tags: [backups]
+      operationId: downloadBackup
+      description: |
+        Streams a stored backup (M56). One encrypted to this server's key is decrypted and
+        encrypted again with the passphrase as it streams, so the download opens anywhere with
+        that passphrase; an uploaded backup (already encrypted with its own passphrase) is
+        sent as it is, and the passphrase is not needed. Old plaintext dumps are refused. The
+        download is recorded in the audit log before the first byte. Exempt from
+        Idempotency-Key (it carries a passphrase).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DownloadBackupRequest' }
+      responses:
+        '200':
+          description: The backup (age, passphrase).
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
   /backups/uploads:
     post:
       tags: [backups]
@@ -3280,6 +3306,12 @@ components:
       required: [passphrase]
       properties:
         passphrase: { type: string, minLength: 16, maxLength: 1024 }
+    DownloadBackupRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 100, description: A stored backup's name. }
+        passphrase: { type: string, maxLength: 1024, description: 'At least 16 characters; not needed for an uploaded backup.' }
     StageRestoreRequest:
       type: object
       required: [backup]

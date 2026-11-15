@@ -208,6 +208,55 @@ func TestExportBackupAuditsBeforeStreaming(t *testing.T) {
 	}
 }
 
+// TestDownloadStoredBackup (M56): a stored backup downloads encrypted with a passphrase,
+// audited first, and stages again from that file with the passphrase; an upload downloads as
+// it is; a short passphrase, a name that is no backup and a missing key are refused.
+func TestDownloadStoredBackup(t *testing.T) {
+	b := newBackupHarness(t, nil, true, nil)
+	name := b.backupNow()
+	const pass = "a long enough passphrase"
+	var buf bytes.Buffer
+	err := b.svc.DownloadBackup(b.ctx, name, pass, func(n string) (io.Writer, error) {
+		if a := b.lastAudit(); a.Action != "backup.downloaded" || a.EntityID != name || n != name {
+			t.Fatalf("not audited before streaming: %+v (%s)", a, n)
+		}
+		return &buf, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(buf.String(), "fake-age scrypt ") {
+		t.Fatalf("not encrypted with the passphrase: %q", buf.String()[:16])
+	}
+	up := must(b.svc.UploadBackup(b.ctx, bytes.NewReader(buf.Bytes())))
+	if _, err := b.svc.StageRestore(b.ctx, up.Name, pass); err != nil {
+		t.Fatalf("the download does not stage with its passphrase: %v", err)
+	}
+	must0(t, b.svc.DiscardRestore(b.ctx, must(b.svc.CurrentRestore(b.ctx)).ID))
+
+	// An upload is already encrypted with its own passphrase: it downloads as it is.
+	var again bytes.Buffer
+	must0(t, b.svc.DownloadBackup(b.ctx, up.Name, "", func(string) (io.Writer, error) { return &again, nil }))
+	if !bytes.Equal(again.Bytes(), b.files.Data(up.Name)) {
+		t.Fatal("an upload was changed on the way")
+	}
+
+	discard := func(string) (io.Writer, error) { return io.Discard, nil }
+	if err := b.svc.DownloadBackup(b.ctx, name, "short", discard); !errors.As(err, new(*domain.ValidationError)) {
+		t.Fatalf("short passphrase: %v", err)
+	}
+	if err := b.svc.DownloadBackup(b.ctx, "../etc/passwd", pass, discard); fieldOf(err) != "name" {
+		t.Fatalf("bad name: %v", err)
+	}
+	if err := b.svc.DownloadBackup(b.ctx, "cactusinv-20200101T000000Z-s1-manual.age", pass, discard); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	nokey := newBackupHarness(t, b.files, false, nil)
+	if err := nokey.svc.DownloadBackup(nokey.ctx, name, pass, discard); !errors.Is(err, domain.ErrNotConfigured) {
+		t.Fatalf("no key: %v", err)
+	}
+}
+
 func TestRunDueBackupsOncePerSlot(t *testing.T) {
 	b := newBackupHarness(t, nil, true, nil)
 	// 08:00 SAST: today's 02:00 slot is due (00:00 UTC).

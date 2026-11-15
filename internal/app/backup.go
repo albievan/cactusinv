@@ -295,6 +295,68 @@ func (s *Service) ExportBackup(ctx context.Context, passphrase string, open func
 	return wrap("app.ExportBackup", err)
 }
 
+// DownloadBackup streams the stored backup name to the writer open returns (M56). A backup
+// encrypted to the server key is decrypted and encrypted again with passphrase on the way, so
+// it opens anywhere with that passphrase; an uploaded one is already encrypted with its own
+// passphrase and is copied as it is (passphrase unused). Legacy plaintext dumps are refused.
+// The download is audited before open is called.
+func (s *Service) DownloadBackup(ctx context.Context, name, passphrase string, open func(name string) (io.Writer, error)) error {
+	n, err := domain.ParseBackupName(name)
+	if err != nil {
+		return wrap("app.DownloadBackup", &domain.ValidationError{Field: "name", Reason: "not a stored backup"})
+	}
+	upload := n.Kind == domain.BackupUpload
+	if !upload {
+		if err := domain.ValidateBackupPassphrase(passphrase); err != nil {
+			return wrap("app.DownloadBackup", err)
+		}
+	}
+	if s.backups.Files == nil || s.backups.Sealer == nil {
+		return wrap("app.DownloadBackup", fmt.Errorf("%w: backups", domain.ErrNotConfigured))
+	}
+	if !upload && !s.backups.Sealer.KeyConfigured() {
+		return wrap("app.DownloadBackup", fmt.Errorf("%w: the server backup key opens stored backups", domain.ErrNotConfigured))
+	}
+	f, err := s.backups.Files.Open(ctx, name)
+	if err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	defer f.Close()
+	how := "as uploaded"
+	if !upload {
+		how = "encrypted with a passphrase"
+	}
+	if err := s.auditNow(ctx, "backup.downloaded", "backup", name, "downloaded, "+how); err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	limit := s.backups.ExportTimeout
+	if limit <= 0 {
+		limit = DefaultExportTimeout
+	}
+	deadline := time.Now().Add(limit)
+	w, err := open(name)
+	if err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	dw := deadlineWriter{w: w, deadline: deadline}
+	if upload {
+		_, err = io.Copy(dw, f)
+		return wrap("app.DownloadBackup", err)
+	}
+	plain, err := s.backups.Sealer.Open(f, "")
+	if err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	sealed, err := s.backups.Sealer.SealWithPassphrase(dw, passphrase)
+	if err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	if _, err := io.Copy(sealed, plain); err != nil {
+		return wrap("app.DownloadBackup", err)
+	}
+	return wrap("app.DownloadBackup", sealed.Close())
+}
+
 // UploadBackup stores an uploaded backup file as it arrives (still encrypted); it can then
 // be staged by name with its passphrase. The caller limits the size of r.
 func (s *Service) UploadBackup(ctx context.Context, r io.Reader) (BackupFileInfo, error) {

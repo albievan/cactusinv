@@ -1040,6 +1040,15 @@ type DeploymentInfo struct {
 	Target string `json:"target"`
 }
 
+// DownloadBackupRequest defines model for DownloadBackupRequest.
+type DownloadBackupRequest struct {
+	// Name A stored backup's name.
+	Name string `json:"name"`
+
+	// Passphrase At least 16 characters; not needed for an uploaded backup.
+	Passphrase string `json:"passphrase,omitempty"`
+}
+
 // EmailList defines model for EmailList.
 type EmailList struct {
 	Items []EmailMessage `json:"items"`
@@ -2444,6 +2453,9 @@ type UpdateProfileJSONRequestBody = ProfileInput
 // DeleteBackupsJSONRequestBody defines body for DeleteBackups for application/json ContentType.
 type DeleteBackupsJSONRequestBody = DeleteBackupsRequest
 
+// DownloadBackupJSONRequestBody defines body for DownloadBackup for application/json ContentType.
+type DownloadBackupJSONRequestBody = DownloadBackupRequest
+
 // ExportBackupJSONRequestBody defines body for ExportBackup for application/json ContentType.
 type ExportBackupJSONRequestBody = ExportRequest
 
@@ -2644,6 +2656,9 @@ type ServerInterface interface {
 
 	// (POST /backups/delete)
 	DeleteBackups(w http.ResponseWriter, r *http.Request)
+
+	// (POST /backups/download)
+	DownloadBackup(w http.ResponseWriter, r *http.Request)
 
 	// (POST /backups/export)
 	ExportBackup(w http.ResponseWriter, r *http.Request)
@@ -3484,6 +3499,20 @@ func (siw *ServerInterfaceWrapper) DeleteBackups(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteBackups(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadBackup operation middleware
+func (siw *ServerInterfaceWrapper) DownloadBackup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadBackup(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6422,6 +6451,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups", wrapper.CreateBackup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/delete", wrapper.DeleteBackups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/export", wrapper.ExportBackup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/download", wrapper.DownloadBackup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backups/uploads", wrapper.UploadBackup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/restores", wrapper.StageRestore)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/restores/current", wrapper.GetCurrentRestore)
@@ -7231,6 +7261,57 @@ type DeleteBackupsdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DeleteBackupsdefaultApplicationProblemPlusJSONResponse) VisitDeleteBackupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DownloadBackupRequestObject struct {
+	Body *DownloadBackupJSONRequestBody
+}
+
+type DownloadBackupResponseObject interface {
+	VisitDownloadBackupResponse(w http.ResponseWriter) error
+}
+
+type DownloadBackup200ResponseHeaders struct {
+	ContentDisposition string
+}
+
+type DownloadBackup200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	Headers       DownloadBackup200ResponseHeaders
+	ContentLength int64
+}
+
+func (response DownloadBackup200ApplicationoctetStreamResponse) VisitDownloadBackupResponse(w http.ResponseWriter) error {
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprint(response.Headers.ContentDisposition))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadBackupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DownloadBackupdefaultApplicationProblemPlusJSONResponse) VisitDownloadBackupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11717,6 +11798,9 @@ type StrictServerInterface interface {
 	// (POST /backups/delete)
 	DeleteBackups(ctx context.Context, request DeleteBackupsRequestObject) (DeleteBackupsResponseObject, error)
 
+	// (POST /backups/download)
+	DownloadBackup(ctx context.Context, request DownloadBackupRequestObject) (DownloadBackupResponseObject, error)
+
 	// (POST /backups/export)
 	ExportBackup(ctx context.Context, request ExportBackupRequestObject) (ExportBackupResponseObject, error)
 
@@ -12638,6 +12722,37 @@ func (sh *strictHandler) DeleteBackups(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteBackupsResponseObject); ok {
 		if err := validResponse.VisitDeleteBackupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DownloadBackup operation middleware
+func (sh *strictHandler) DownloadBackup(w http.ResponseWriter, r *http.Request) {
+	var request DownloadBackupRequestObject
+
+	var body DownloadBackupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadBackup(ctx, request.(DownloadBackupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadBackup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadBackupResponseObject); ok {
+		if err := validResponse.VisitDownloadBackupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

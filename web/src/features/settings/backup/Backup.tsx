@@ -103,8 +103,7 @@ function Schedule({ ov }: { ov: Overview }) {
         </p>
       ) : (
         <p role="alert" className="fw-medium text-warning-emphasis mb-0">
-          The server backup key (backup_key) is not set up, so backups are not stored here or taken automatically. You can still download a
-          backup protected with a passphrase.
+          The server backup key (backup_key) is not set up, so backups are not stored here or taken automatically.
         </p>
       )}
       {last && (
@@ -126,7 +125,6 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
-  const [download, setDownload] = useState(false)
 
   const backupNow = async () => {
     setBusy(true)
@@ -176,9 +174,6 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
         <button className="btn btn-primary" onClick={backupNow} disabled={busy || !ov.keyConfigured}>
           Back up now
         </button>
-        <button className="btn btn-outline-primary" onClick={() => setDownload(true)} disabled={busy}>
-          Download a backup
-        </button>
         <label className={`btn btn-outline-primary mb-0${busy || ov.restoreUnavailable ? ' disabled' : ''}`}>
           Restore from file
           <input
@@ -197,7 +192,6 @@ function Actions({ ov, onChanged, onUploaded }: { ov: Overview; onChanged: () =>
       </div>
       {busy && <p className="small text-body-secondary mb-0">Working…</p>}
       {msg && <p className="small text-success mb-0">{msg}</p>}
-      <DownloadSheet open={download} onClose={() => setDownload(false)} />
     </div>
   )
 }
@@ -208,7 +202,9 @@ function filenameOf(disposition: string | null): string {
   return m?.[1] ?? 'cactusinv-backup.age'
 }
 
-function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** DownloadSheet downloads the stored backup file (M56): encrypted again with a passphrase, or an upload as it is. */
+function DownloadSheet({ file, onClose }: { file: BackupFile; onClose: () => void }) {
+  const upload = file.kind === 'upload'
   const [pass, setPass] = useState('')
   const [again, setAgain] = useState('')
   const [err, setErr] = useState<Error | null>(null)
@@ -224,11 +220,13 @@ function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setErr(null)
-    if (pass.length < MIN_PASSPHRASE) return setErr(new Error(`The passphrase needs at least ${MIN_PASSPHRASE} characters.`))
-    if (pass !== again) return setErr(new Error('The two passphrases are not the same.'))
+    if (!upload) {
+      if (pass.length < MIN_PASSPHRASE) return setErr(new Error(`The passphrase needs at least ${MIN_PASSPHRASE} characters.`))
+      if (pass !== again) return setErr(new Error('The two passphrases are not the same.'))
+    }
     setBusy(true)
     try {
-      const { data, error, response } = await api.POST('/backups/export', { body: { passphrase: pass }, parseAs: 'blob' })
+      const { data, error, response } = await api.POST('/backups/download', { body: { name: file.name, ...(upload ? {} : { passphrase: pass }) }, parseAs: 'blob' })
       if (error !== undefined || !response.ok || !data) {
         throw new ApiError((error as Schemas['Problem'] | undefined) ?? { type: 'about:blank', title: response.statusText, status: response.status })
       }
@@ -243,7 +241,7 @@ function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }
       URL.revokeObjectURL(url)
       setPass('')
       setAgain('')
-      setDone(`Downloaded ${name}. Keep the passphrase safe: without it the file cannot be restored.`)
+      setDone(upload ? `Downloaded ${name}. It opens with the passphrase it was made with.` : `Downloaded ${name}. Keep the passphrase safe: without it the file cannot be restored.`)
     } catch (x) {
       setErr(x as Error)
     } finally {
@@ -251,19 +249,28 @@ function DownloadSheet({ open, onClose }: { open: boolean; onClose: () => void }
     }
   }
   return (
-    <Sheet title="Download a backup" open={open} onClose={close}>
+    <Sheet title="Download a backup" open onClose={close}>
       <form onSubmit={submit} className="vstack gap-3">
         <p className="small text-body-secondary mb-0">
-          A complete backup is made now and encrypted with your passphrase. It contains customer details and bank accounts, so store it
-          safely. Invoice PDFs are not included; they are recreated after a restore.
+          The backup from {formatDateTime(file.createdAt)} <span className="text-break font-monospace fs-8">{file.name}</span>
+        </p>
+        <p className="small text-body-secondary mb-0">
+          {upload
+            ? 'This file was uploaded and is still encrypted with the passphrase it was made with; it downloads as it is.'
+            : 'It is encrypted with your passphrase as it downloads, so it can be restored here or on another installation with that passphrase.'}{' '}
+          It contains customer details and bank accounts, so store it safely. Invoice PDFs are not included; they are recreated after a restore.
         </p>
         <ErrorBanner error={err} />
-        <Field label="Passphrase" hint={`At least ${MIN_PASSPHRASE} characters. It cannot be recovered.`}>
-          {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} required />}
-        </Field>
-        <Field label="Passphrase again">
-          {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={again} onChange={(e) => setAgain(e.target.value)} required />}
-        </Field>
+        {!upload && (
+          <>
+            <Field label="Passphrase" hint={`At least ${MIN_PASSPHRASE} characters. It cannot be recovered.`}>
+              {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={pass} onChange={(e) => setPass(e.target.value)} required />}
+            </Field>
+            <Field label="Passphrase again">
+              {(f) => <input id={f} type="password" autoComplete="new-password" className="form-control" value={again} onChange={(e) => setAgain(e.target.value)} required />}
+            </Field>
+          </>
+        )}
         {done && <p className="small text-success mb-0">{done}</p>}
         <div className="d-flex justify-content-end gap-2">
           <button type="button" className="btn btn-outline-primary" onClick={close}>
@@ -285,6 +292,7 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
   const [chosen, setChosen] = useState<string[]>([])
   const [err, setErr] = useState<Error | null>(null)
   const [notice, setNotice] = useState('')
+  const [download, setDownload] = useState<BackupFile | null>(null)
   if (ov.files.length === 0) return <Empty>No backups are stored yet.</Empty>
   const canRestore = (f: BackupFile) => !f.legacy && !ov.restoreUnavailable
   // The files come newest first: the first KEEP_NEWEST are always kept.
@@ -292,11 +300,11 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
   const picked = chosen.filter((n) => deletable.includes(n))
   const allPicked = deletable.length > 0 && picked.length === deletable.length
   const toggle = (name: string, on: boolean) => setChosen((c) => (on ? [...c, name] : c.filter((n) => n !== name)))
-  const remove = async () => {
+  const remove = async (names: string[]) => {
     setErr(null)
     setNotice('')
     try {
-      const out = await unwrap(api.POST('/backups/delete', { body: { names: picked } }))
+      const out = await unwrap(api.POST('/backups/delete', { body: { names } }))
       setChosen([])
       setNotice(`Deleted ${out.deleted.length} backup${out.deleted.length === 1 ? '' : 's'}. Safety backup taken first: ${out.safetyBackup}.` +
         (out.kept.length ? ` ${out.kept.length} kept (the ${KEEP_NEWEST} newest are always kept).` : ''))
@@ -318,7 +326,7 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
           title={`Delete ${picked.length} backup${picked.length === 1 ? '' : 's'}?`}
           message={<>A safety backup of the current data is taken first; if it fails, nothing is deleted. The deleted files cannot be recovered. The {KEEP_NEWEST} newest backups are always kept.</>}
           confirmLabel="Delete"
-          onConfirm={remove}
+          onConfirm={() => remove(picked)}
         />
         <span className="small text-body-secondary">
           {deletable.length === 0
@@ -342,13 +350,13 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
                 onChange={(e) => setChosen(e.target.checked ? deletable : [])}
               />
             </th>
+            <th style={{ width: 1 }}>
+              <span className="visually-hidden">Actions</span>
+            </th>
             <th>Taken</th>
             <th>Kind</th>
             <th className="d-none d-md-table-cell">File</th>
             <th className="text-end">Size</th>
-            <th>
-              <span className="visually-hidden">Actions</span>
-            </th>
           </tr>
         </thead>
         <tbody>
@@ -365,6 +373,31 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
                   onChange={(e) => toggle(f.name, e.target.checked)}
                 />
               </td>
+              <td className="text-nowrap">
+                <div className="btn-group btn-group-sm" role="group" aria-label={`Actions for ${f.name}`}>
+                  {canRestore(f) && (
+                    <button type="button" className="btn btn-sm btn-icon btn-outline-primary" onClick={() => onRestore(f)} aria-label={`Restore ${f.name}`} title="Restore…">
+                      <i className="bi bi-arrow-counterclockwise" aria-hidden="true" />
+                    </button>
+                  )}
+                  {!f.legacy && (
+                    <button type="button" className="btn btn-sm btn-icon btn-outline-primary" onClick={() => setDownload(f)} aria-label={`Download ${f.name}`} title="Download…">
+                      <i className="bi bi-download" aria-hidden="true" />
+                    </button>
+                  )}
+                  <ConfirmButton
+                    className="btn btn-sm btn-icon btn-outline-danger"
+                    disabled={i < KEEP_NEWEST}
+                    ariaLabel={i < KEEP_NEWEST ? `${f.name} is always kept (the ${KEEP_NEWEST} newest)` : `Delete ${f.name}`}
+                    label={<i className="bi bi-trash" aria-hidden="true" />}
+                    title="Delete this backup?"
+                    message={<>A safety backup of the current data is taken first; if it fails, nothing is deleted. The file cannot be recovered: <span className="text-break font-monospace fs-8">{f.name}</span></>}
+                    confirmLabel="Delete"
+                    onConfirm={() => remove([f.name])}
+                  />
+                </div>
+                {f.legacy && <span className="d-block fs-8 text-body-secondary">deploy.sh --restore</span>}
+              </td>
               <td className="text-nowrap">{formatDateTime(f.createdAt)}</td>
               <td>
                 {kindLabels[f.kind] ?? f.kind}
@@ -372,21 +405,13 @@ function StoredBackups({ ov, onRestore, onChanged }: { ov: Overview; onRestore: 
               </td>
               <td className="d-none d-md-table-cell text-break font-monospace fs-8">{f.name}</td>
               <td className="text-nowrap text-end">{formatSize(f.size)}</td>
-              <td className="text-end">
-                {canRestore(f) ? (
-                  <button className="btn btn-sm btn-outline-primary" onClick={() => onRestore(f)} aria-label={`Restore ${f.name}`}>
-                    Restore…
-                  </button>
-                ) : f.legacy ? (
-                  <span className="fs-8 text-body-secondary">deploy.sh --restore</span>
-                ) : null}
-              </td>
             </tr>
           ))}
         </tbody>
       </table>
       </div>
     </div>
+    {download && <DownloadSheet file={download} onClose={() => setDownload(null)} />}
     </div>
   )
 }
@@ -456,7 +481,7 @@ function RestorePreviewCard({ preview, onDiscarded }: { preview: Preview; onDisc
         <dt className="col-sm-4 fw-normal text-body-secondary">Audit log</dt>
         <dd className="col-sm-8 mb-1">{preview.audit.summary}</dd>
         <dt className="col-sm-4 fw-normal text-body-secondary">Safety backup</dt>
-        <dd className="col-sm-8 mb-1">{preview.safetyBackup ? 'The current data is backed up first, so this can be undone.' : 'None (no server backup key) — download a backup first.'}</dd>
+        <dd className="col-sm-8 mb-1">{preview.safetyBackup ? 'The current data is backed up first, so this can be undone.' : 'None (no server backup key).'}</dd>
         <dt className="col-sm-4 fw-normal text-body-secondary">Expires</dt>
         <dd className="col-sm-8 mb-1">{formatDateTime(preview.expiresAt)}</dd>
       </dl>

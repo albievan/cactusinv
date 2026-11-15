@@ -950,6 +950,17 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 55.3 | The tabs were unreadable in dark mode: the theme turns `.bg-white` dark (`app.scss`) while `text-dark` stayed dark. The tabs are now buttons with icons, the selected one filled (`btn-outline-light` on the green panel, `btn-outline-primary` in System Settings), the same in light and dark mode | done | browser (mock API), dark and light: selected black on #f8f9fa, the others #f8f9fa on the green; no sideways scroll at 360 px |
 | 55.4 | Docs (README Upgrading, ARCHITECTURE, PLAN), VERSION 1.32.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 |
 
+### M56 — Backup rows: Restore, Download and Delete as compact buttons (Albie, 2026-11-16) — v1.33.0
+
+> "add a download and delete button next to the restore button in the table, then move the buttons to be between the checkbox and taken column, then change the buttons to be compressed buttons, then remove the download a backup button"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 56.1 | `DownloadBackup` + `POST /backups/download` (administrators): a stored backup decrypted with the server key and encrypted again with a passphrase as it streams; an upload sent as it is; legacy dumps and other names refused; audited `backup.downloaded` before the first byte; no Idempotency-Key, export's deadlines | done | `TestDownloadStoredBackup` (stages again with the passphrase, upload byte for byte, short passphrase, bad name, missing, no key); HTTP test (never replayed) |
+| 56.2 | Backup table: one compact button group per row (icon buttons Restore, Download, Delete) between the checkbox and Taken; Delete asks first and goes through `POST /backups/delete` (safety backup first), disabled for the 5 newest; the Download sheet asks for the passphrase twice (none for an upload) | done | Vitest `Backup.test.tsx` (16 tests: column order, row delete, the five newest disabled, download body, upload without passphrase) |
+| 56.3 | The top **Download a backup** button is removed (a fresh download = Back up now, then Download on that row); texts that pointed to it changed (no-key notice, restore preview, README moving an install) | done | browser (mock API): top row Back up now and Restore from file; row buttons 32×32 px from md up, no sideways scroll at 360 px, dark and light |
+| 56.4 | Docs (README Backup and restore, ARCHITECTURE §12, OpenAPI, PLAN), VERSION 1.33.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 |
+
 ## Decisions
 
 | Date | Decision | Why |

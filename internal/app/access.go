@@ -72,7 +72,7 @@ var operationAccess = map[string][]domain.Permission{
 	"createcurrency": {domain.PermSettingsCurrenciesCreate}, "updatecurrency": {domain.PermSettingsCurrenciesEdit},
 	"createbankaccount": {domain.PermSettingsBanksCreate}, "updatebankaccount": {domain.PermSettingsBanksEdit}, "deletebankaccount": {domain.PermSettingsBanksDelete},
 
-	"listbackups": {domain.PermAdminister}, "createbackup": {domain.PermAdminister}, "deletebackups": {domain.PermAdminister}, "exportbackup": {domain.PermAdminister},
+	"listbackups": {domain.PermAdminister}, "createbackup": {domain.PermAdminister}, "deletebackups": {domain.PermAdminister}, "exportbackup": {domain.PermAdminister}, "downloadbackup": {domain.PermAdminister},
 	"uploadbackup": {domain.PermAdminister}, "stagerestore": {domain.PermAdminister}, "getcurrentrestore": {domain.PermAdminister},
 	"applyrestore": {domain.PermAdminister}, "discardrestore": {domain.PermAdminister}, "resumeautomation": {domain.PermAdminister},
 	"listusers": {domain.PermAdminister}, "adduser": {domain.PermAdminister}, "resetuserpassword": {domain.PermAdminister},

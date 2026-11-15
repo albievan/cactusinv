@@ -96,6 +96,19 @@ func TestBackupRoutes(t *testing.T) {
 		}
 	}
 
+	// A stored backup downloads encrypted again with the passphrase (M56), never replayed.
+	c.ok(c.do("POST", "/api/v1/backups/download", map[string]string{"name": created.Name, "passphrase": "short"}, &p), 422, "short passphrase")
+	for range 2 {
+		resp := c.raw("POST", "/api/v1/backups/download", "application/json",
+			strings.NewReader(`{"name":"`+created.Name+`","passphrase":"a long enough passphrase"}`), "Idempotency-Key", "d1")
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != 200 || resp.Header.Get("Idempotent-Replayed") != "" ||
+			resp.Header.Get("Content-Disposition") != `attachment; filename="`+created.Name+`"` || !bytes.HasPrefix(body, []byte("fake-age scrypt ")) {
+			t.Fatalf("download: %d %v", resp.StatusCode, resp.Header)
+		}
+	}
+
 	resp := c.raw("POST", "/api/v1/backups/uploads", "application/octet-stream", bytes.NewReader(make([]byte, 5<<20)))
 	_ = resp.Body.Close()
 	if resp.StatusCode != 413 {

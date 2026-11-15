@@ -53,13 +53,17 @@ test('shows the schedule and stored backups, and backs up now', async () => {
   const table = screen.getByRole('table', { name: 'Stored backups' })
   expect(within(table).getByText('Scheduled')).toBeInTheDocument()
   expect(within(table).getByText('Old plaintext dump')).toBeInTheDocument()
-  expect(within(table).getAllByRole('button', { name: /Restore/ })).toHaveLength(1) // not the legacy dump
+  expect(within(table).getAllByRole('button', { name: /^Restore / })).toHaveLength(1) // not the legacy dump
+  expect(within(table).getAllByRole('button', { name: /^Download / })).toHaveLength(1)
+  // The actions sit between the checkbox and Taken; the top Download a backup button is gone (M56).
+  expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['', 'Actions', 'Taken', 'Kind', 'File', 'Size'])
+  expect(screen.queryByRole('button', { name: 'Download a backup' })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Back up now' }))
   expect(await screen.findByText(/Backup stored: cactusinv-20261015T080000Z-s14-manual.age/)).toBeInTheDocument()
   expect(created).toBe(1)
 })
 
-test('without the server key it says so and only offers downloads', async () => {
+test('without the server key it says so', async () => {
   mockFetch({
     'GET /api/v1/auth/me': json({ administrator: true, permissions: [], id: '1', email: 'a', automationPaused: false }),
     'GET /api/v1/version': json({ version: '1.5.0', build: '10' }),
@@ -69,14 +73,13 @@ test('without the server key it says so and only offers downloads', async () => 
   render(<App />)
   expect(await screen.findByText(/backup_key\) is not set up/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Back up now' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Download a backup' })).toBeEnabled()
   expect(screen.getByText('No backups are stored yet.')).toBeInTheDocument()
 })
 
-test('downloads a backup encrypted with a confirmed passphrase', async () => {
+test('downloads a stored backup encrypted with a confirmed passphrase', async () => {
   let body: unknown
   routes({
-    'POST /api/v1/backups/export': async (req) => {
+    'POST /api/v1/backups/download': async (req) => {
       body = await req.json()
       return new Response(new Blob(['age-encrypted']), { status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="cactusinv-x.age"' } })
     },
@@ -86,7 +89,7 @@ test('downloads a backup encrypted with a confirmed passphrase', async () => {
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   window.history.pushState({}, '', '/settings/backup')
   render(<App />)
-  await userEvent.click(await screen.findByRole('button', { name: 'Download a backup' }))
+  await userEvent.click(await screen.findByRole('button', { name: `Download cactusinv-20261015T000000Z-s14-scheduled.age` }))
   const dialog = screen.getByRole('dialog', { name: 'Download a backup' })
   await userEvent.type(within(dialog).getByLabelText('Passphrase'), 'too short')
   await userEvent.type(within(dialog).getByLabelText('Passphrase again'), 'too short')
@@ -102,7 +105,7 @@ test('downloads a backup encrypted with a confirmed passphrase', async () => {
   await userEvent.type(within(dialog).getByLabelText('Passphrase again'), 'a long enough passphrase')
   await userEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
   expect(await within(dialog).findByText(/Downloaded cactusinv-x.age/)).toBeInTheDocument()
-  expect(body).toEqual({ passphrase: 'a long enough passphrase' })
+  expect(body).toEqual({ name: 'cactusinv-20261015T000000Z-s14-scheduled.age', passphrase: 'a long enough passphrase' })
   expect(create).toHaveBeenCalled()
   expect(click).toHaveBeenCalledTimes(1)
   click.mockRestore()
@@ -212,7 +215,7 @@ test('formatSize', () => {
 
 test('a download that breaks off is reported as failed', async () => {
   routes({
-    'POST /api/v1/backups/export': () =>
+    'POST /api/v1/backups/download': () =>
       new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array([1, 2, 3])); c.error(new Error('connection reset')) } }), {
         status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="x.age"' },
       }),
@@ -220,7 +223,7 @@ test('a download that breaks off is reported as failed', async () => {
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   window.history.pushState({}, '', '/settings/backup')
   render(<App />)
-  await userEvent.click(await screen.findByRole('button', { name: 'Download a backup' }))
+  await userEvent.click(await screen.findByRole('button', { name: `Download cactusinv-20261015T000000Z-s14-scheduled.age` }))
   const dialog = screen.getByRole('dialog', { name: 'Download a backup' })
   await userEvent.type(within(dialog).getByLabelText('Passphrase'), 'a long enough passphrase')
   await userEvent.type(within(dialog).getByLabelText('Passphrase again'), 'a long enough passphrase')
@@ -285,4 +288,48 @@ test('with five backups or fewer nothing can be chosen', async () => {
   render(<App />)
   expect(await screen.findByText(/There are 5 backups: the 5 newest are always kept, so none can be deleted yet./)).toBeInTheDocument()
   expect(screen.getByRole('checkbox', { name: 'Select every backup that can be deleted' })).toBeDisabled()
+})
+
+test('a row deletes its own backup after a confirmation; the five newest cannot be (M56)', async () => {
+  const bodies: unknown[] = []
+  routes({
+    'GET /api/v1/backups': json({ ...overview, files: seven }),
+    'POST /api/v1/backups/delete': async (req) => {
+      bodies.push(await req.json())
+      return json({ deleted: [seven[6]!.name], kept: [], safetyBackup: 'cactusinv-20261115T080000Z-s28-predelete.age' })()
+    },
+  })
+  window.history.pushState({}, '', '/settings/backup')
+  render(<App />)
+  const table = await screen.findByRole('table', { name: 'Stored backups' })
+  for (const f of seven.slice(0, 5)) expect(within(table).getByRole('button', { name: `${f.name} is always kept (the 5 newest)` })).toBeDisabled()
+  await userEvent.click(within(table).getByRole('button', { name: `Delete ${seven[6]!.name}` }))
+  const confirm = screen.getByRole('dialog', { name: 'Delete this backup?' })
+  expect(within(confirm).getByText(seven[6]!.name)).toBeInTheDocument()
+  await userEvent.click(within(confirm).getByRole('button', { name: 'Delete' }))
+  await vi.waitFor(() => expect(bodies).toEqual([{ names: [seven[6]!.name] }]))
+  expect(await screen.findByText(/Deleted 1 backup. Safety backup taken first/)).toBeInTheDocument()
+})
+
+test('an uploaded backup downloads as it is, without a new passphrase', async () => {
+  let body: unknown
+  const up = { name: 'cactusinv-20261016T000000Z-s14-upload.age', size: 10, createdAt: '2026-10-16T00:00:00Z', schema: 14, kind: 'upload', legacy: false }
+  routes({
+    'GET /api/v1/backups': json({ ...overview, files: [up] }),
+    'POST /api/v1/backups/download': async (req) => {
+      body = await req.json()
+      return new Response(new Blob(['age']), { status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${up.name}"` } })
+    },
+  })
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }))
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  window.history.pushState({}, '', '/settings/backup')
+  render(<App />)
+  await userEvent.click(await screen.findByRole('button', { name: `Download ${up.name}` }))
+  const dialog = screen.getByRole('dialog', { name: 'Download a backup' })
+  expect(within(dialog).queryByLabelText('Passphrase')).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
+  expect(await within(dialog).findByText(/It opens with the passphrase it was made with/)).toBeInTheDocument()
+  expect(body).toEqual({ name: up.name })
+  click.mockRestore()
 })

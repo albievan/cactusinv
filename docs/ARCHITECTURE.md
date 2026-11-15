@@ -470,7 +470,8 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
 ## 12. Backup and restore (ADR-010)
 
 - **Backup** (`app.CreateBackup`, scheduled by `RunDueBackups` once per slot across replicas,
-  `ExportBackup` for downloads): `mariadb.Snapshotter` reads every table except the excluded
+  `ExportBackup` for a fresh passphrase backup, `DownloadBackup` for a stored one re-encrypted
+  with a passphrase as it streams, M56): `mariadb.Snapshotter` reads every table except the excluded
   ones in one `START TRANSACTION WITH CONSISTENT SNAPSHOT`; `backupformat` writes
   `gzip(tar(header.json, tables/<t>/NNNNNN.jsonl, digest.json))`; `agecrypt` encrypts it to
   the server key (`backup_key`) or a passphrase; `backupdir` stores it under a generated name
@@ -483,9 +484,10 @@ ADR-007 (deployment, backups) and ADR-008 (invoice archive) record the reasoning
   re-renders, an SMTP password this `app_key` cannot read is cleared, sessions are deleted,
   the audit trail is merged (ADR-009 amendment) and automation is held until
   `POST /automation/resume`.
-- **HTTP**: `/backups` (list, create, `export` streamed as `application/octet-stream`,
-  `uploads`), `/restores` (stage, current, apply, discard), `/automation/resume`;
-  `Me.automationPaused` drives the app-wide banner. Export and upload get their own body limit
+- **HTTP**: `/backups` (list, create, `delete`, `export` and `download` streamed as
+  `application/octet-stream`, `uploads`), `/restores` (stage, current, apply, discard),
+  `/automation/resume`; `Me.automationPaused` drives the app-wide banner. Export, download and
+  upload get their own body limit
   (`CACTUSINV_BACKUP_MAX_UPLOAD_MB`) and deadlines and skip `Idempotency-Key`.
 - **Configuration**: `CACTUSINV_BACKUP_DIR` (`/data/backups`), `_BACKUP_TIMES` (`02:00`, in
   `TZ`), `_BACKUP_RETENTION_DAYS` (14), `_BACKUP_MAX_UPLOAD_MB` (256), `CACTUSINV_RESTORE_DB_NAME`
