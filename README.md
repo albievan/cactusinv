@@ -195,7 +195,10 @@ Released into the public domain — see [LICENSE](LICENSE).
 
 ## Quick start (Docker Desktop)
 
-Requirements: Docker Desktop (or Docker Engine with Compose v2).
+Requirements: Docker Desktop (or Docker Engine with Compose v2). Step by step for Docker,
+Podman, k3s and Kubernetes, from Linux, Windows or macOS:
+[Installing in containers, step by step](#installing-in-containers-step-by-step) (also on the
+sign-in page and in Settings → System Settings → Version, Container tab).
 
 ```bash
 git clone https://github.com/albievan/cactusinv.git && cd cactusinv
@@ -205,7 +208,8 @@ git clone https://github.com/albievan/cactusinv.git && cd cactusinv
 The data folders in `.env` default to `/data/cactusinv/…`. Where `/data` cannot be created (on a
 Mac the disk root is read-only) or you are not root, set `DATA_DIR`, `MARIADB_DATA_DIR`,
 `INVOICES_DIR`, `BACKUP_DIR` and `SECRETS_DIR` to a folder you can write, e.g. `./data/…` and
-`./secrets` (both git-ignored), **before** the first install. See
+`./secrets` (both git-ignored), **before** the first install — best in `.env.local` (see
+[Configuration](#configuration--env)), which upgrades leave alone. See
 [Configuration](#configuration--env). Once installed, `--install` and `--upgrade` refuse to
 run (and change nothing) when the database or secrets folder they are given is not the one the
 running install uses — an `.env` written for another host would otherwise start an empty
@@ -250,12 +254,13 @@ examples in [docs/PLACEHOLDERS.md](docs/PLACEHOLDERS.md).
 
 ACTION   --install | --upgrade [--to REF] | --version | --uninstall | --delete-uninstall | --status
          | --backup-now | --restore FILE
-TARGET   --dockerdesktop | --k3s | --k8s
+TARGET   --dockerdesktop | --podman | --k3s | --k8s
 ```
 
 | Example | What it does |
 |---|---|
 | `./deploy.sh --install --dockerdesktop` | build and run locally with Docker Compose |
+| `./deploy.sh --install --podman` | the same with Podman (`podman compose`; rootless works) |
 | `./deploy.sh --install --dockerdesktop --ssh-access root@192.0.2.10` | copy to `/opt/cactusinv` on the host and run it there with Docker |
 | `./deploy.sh --install --k3s --ssh-access root@192.0.2.10` | build for the node's CPU, import into k3s, apply manifests (no registry needed) |
 | `./deploy.sh --install --k8s` | push the image to `K8S_REGISTRY` and apply to the current `kubectl` context |
@@ -290,6 +295,81 @@ node that runs the app (on a single-node k3s, that node). On a multi-node cluste
 node (`kubectl get pod -o wide`) or use the Ingress (`K8S_HTTPS=true`). Behind NAT or a proxy, clients
 share one address and so share its limit of 10 failed password attempts a minute; a
 signed-in user also has a limit of their own.
+
+## Installing in containers, step by step
+
+`deploy.sh` is a bash script: on Windows run it in Ubuntu on WSL 2 (`wsl --install -d
+Ubuntu-24.04` in PowerShell as administrator). The same steps, with copy buttons, per platform
+and computer, are on the sign-in page and in System Settings → Version (Container tab).
+
+**Docker on one computer** (Linux, or Windows/macOS with Docker Desktop; on Windows turn on
+Settings → Resources → WSL integration → Ubuntu-24.04):
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh            # Linux only: Docker Engine
+sudo usermod -aG docker $USER && newgrp docker          # Linux only
+git clone https://github.com/albievan/cactusinv.git && cd cactusinv
+cat > .env.local <<EOF
+DATA_DIR=$HOME/cactusinv-data
+MARIADB_DATA_DIR=$HOME/cactusinv-data/mariadb
+INVOICES_DIR=$HOME/cactusinv-data/invoices
+BACKUP_DIR=$HOME/cactusinv-data/backups
+SECRETS_DIR=$HOME/cactusinv-data/secrets
+CACTUSINV_COOKIE_SECURE=false
+EOF
+./deploy.sh --install --dockerdesktop
+```
+
+Open <http://localhost:8080> and sign in as `admin` with the printed password. Copy
+`~/cactusinv-data/secrets/backup_key` off the computer. `CACTUSINV_COOKIE_SECURE=false` allows
+signing in over plain http; drop it once HTTPS is in front.
+
+**Podman** (Linux, or Ubuntu on WSL 2): `podman compose` runs docker-compose v2 through
+Podman's socket, rootless.
+
+```bash
+sudo dnf install -y podman docker-compose git                        # Fedora
+sudo apt install -y podman docker-compose-v2 git                     # Ubuntu 24.04+
+# RHEL/Rocky/Alma 9+: dnf install podman git, then docker-compose from GitHub:
+#   sudo mkdir -p /usr/local/lib/docker/cli-plugins
+#   sudo curl -fL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+#     https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)
+#   sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+systemctl --user enable --now podman.socket podman-restart.service
+sudo loginctl enable-linger $USER     # keep it running after you log out
+```
+
+Then the same `git clone` and `.env.local` as for Docker, and `./deploy.sh --install --podman`.
+The backups folder belongs to the container's user (`podman unshare ls
+~/cactusinv-data/backups`). `podman-restart` starts cactusInv after a reboot with Podman 5 or
+newer; with older Podman (and on WSL) run the install command again — the data is kept.
+
+**k3s** (a Linux server; from Windows, deploy to it over SSH from Ubuntu on WSL with Docker
+Desktop): `curl -sfL https://get.k3s.io | sh -` on the server, then as root with Docker and git
+on the server `./deploy.sh --install --k3s`, or from your computer `./deploy.sh --install --k3s
+--ssh-access root@your-server` (after `ssh-copy-id root@your-server`). `.env` already suits
+k3s: volumes in `/data/k3s/local.volumes/cactusinv`, HTTPS on port 443 through Traefik with its
+self-signed certificate until you set `K8S_HTTPS_HOST`, `K8S_TLS_CERT` and `K8S_TLS_KEY` in
+`.env.local`.
+
+**Kubernetes**: `kubectl get nodes` must work; Docker builds the image (for this computer's
+processor) and pushes it to a registry the cluster pulls from (`docker login` first):
+
+```bash
+cat > .env.local <<EOF
+K8S_REGISTRY=registry.example.com/cactusinv
+K8S_STORAGE_CLASS=
+K8S_VOLUME_DIR=
+K8S_HTTPS_HOST=invoices.example.com
+EOF
+./deploy.sh --install --k8s
+```
+
+Empty `K8S_STORAGE_CLASS` uses the cluster's default class. Without an ingress controller add
+`K8S_HTTPS=false` and `CACTUSINV_COOKIE_SECURE=false` and use `http://<node>:30080`.
+
+Every platform upgrades with `./deploy.sh --upgrade --<target>` from the same folder (a backup
+first, and back to this version if the new one does not start).
 
 ## Installing the program
 
@@ -406,12 +486,15 @@ ignored), so the repository no longer grows by them; releases up to v1.27.0 are 
 
 [`.env`](.env) holds the deployment's defaults. Docker Compose reads it on its own, and
 `deploy.sh` reads it for every target. A variable already set in your shell wins over the
-file, e.g. `HTTP_PORT=9090 ./deploy.sh --install --dockerdesktop`. It holds **no secrets**:
+file, e.g. `HTTP_PORT=9090 ./deploy.sh --install --dockerdesktop`. **`.env.local`** beside it
+(git-ignored, so `--upgrade` leaves it alone and it is not copied with `--ssh-access`) overrides
+`.env` for this machine: put your folders, time zone, registry or HTTPS host there rather than
+editing `.env`. It holds **no secrets**:
 passwords and keys are files in `SECRETS_DIR` (Docker) or the `cactusinv-secrets` Secret
 (k3s/k8s), generated by `--install`. A change takes effect at the next `./deploy.sh --install`
 (it is safe to re-run; data is kept). With `--ssh-access`, the folders are on the remote host.
 
-"Docker" below means `--dockerdesktop`, with or without `--ssh-access`.
+"Docker" below means `--dockerdesktop` or `--podman`, with or without `--ssh-access`.
 
 ### Folders (Docker)
 

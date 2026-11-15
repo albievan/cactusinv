@@ -1996,7 +1996,7 @@ export interface components {
             readonly pendingFolders: boolean;
         };
         DeploymentInfo: {
-            /** @description dockerdesktop, k3s, k8s, or "" when unknown. */
+            /** @description dockerdesktop, podman, k3s, k8s, or "" when unknown. */
             target: string;
             /**
              * @description The operating system and processor this server runs on (Go GOOS/GOARCH): System Settings → Version marks its install command.

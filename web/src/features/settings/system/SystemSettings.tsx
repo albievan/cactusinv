@@ -22,12 +22,17 @@ export function SystemSettingsPage() {
 
 /** deployCommand is what applies a folder mapping on this deployment. */
 function deployCommand(target: string): string {
-  return target === 'dockerdesktop' ? './deploy.sh --install --dockerdesktop' : './deploy.sh --install'
+  return composeTarget(target) ? `./deploy.sh --install --${target}` : './deploy.sh --install'
+}
+
+/** composeTarget says whether deploy.sh runs the app with compose (Docker or Podman). */
+function composeTarget(target: string): boolean {
+  return target === 'dockerdesktop' || target === 'podman'
 }
 
 /** upgradeCommand installs the newest version on this deployment (M27). */
 export function upgradeCommand(target: string): string {
-  return target ? `./deploy.sh --upgrade --${target}` : './deploy.sh --upgrade --dockerdesktop|--k3s|--k8s'
+  return target ? `./deploy.sh --upgrade --${target}` : './deploy.sh --upgrade --dockerdesktop|--podman|--k3s|--k8s'
 }
 
 /** The System Settings tabs; the open one is in the address (?tab=…). */
@@ -60,7 +65,7 @@ function SystemForm() {
   if (!s) return loaded.error ? <ErrorBanner error={loaded.error} /> : <Spinner />
   const d = s.deployment
   const edit = can('settings.system.edit')
-  const docker = d.target === 'dockerdesktop'
+  const docker = composeTarget(d.target)
   const set = (patch: Partial<System>) => {
     setSaved('')
     setS({ ...s, ...patch })
@@ -268,7 +273,7 @@ function VersionCard({ target, platform }: { target: string; platform: string })
           {check.installProblem && <p className="text-body-secondary mb-0">{check.installProblem}</p>}
           <p className="text-body-secondary mb-0">
             To upgrade, run this in the cactusInv folder on the machine you deploy from
-            {target && target !== 'dockerdesktop' ? ' (add --ssh-access user@host if you deploy over SSH)' : ''}:
+            {target && !composeTarget(target) ? ' (add --ssh-access user@host if you deploy over SSH)' : ''}:
           </p>
           <code className="d-block text-break rounded bg-body-secondary px-2 py-1">{upgradeCommand(target)}</code>
           <p className="text-body-secondary mb-0">
@@ -282,14 +287,22 @@ function VersionCard({ target, platform }: { target: string; platform: string })
         <h4 id="install-heading" className="fs-6 fw-semibold mb-0">Install or update by hand</h4>
         <p className="small text-body-secondary mb-0">
           {target
-            ? 'This installation is a container image, upgraded with deploy.sh. These commands install cactusinv as a standalone program on another computer.'
-            : 'Run one command on the computer cactusInv runs on, in its folder, then restart cactusinv. Your data stays where it is.'}{' '}
-          The setup scripts pick the right file for the system and check it against the release's signed checksums; the other
-          commands download one particular file as <code>cactusinv</code> (<code>cactusinv.exe</code> on Windows). A first
-          install also needs a MariaDB 11 database:{' '}
-          <a href="https://github.com/albievan/cactusinv#installing-the-program" target="_blank" rel="noreferrer" className="text-decoration-underline">installing the program</a>.
+            ? 'This installation is a container image, upgraded with deploy.sh (Container tab). Standalone installs cactusinv as a program on another computer.'
+            : 'This installation is a standalone program (Standalone tab). Container installs cactusInv with deploy.sh on Docker, Podman, k3s or Kubernetes.'}
         </p>
-        <InstallCommands platform={target ? '' : platform} />
+        <InstallCommands
+          platform={target ? '' : platform}
+          target={target}
+          standaloneIntro={(
+            <p className="small text-body-secondary mb-0">
+              {target ? '' : 'Run one command on the computer cactusInv runs on, in its folder, then restart cactusinv. Your data stays where it is. '}
+              The setup scripts pick the right file for the system and check it against the release's signed checksums; the other
+              commands download one particular file as <code>cactusinv</code> (<code>cactusinv.exe</code> on Windows). A first
+              install also needs a MariaDB 11 database:{' '}
+              <a href="https://github.com/albievan/cactusinv#installing-the-program" target="_blank" rel="noreferrer" className="text-decoration-underline">installing the program</a>.
+            </p>
+          )}
+        />
       </div>
     </section>
   )

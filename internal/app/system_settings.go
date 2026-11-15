@@ -131,10 +131,10 @@ func (s *Service) FolderMappings(ctx context.Context) (map[string]string, error)
 }
 
 // PendingFolders reports whether a saved mapping differs from what is mounted now (only
-// known on Docker, where deploy.sh says what it mounted).
+// known on Docker and Podman, where deploy.sh says what it mounted).
 func (v SystemView) PendingFolders() bool {
 	d := v.Deployment
-	if d.Target != "dockerdesktop" {
+	if d.Target != "dockerdesktop" && d.Target != "podman" {
 		return false
 	}
 	abs := func(p string) string {

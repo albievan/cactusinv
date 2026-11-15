@@ -47,7 +47,7 @@ type Deps struct {
 
 // Deployment describes the running deployment's folder mapping.
 type Deployment struct {
-	// Target is dockerdesktop, k3s or k8s ("" when unknown, e.g. a binary run by hand).
+	// Target is dockerdesktop, podman, k3s or k8s ("" when unknown, e.g. a binary run by hand).
 	Target string
 	// ProjectDir is the host project folder that ./ folders are relative to (Docker).
 	ProjectDir string

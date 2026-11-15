@@ -209,12 +209,18 @@ function Login({ onLogin, notice }: { onLogin: () => void; notice: string }) {
               Install cactusInv on your own computer or server
             </summary>
             <p className="mt-2 mb-3">
-              Run one command in the folder you want cactusInv in. The setup scripts pick the right file for the system and
-              check it; the other commands download one particular file. cactusInv also needs a MariaDB 11 database:{' '}
-              <a href={`${REPO_URL}#installing-the-program`} target="_blank" rel="noreferrer" className="link-light text-decoration-underline">installing the program</a>.
-              Or run it in Docker or Kubernetes with <code className="text-cream">deploy.sh</code>.
+              As a standalone program, or in containers on Docker, Podman, k3s or Kubernetes, step by step for Linux and Windows.
             </p>
-            <InstallCommands dark />
+            <InstallCommands
+              dark
+              standaloneIntro={(
+                <p className="mb-1">
+                  Run one command in the folder you want cactusInv in. The setup scripts pick the right file for the system and
+                  check it; the other commands download one particular file. cactusInv also needs a MariaDB 11 database:{' '}
+                  <a href={`${REPO_URL}#installing-the-program`} target="_blank" rel="noreferrer" className="link-light text-decoration-underline">installing the program</a>.
+                </p>
+              )}
+            />
           </details>
         </div>
         <WaveLines />

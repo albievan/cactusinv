@@ -1036,7 +1036,7 @@ type DeploymentInfo struct {
 	// Example: linux/amd64
 	Platform string `json:"platform"`
 
-	// Target dockerdesktop, k3s, k8s, or "" when unknown.
+	// Target dockerdesktop, podman, k3s, k8s, or "" when unknown.
 	Target string `json:"target"`
 }
 

@@ -2363,7 +2363,7 @@ components:
       readOnly: true
       required: [target, platform, backupDir, invoicesDir, backupHostDir, invoicesHostDir]
       properties:
-        target: { type: string, description: 'dockerdesktop, k3s, k8s, or "" when unknown.' }
+        target: { type: string, description: 'dockerdesktop, podman, k3s, k8s, or "" when unknown.' }
         platform: { type: string, example: linux/amd64, description: 'The operating system and processor this server runs on (Go GOOS/GOARCH): System Settings → Version marks its install command.' }
         backupDir: { type: string, description: The backups folder inside the container. }
         invoicesDir: { type: string, description: The invoice export folder inside the container. }

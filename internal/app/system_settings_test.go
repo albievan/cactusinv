@@ -96,6 +96,13 @@ func TestSystemSettingsFolders(t *testing.T) {
 	if _, err := h.svc.UpdateSystemSettings(h.ctx, st); fieldOf(err) != "backupHostDir" {
 		t.Fatalf("relative folder: %v", err)
 	}
+	// Podman mounts the folders as Docker does: the saved folder waits for the next deploy.
+	pod := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: h.ids, Hasher: fakes.Hasher{}, Deployment: app.Deployment{
+		Target: "podman", ProjectDir: "/home/alice/cactusinv", InvoicesHostDir: "/home/alice/cactusinv-data/invoices",
+	}})
+	if !must(pod.GetSystemSettings(h.ctx)).PendingFolders() {
+		t.Fatal("not pending on Podman")
+	}
 	// On Kubernetes nothing is mapped, so nothing is pending.
 	k := app.New(app.Deps{Tx: h.store, Clock: h.clock, IDs: h.ids, Hasher: fakes.Hasher{}, Deployment: app.Deployment{Target: "k3s"}})
 	if must(k.GetSystemSettings(h.ctx)).PendingFolders() {

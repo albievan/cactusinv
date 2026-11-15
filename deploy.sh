@@ -19,6 +19,8 @@
 #
 # TARGET
 #   --dockerdesktop      Docker Desktop, or Docker Engine on a Linux host (docker compose)
+#   --podman             Podman on Linux (podman compose, with docker-compose v2 or
+#                        podman-compose installed; rootless works)
 #   --k3s                a k3s node (image imported straight into k3s; no registry needed)
 #   --k8s                any Kubernetes cluster (image pushed to K8S_REGISTRY from .env)
 #
@@ -27,7 +29,8 @@
 #   --yes                    do not ask for confirmation (--delete-uninstall, --restore, --upgrade)
 #   -h, --help               show this help
 #
-# Settings and default volume mappings come from .env next to this script.
+# Settings and default volume mappings come from .env next to this script; .env.local beside
+# it (not in git, so upgrades leave it alone) overrides them for this machine.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -56,7 +59,7 @@ while [[ $# -gt 0 ]]; do
     --restore)
       [[ -z "$ACTION" ]] || die "choose one action"; ACTION=restore; RESTORE_FILE="${2:-}"; shift
       [[ -n "$RESTORE_FILE" ]] || die "--restore needs a backup file name" ;;
-    --dockerdesktop | --docker | --k3s | --k8s)
+    --dockerdesktop | --docker | --podman | --k3s | --k8s)
       [[ -z "$TARGET" ]] || die "choose one target"; TARGET="${1#--}"; [[ "$TARGET" == docker ]] && TARGET=dockerdesktop ;;
     --ssh-access) SSH_HOST="${2:-}"; shift; [[ -n "$SSH_HOST" && "$SSH_HOST" != --* ]] || die "--ssh-access needs user@host" ;;
     --yes | -y) ASSUME_YES=1 ;;
@@ -66,7 +69,10 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 [[ -n "$ACTION" ]] || usage 1
-[[ -n "$TARGET" ]] || die "choose a target: --dockerdesktop, --k3s or --k8s"
+[[ -n "$TARGET" ]] || die "choose a target: --dockerdesktop, --podman, --k3s or --k8s"
+# The container command of the compose targets: Podman takes the same commands as Docker.
+DOCKER=docker
+[[ "$TARGET" == podman ]] && DOCKER=podman
 [[ -z "$UPGRADE_TO" || "$ACTION" == upgrade ]] || die "--to goes with --upgrade"
 export TARGET # the k8s manifest names it (System Settings)
 
@@ -75,6 +81,11 @@ export TARGET # the k8s manifest names it (System Settings)
 # ---------------------------------------------------------------------------------------
 load_env() {
   [[ -f .env ]] || die ".env not found in $ROOT"
+  # .env.local first: what it sets wins over .env (environment variables win over both).
+  [[ -f .env.local ]] && read_env_file .env.local
+  read_env_file .env
+}
+read_env_file() {
   local line key val
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
@@ -83,7 +94,7 @@ load_env() {
     if [[ "$val" =~ ^\"(.*)\"$ || "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
     # Explicit environment variables win over .env.
     [[ -n "${!key+x}" ]] || export "$key=$val"
-  done <.env
+  done <"$1"
 }
 # confirm_word asks for a word (RESTORE) before replacing data; --yes skips it.
 # Without a terminal it fails (the caller cleans up), unless --yes was given.
@@ -269,7 +280,7 @@ image_tag() {
 # ---------------------------------------------------------------------------------------
 # Docker (Docker Desktop / Docker Engine)
 # ---------------------------------------------------------------------------------------
-compose() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
+compose() { "$DOCKER" compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
 
 # 32 random bytes as 64 hex characters (the AES-256 app_key).
 random_key() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
@@ -332,7 +343,7 @@ backup_key_notice() {
 ensure_backup_key() {
   [[ -s "$SECRETS_DIR/backup_key" ]] && return 0
   local tmp="$SECRETS_DIR/.backup_key.new"
-  docker run --rm --entrypoint /cactusinv "$CACTUSINV_IMAGE" backup keygen >"$tmp"
+  "$DOCKER" run --rm --entrypoint /cactusinv "$CACTUSINV_IMAGE" backup keygen >"$tmp"
   mv "$tmp" "$SECRETS_DIR/backup_key"
   chmod 644 "$SECRETS_DIR/backup_key"
   ok "generated $SECRETS_DIR/backup_key (encrypts the stored backups)"
@@ -358,6 +369,12 @@ staging_grant_sql() {
 MARIADB_ROOT_SQL='MYSQL_PWD="$(cat /run/secrets/db_root_password)" exec mariadb -uroot'
 
 docker_preflight() {
+  if [[ "$DOCKER" == podman ]]; then
+    command -v podman >/dev/null || die "podman is not installed"
+    podman info >/dev/null 2>&1 || die "podman does not work for this user (podman info fails)"
+    podman compose version >/dev/null 2>&1 || die "podman compose needs docker-compose (v2) or podman-compose installed"
+    return 0
+  fi
   command -v docker >/dev/null || die "docker is not installed"
   docker info >/dev/null 2>&1 || die "the Docker daemon is not running (start Docker Desktop)"
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is required"
@@ -371,7 +388,7 @@ mounted_dir() {
   local id
   id="$(compose ps -q app 2>/dev/null || true)"
   [[ -n "$id" ]] || return 0
-  docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$1\"}}{{.Source}}{{end}}{{end}}" "$id" 2>/dev/null || true
+  "$DOCKER" inspect -f "{{range .Mounts}}{{if eq .Destination \"$1\"}}{{.Source}}{{end}}{{end}}" "$id" 2>/dev/null || true
 }
 
 # docker_data_guard stops when the running database or secrets are in another folder than
@@ -383,7 +400,7 @@ docker_data_guard() {
   local id cur want
   id="$(compose ps -q mariadb 2>/dev/null || true)"
   if [[ -n "$id" ]]; then
-    cur="$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}' "$id" 2>/dev/null || true)"
+    cur="$("$DOCKER" inspect -f '{{range .Mounts}}{{if eq .Destination "/var/lib/mysql"}}{{.Source}}{{end}}{{end}}' "$id" 2>/dev/null || true)"
     want="$(abs_dir "$MARIADB_DATA_DIR")"
     [[ -z "$cur" ]] || same_dir "$cur" "$want" ||
       die "the running database is in $cur but MARIADB_DATA_DIR is $want: set MARIADB_DATA_DIR (and DATA_DIR, INVOICES_DIR, BACKUP_DIR, SECRETS_DIR) to this install's folders, in .env or the environment (nothing was changed)"
@@ -508,7 +525,7 @@ docker_install() {
   mkdir -p "$INVOICES_DIR" "$BACKUP_DIR"
   apply_folder_mappings
   # The app shows the folders mapped now (System Settings).
-  export CACTUSINV_DEPLOY_TARGET=dockerdesktop CACTUSINV_HOST_PROJECT_DIR="$ROOT"
+  export CACTUSINV_DEPLOY_TARGET="$TARGET" CACTUSINV_HOST_PROJECT_DIR="$ROOT"
   CACTUSINV_HOST_BACKUP_DIR="$(abs_dir "$BACKUP_DIR")" CACTUSINV_HOST_INVOICES_DIR="$(abs_dir "$INVOICES_DIR")"
   export CACTUSINV_HOST_BACKUP_DIR CACTUSINV_HOST_INVOICES_DIR
   mkdir -p "$INVOICES_DIR" "$BACKUP_DIR"
@@ -549,7 +566,7 @@ docker_delete_uninstall() {
   local d
   for d in "$MARIADB_DATA_DIR" "$INVOICES_DIR" "$BACKUP_DIR"; do
     if [[ -d "$d" ]]; then
-      docker run --rm -v "$(cd "$d" && pwd):/target" busybox:1.37 sh -c 'rm -rf /target/* /target/.[!.]* 2>/dev/null; true'
+      "$DOCKER" run --rm -v "$(cd "$d" && pwd):/target" busybox:1.37 sh -c 'rm -rf /target/* /target/.[!.]* 2>/dev/null; true'
       rmdir "$d" 2>/dev/null || true
     fi
   done
@@ -997,10 +1014,10 @@ k8s_restore() {
 remote_docker() {
   info "copying cactusInv to ${SSH_HOST}:${REMOTE_DIR}"
   ssh_run "mkdir -p '$REMOTE_DIR'"
-  tar -C "$ROOT" --exclude=./data --exclude=./secrets --exclude=./.git --exclude=./web/node_modules \
+  tar -C "$ROOT" --exclude=./data --exclude=./secrets --exclude=./.git --exclude=./.env.local --exclude=./web/node_modules \
     --exclude=./web/dist --exclude=./dist --exclude=./.deploy -czf - . | ssh_run "tar -C '$REMOTE_DIR' -xzf -"
-  local args=("--$ACTION" --dockerdesktop) pre="CACTUSINV_BUILD=${CACTUSINV_BUILD}; export CACTUSINV_BUILD; "
-  [[ "$ACTION" == migrate-down-to ]] && args=(--migrate-down-to "$DOWN_TO" --dockerdesktop)
+  local args=("--$ACTION" "--$TARGET") pre="CACTUSINV_BUILD=${CACTUSINV_BUILD}; export CACTUSINV_BUILD; "
+  [[ "$ACTION" == migrate-down-to ]] && args=(--migrate-down-to "$DOWN_TO" "--$TARGET")
   if [[ "$ACTION" == restore ]]; then
     local file="$RESTORE_FILE"
     if [[ -f "$RESTORE_FILE" ]]; then
@@ -1009,7 +1026,7 @@ remote_docker() {
       info "copying $(basename "$RESTORE_FILE") to ${SSH_HOST}"
       ssh_run "mkdir -p '$REMOTE_DIR/.deploy' && chmod 700 '$REMOTE_DIR/.deploy' && cat > $(printf '%q' "$file") && chmod 600 $(printf '%q' "$file")" <"$RESTORE_FILE"
     fi
-    args=(--restore "$file" --dockerdesktop)
+    args=(--restore "$file" "--$TARGET")
     if [[ -n "${CACTUSINV_BACKUP_PASSPHRASE:-}" ]]; then
       # The passphrase goes over stdin into a private file, never on a command line.
       printf '%s' "$CACTUSINV_BACKUP_PASSPHRASE" | ssh_run "mkdir -p '$REMOTE_DIR/.deploy' && umask 077 && cat > '$REMOTE_DIR/.deploy/passphrase'"
@@ -1022,7 +1039,7 @@ remote_docker() {
 
 # ---------------------------------------------------------------------------------------
 main() {
-  if [[ "$TARGET" == dockerdesktop ]]; then
+  if [[ "$TARGET" == dockerdesktop || "$TARGET" == podman ]]; then
     if [[ -n "$SSH_HOST" ]]; then remote_docker; return; fi
     case "$ACTION" in
       install) docker_install ;;

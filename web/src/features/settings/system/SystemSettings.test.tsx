@@ -59,6 +59,9 @@ test('on Kubernetes the folders are volume claims and cannot be mapped here', as
   expect(screen.getByText('/data/backups')).toBeInTheDocument()
 })
 
+// The upgrade command of an available update, not the one in the install steps (Container tab).
+const outsideGuide = { ignore: 'script, style, pre code' }
+
 test('checks for updates on request and shows the upgrade command for this deployment', async () => {
   routes(saved, undefined, { current: '1.11.0', latest: '1.13.0', available: true, problem: '' })
   window.history.pushState({}, '', '/settings/system?tab=version')
@@ -66,7 +69,7 @@ test('checks for updates on request and shows the upgrade command for this deplo
   expect(await screen.findByText('cactusInv 1.11.0 (build 30)')).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText('Version 1.13.0 is available (this is 1.11.0).')).toBeInTheDocument()
-  expect(screen.getByText('./deploy.sh --upgrade --dockerdesktop')).toBeInTheDocument()
+  expect(screen.getByText('./deploy.sh --upgrade --dockerdesktop', outsideGuide)).toBeInTheDocument()
 })
 
 test('says when this is the newest version, and why a check could not be made', async () => {
@@ -75,7 +78,7 @@ test('says when this is the newest version, and why a check could not be made', 
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText('You have the newest version (1.11.0).')).toBeInTheDocument()
-  expect(screen.queryByText(/deploy.sh --upgrade/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/deploy.sh --upgrade/, outsideGuide)).not.toBeInTheDocument()
   vi.unstubAllGlobals()
 
   routes(saved, undefined, { current: '1.11.0', latest: '', available: false, problem: 'The newest version could not be read.' })
@@ -117,7 +120,7 @@ test('a container explains why it cannot install itself and gives the upgrade co
   render(<App />)
   await userEvent.click(await screen.findByRole('button', { name: 'Check for updates' }))
   expect(await screen.findByText(/runs in a container/)).toBeInTheDocument()
-  expect(screen.getByText('./deploy.sh --upgrade --k3s')).toBeInTheDocument()
+  expect(screen.getByText('./deploy.sh --upgrade --k3s', outsideGuide)).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Install and restart' })).not.toBeInTheDocument()
 })
 

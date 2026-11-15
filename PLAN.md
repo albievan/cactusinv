@@ -916,6 +916,19 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 52.6 | Docs (README Backup and restore, OpenAPI, PLAN), VERSION 1.30.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 145 tests); `make dist` 1.30.0 (build 55), signature verified; GitHub Release v1.30.0 |
 | 52.7 | Checked on a real (throwaway) install: MariaDB 11, a real backup key, 8 real encrypted backups; the API asked to delete all 8 deleted the 3 oldest, kept the 5 newest, took `…-predelete.age` first; only the 5 newest chosen → 422, nothing changed; no server errors. The page in a browser (mock API): 5 marked Always kept, select-all took the 2 of 7 that may go | done | 2026-11-15 |
 
+### M53 — Container install steps: Docker, Podman, k3s, Kubernetes; Standalone and Container tabs (Albie, 2026-11-15) — v1.31.0
+
+> "add how to install the app on docker desktop, podman, k3s, k8s e.g. i want to be able to install it on any container platform with detailed step by step instructions for windows and linux i want a tab called standalone and container. add this to the login screen as well"
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 53.1 | `deploy.sh --podman`: the compose path with `podman` (`podman compose` → docker-compose v2 through Podman's socket; rootless); the target is kept through `--upgrade` and `--ssh-access`; System Settings treat it like Docker (folder mappings) | done | rootless Podman 4.9 on Ubuntu 24.04 (see 53.5) |
+| 53.2 | `.env.local` (git-ignored, read before `.env`, not copied by `--ssh-access`): per-machine folders, time zone, registry, HTTPS host without editing `.env` (an edited `.env` stops `--upgrade`) | done | the Podman test installs with it |
+| 53.3 | Install steps as data (`containerSteps.ts`): Docker (Linux, Windows via WSL 2 + Docker Desktop, macOS), Podman (Linux: Fedora, Ubuntu 24.04+, RHEL/Rocky/Alma; Windows via WSL 2), k3s (on the server, or from Windows over SSH), Kubernetes (registry, default storage class, ingress) | done | Vitest: every platform and computer has the clone, install and upgrade with its target, WSL on Windows |
+| 53.4 | Standalone and Container tabs (`InstallCommands`) on the sign-in page and in System Settings → Version; a container install opens the Container tab at its platform; choices per platform and computer, each command copyable | done | Vitest `install.test.tsx`, `SystemSettings.test.tsx` |
+| 53.5 | Checked for real: Ubuntu 24.04, `apt install podman docker-compose-v2` (Podman 4.9.3, Compose 2.40), a normal user (rootless), the documented `.env.local`: `--install --podman` built the image, generated the secrets and backup key, started MariaDB, the app and Mailpit; `--status`, `--backup-now`, `--version` worked; admin signed in (204) with the generated password; `podman unshare ls` lists the backups; a second `--install` kept the data; the git tree stayed clean (upgrades work). Health checks need systemd timers (the test container had none, so they were run by hand); `make check` exit 0, web 148 tests. Browser (mock API): both tabs on the sign-in page and the Version tab, a Podman install opens Container at Podman, no sideways scroll at 360 px | done | 2026-11-15 |
+| 53.6 | Docs: README "Installing in containers, step by step", `--podman`, `.env.local`; PLAN; VERSION 1.31.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, web 148 tests); `make dist` 1.31.0 (build 56), signature verified; GitHub Release v1.31.0 |
+
 ## Decisions
 
 | Date | Decision | Why |
