@@ -684,7 +684,47 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Records the balance still owed (after any part-payments) as one payment received today, and the invoice paid. Audited as invoice.paid with the amount. */
         post: operations["markInvoicePaid"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Records money received against an issued, unpaid invoice (M58): more than 0 and at most the balance, received on a date that is not in the future (today when left out). When the payments cover the total the invoice is paid. Audited as invoice.payment_recorded with the amount and the balance. */
+        post: operations["recordPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invoices/{id}/payments/{paymentId}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                paymentId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Takes a payment off an invoice (entered by mistake, or it bounced). A paid invoice opens again. Audited as invoice.payment_removed with the amount and the balance. */
+        post: operations["removePayment"];
         delete?: never;
         options?: never;
         head?: never;
@@ -951,6 +991,64 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getInvoiceResponsePdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/accounts/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPortal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/accounts/{token}/statement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPortalStatementPdf"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/accounts/{token}/invoices/{invoiceId}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+                invoiceId: string;
+            };
+            cookie?: never;
+        };
+        get: operations["getPortalInvoicePdf"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2360,6 +2458,8 @@ export interface components {
             vatPercent: components["schemas"]["Decimal"];
             lines: components["schemas"]["Line"][];
             totals: components["schemas"]["Totals"];
+            amountPaid: components["schemas"]["Decimal"];
+            balance: components["schemas"]["Decimal"];
             bank: components["schemas"]["BankDetails"];
             scheduleId?: string;
             overdue: boolean;
@@ -2424,6 +2524,27 @@ export interface components {
             invoice: components["schemas"]["Invoice"];
             events: components["schemas"]["InvoiceEvent"][];
             emails: components["schemas"]["EmailMessage"][];
+            /** @description Oldest received first. */
+            payments: components["schemas"]["Payment"][];
+        };
+        Payment: {
+            id: string;
+            amount: components["schemas"]["Decimal"];
+            /** Format: date */
+            receivedOn: string;
+            reference: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaymentRequest: {
+            amount: components["schemas"]["Decimal"];
+            /**
+             * Format: date
+             * @description Today when left out.
+             */
+            receivedOn?: string;
+            /** @description The customer's reference or a note, e.g. "EFT 4411". */
+            reference?: string;
         };
         InvoiceList: {
             items: components["schemas"]["Invoice"][];
@@ -2596,7 +2717,7 @@ export interface components {
              * @description Omit to send now.
              */
             sendAt?: string;
-            /** @description Quotes and invoices: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41). */
+            /** @description Quotes, invoices and statements: the address the request came from (e.g. https://invoices.example.com), for the links in the e-mail (Accept and Decline, I have paid, the account page) when no public address is set (M41, M42, M59). */
             linkBase?: string;
         };
         /** @enum {string} */
@@ -2853,12 +2974,42 @@ export interface components {
             /** Format: date */
             dueDate: string;
             total: string;
+            /** @description Still owed after the payments recorded (M58). */
+            balance: string;
             stage: components["schemas"]["InvoiceStage"];
             /** @description Whether the customer may still say they paid it. */
             canMark: boolean;
             /** Format: date-time */
             customerPaidAt?: string;
             customerPaidNote?: string;
+        };
+        /** @description The customer's account page for a statement e-mail link (M59). */
+        Portal: {
+            customerName: string;
+            businessName: string;
+            businessEmail: string;
+            currency: string;
+            /** Format: date */
+            asOf: string;
+            /** @description Still owed in all. */
+            balance: string;
+            aging: components["schemas"]["Aging"];
+            /** @description Unpaid invoices */
+            open: components["schemas"]["PortalInvoice"][];
+            /** @description The latest paid invoices */
+            paid: components["schemas"]["PortalInvoice"][];
+        };
+        PortalInvoice: {
+            id: string;
+            number: string;
+            /** Format: date */
+            issueDate: string;
+            /** Format: date */
+            dueDate: string;
+            total: string;
+            balance: string;
+            stage: components["schemas"]["InvoiceStage"];
+            daysOverdue: number;
         };
         /** @description What the customer's page shows for a quote e-mail link (M41). */
         QuoteResponse: {
@@ -4260,6 +4411,8 @@ export interface operations {
                     customerIds: string[];
                     /** @description Also e-mail customers who owe nothing. */
                     includeZero?: boolean;
+                    /** @description The address the request came from, for the account link (M59) when System Settings name no external address. */
+                    linkBase?: string;
                 };
             };
         };
@@ -4617,6 +4770,57 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Marked paid. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    recordPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded; the invoice with its new balance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    removePayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                paymentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed; the invoice with its new balance. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5053,6 +5257,81 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The invoice as a PDF. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the customer owes, invoice by invoice, and their latest paid invoices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portal"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPortalStatementPdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statement as of today, as a PDF. */
+            200: {
+                headers: {
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPortalInvoicePdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The random token from a quote e-mail's link (43 characters). */
+                token: components["parameters"]["ResponseToken"];
+                invoiceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One of the customer's issued invoices as a PDF (not a draft or a void one). */
             200: {
                 headers: {
                     "Content-Disposition"?: string;

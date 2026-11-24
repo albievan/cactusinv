@@ -2,6 +2,7 @@ package mariadb
 
 import (
 	"context"
+	"time"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
 	"github.com/albievan/cactusinv/internal/domain"
@@ -200,4 +201,15 @@ func (r productRepo) insertPrices(ctx context.Context, p domain.Product) error {
 func (r productRepo) Delete(ctx context.Context, id string) error {
 	n, err := r.q.DeleteProduct(ctx, id)
 	return affected(n, err, domain.ErrNotFound)
+}
+
+func (r customerRepo) AddPortalToken(ctx context.Context, customerID, tokenHash string, now, expires time.Time) error {
+	return mapErr(r.q.InsertCustomerPortalToken(ctx, sqlcgen.InsertCustomerPortalTokenParams{
+		TokenHash: tokenHash, CustomerID: customerID, CreatedAt: now.UTC(), ExpiresAt: expires.UTC(),
+	}))
+}
+
+func (r customerRepo) CustomerIDByPortalToken(ctx context.Context, tokenHash string, now time.Time) (string, error) {
+	id, err := r.q.GetCustomerIDByPortalToken(ctx, sqlcgen.GetCustomerIDByPortalTokenParams{TokenHash: tokenHash, ExpiresAt: now.UTC()})
+	return id, mapErr(err)
 }

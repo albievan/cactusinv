@@ -1,0 +1,80 @@
+# cactusInv Helm chart (M60). The same pods as deploy.sh --k8s, for clusters managed with
+# Helm. Build and push the image first (deploy.sh --k8s does, or: docker build -t
+# <registry>/cactusinv:<version> . && docker push ...), then:
+#   helm install cactusinv deploy/helm/cactusinv -n cactusinv --create-namespace \
+#     --set image.repository=<registry>/cactusinv --set image.tag=<version>
+
+image:
+  repository: ""          # required: where you pushed the cactusinv image
+  tag: ""                 # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Secrets the app and MariaDB read from /run/secrets. Either name a Secret you made
+# (keys: db_password, db_root_password, app_key, admin_password; optional: smtp_password,
+# backup_key, metrics_token), or let the chart make one from the values below.
+secrets:
+  existingSecret: ""
+  dbPassword: ""          # required without existingSecret
+  dbRootPassword: ""      # required without existingSecret
+  appKey: ""              # required without existingSecret: 64 hex characters (openssl rand -hex 32)
+  smtpPassword: ""
+  backupKey: ""           # an age identity (age-keygen); without it backups are off until set in the app
+  adminPassword: ""       # required without existingSecret: the first sign-in's password (12+ characters; changed at first sign-in)
+  metricsToken: ""        # bearer token for /metrics; without it /metrics does not exist
+
+config:
+  timeZone: Africa/Johannesburg
+  logLevel: info
+  cookieSecure: true      # sign-in cookies over HTTPS only: put TLS in front (ingress)
+  trustedProxies: ""      # e.g. the ingress controller's pod network, 10.42.0.0/16 on k3s
+  defaultAdminUser: admin
+  updateURL: ""
+  smtp:
+    host: ""              # empty: the bundled Mailpit test mailbox when mailpit.enabled
+    port: 587
+    tls: starttls
+    user: ""
+    from: ""
+  backup:
+    times: "02:00"
+    retentionDays: 30
+    maxUploadMB: 512
+  # OpenTelemetry tracing: off while the endpoint is empty.
+  otel:
+    endpoint: ""
+    serviceName: cactusinv
+  extraEnv: {}            # more environment variables for the app
+
+database:
+  name: cactusinv
+  user: cactusinv
+  image: mariadb:11
+  storage: 10Gi
+  resources: { requests: { cpu: 100m, memory: 256Mi }, limits: { memory: 1Gi } }
+
+persistence:
+  storageClass: ""        # the cluster's default when empty
+  invoices: 5Gi
+  backups: 10Gi
+
+resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 768Mi } }
+
+service:
+  type: ClusterIP         # NodePort to reach it without an ingress
+  port: 80
+  nodePort: null
+  # Local keeps the client's address, so the sign-in rate limit counts each client on its own.
+  externalTrafficPolicy: ""
+
+ingress:
+  enabled: false
+  className: ""
+  host: invoices.example.com
+  annotations: {}
+  tlsSecret: ""           # a kubernetes.io/tls Secret for host
+
+# A test mailbox: e-mails go to Mailpit instead of customers until SMTP is set up.
+mailpit:
+  enabled: false
+  image: axllent/mailpit:v1.21

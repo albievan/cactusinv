@@ -119,6 +119,28 @@ EmailMessage (outbox) ── invoice, recipients, send-at, attempts, status
 - `sent`: at least one e-mail delivered (`sent_at` set by the dispatcher).
   Re-sending is allowed and recorded.
 - `paid` / `void`: terminal. Void keeps the number (gap-free) and the PDF watermarks VOID.
+- **Customer account page (M59).** A statement e-mail (`enqueueStatement`) gets a random
+  43-character token, stored as its SHA-256 in `customer_portal_tokens` with
+  `expires_at` = now + 90 days (`domain.PortalLinkValidity`), and the link
+  `<base>/a/<token>` (base: `linkBase`, as for quotes and invoices); `deliverStatement` sends
+  an HTML part with a **View your account** button (`domain.StatementEmailHTML`). Public,
+  session-less routes: `GET /public/accounts/{token}` (the statement's open lines with total
+  and balance, the latest 20 paid invoices), `…/statement` (PDF) and
+  `…/invoices/{invoiceId}/pdf` (the customer's own issued invoices only; drafts, void and
+  other customers' are 404). PDF views are audited as `Customer (e-mail link)`.
+- **Payments (M58).** `domain.Payment` (amount in the invoice's currency, date received,
+  reference) is recorded against an open invoice with `Invoice.RecordPayment`
+  (0 < amount ≤ `Balance()`); `Invoice.AmountPaid` is their sum, kept on the invoice row
+  (`amount_paid_minor`) so lists, totals and statements read the balance without a join. When
+  the balance reaches 0 the invoice is `paid`. `MarkPaid` records the balance as one payment
+  received today. `RemovePayment` takes one off (a mistake, a bounced payment) and reopens a
+  paid invoice as it was: overdue if marked overdue, else sent or issued. An invoice with
+  payments cannot be voided. API: `POST /invoices/{id}/payments`,
+  `POST /invoices/{id}/payments/{paymentId}/delete` (`invoices.pay`), audited as
+  `invoice.payment_recorded` / `invoice.payment_removed` / `invoice.paid` with the amount and the
+  balance. Statements, the dashboard totals and top debtors count the balance; the paid-per-month
+  figures sum payments by the month received. Payments change no printed content, so issued
+  invoices stay immutable.
 - Every transition writes an `invoice_events` audit row in the same transaction.
 
 ### 3.4 Line maths
@@ -308,7 +330,7 @@ QuoteSettings { valid_days, number_format ({seq} {dd} {mm} {yy} {yyyy}), email s
 Tables: `business_profile` (single row), `users` (with `disabled_at`, `must_change_password`,
 `last_login_at`; never deleted), `sessions`, `currencies`,
 `bank_accounts`, `customers`, `products`, `product_prices`, `invoice_sequences`,
-`invoices`, `invoice_lines`, `invoice_events`, `schedules`, `schedule_lines`,
+`invoices`, `invoice_lines`, `invoice_payments` (M58), `customer_portal_tokens` (M59), `invoice_events`, `schedules`, `schedule_lines`,
 `schedule_runs`, `email_outbox`, `idempotency_keys`.
 
 - IDs: UUIDv7 stored as `CHAR(36)` (`ascii_bin`) — time-ordered, debuggable (ADR-002).
@@ -384,7 +406,15 @@ Secrets: `db_password` (required), `smtp_password`, `app_key` and `backup_key` (
   `cactusinv_outbox_pending`, `cactusinv_outbox_oldest_pending_seconds`,
   `cactusinv_emails_sent_total{result}`, `cactusinv_schedule_runs_total{result}`.
 - `/readyz` pings MariaDB and checks the invoices volume is writable.
-- OpenTelemetry tracing is deferred (PLAN → Later): one process, no fan-out to trace.
+- **OpenTelemetry tracing (M60)**: `cmd/cactusinv/telemetry.go` installs an SDK tracer
+  provider with the OTLP/HTTP exporter only when `OTEL_EXPORTER_OTLP_ENDPOINT` (or
+  `…_TRACES_ENDPOINT`) is set; otherwise the global no-op provider makes the instrumentation
+  free. `httpapi.withTracing` (otelhttp) starts a server span per request, continuing a
+  caller's `traceparent`; the strict middleware `traceOperation` renames it to the operation
+  (never the path: paths carry IDs and tokens). Paths carrying a customer link token are not
+  traced at all, and `redactPath` logs them as `:token`. `mariadb.Store.WithinTx` adds a
+  `db.transaction` client span (attempts counted; errors marked without their text, which may
+  name customer data). The domain and app layers know nothing of tracing.
 - **Status and health in the app (M57)**: `app.SystemStatus`, `app.SystemHealth` and
   `app.RevealSecret` (`internal/app/system_status.go`) read through ports in
   `internal/ports/system.go`: `DatabaseInspector` (`mariadb.Inspector`: ping, `SHOW GLOBAL

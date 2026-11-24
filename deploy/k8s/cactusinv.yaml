@@ -35,6 +35,9 @@ data:
   CACTUSINV_SMTP_TLS: "${CACTUSINV_SMTP_TLS}"
   CACTUSINV_SMTP_USER: "${CACTUSINV_SMTP_USER}"
   CACTUSINV_SMTP_FROM: "${CACTUSINV_SMTP_FROM}"
+  # OpenTelemetry tracing (M60): off while the endpoint is empty.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
+  OTEL_SERVICE_NAME: "${OTEL_SERVICE_NAME}"
   # Encrypted backups taken by the app (ADR-010); restores stage into <db>_restore.
   CACTUSINV_BACKUP_DIR: /data/backups
   CACTUSINV_BACKUP_TIMES: "${BACKUP_TIMES}"

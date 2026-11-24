@@ -15,6 +15,10 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/pressly/goose/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/albievan/cactusinv/internal/adapters/mariadb/sqlcgen"
 	"github.com/albievan/cactusinv/internal/domain"
@@ -229,14 +233,25 @@ type Store struct {
 // NewStore wraps db.
 func NewStore(db *sql.DB) *Store { return &Store{db: db} }
 
+// tracer records a span per transaction (M60); without a tracer provider it does nothing.
+var tracer = otel.Tracer("github.com/albievan/cactusinv/internal/adapters/mariadb")
+
 // maxTxAttempts bounds retries of transactions aborted by deadlocks or lock timeouts.
 const maxTxAttempts = 3
 
 // WithinTx implements ports.TxManager. It runs fn at READ COMMITTED and retries it when
 // MariaDB aborts the transaction with a deadlock or lock-wait timeout.
-func (s *Store) WithinTx(ctx context.Context, fn func(context.Context, ports.Repos) error) error {
-	var err error
+func (s *Store) WithinTx(ctx context.Context, fn func(context.Context, ports.Repos) error) (err error) {
+	ctx, span := tracer.Start(ctx, "db.transaction", trace.WithSpanKind(trace.SpanKindClient),
+		trace.WithAttributes(attribute.String("db.system.name", "mariadb")))
+	defer func() {
+		if err != nil {
+			span.SetStatus(codes.Error, "transaction failed") // the error may name customer data
+		}
+		span.End()
+	}()
 	for attempt := 1; attempt <= maxTxAttempts; attempt++ {
+		span.SetAttributes(attribute.Int("cactusinv.tx.attempts", attempt))
 		err = s.once(ctx, fn)
 		if !retryable(err) || ctx.Err() != nil {
 			return err

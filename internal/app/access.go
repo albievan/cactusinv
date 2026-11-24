@@ -27,7 +27,7 @@ var operationAccess = map[string][]domain.Permission{
 	"createinvoice": {domain.PermInvoicesCreate}, "updateinvoice": {domain.PermInvoicesEdit},
 	"deleteinvoice": {domain.PermInvoicesDelete}, "issueinvoice": {domain.PermInvoicesIssue},
 	"sendinvoice": {domain.PermInvoicesSend},
-	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay}, "updateinvoicenotes": {domain.PermInvoicesEdit},
+	"voidinvoice": {domain.PermInvoicesVoid}, "markinvoiceoverdue": {domain.PermInvoicesOverdue}, "markinvoicepaid": {domain.PermInvoicesPay}, "recordpayment": {domain.PermInvoicesPay}, "removepayment": {domain.PermInvoicesPay}, "updateinvoicenotes": {domain.PermInvoicesEdit},
 
 	"listquotes": {domain.PermQuotesView}, "getquote": {domain.PermQuotesView}, "getquotepdf": {domain.PermQuotesView},
 	"createquote": {domain.PermQuotesCreate}, "updatequote": {domain.PermQuotesEdit}, "deletequote": {domain.PermQuotesDelete},
@@ -36,6 +36,8 @@ var operationAccess = map[string][]domain.Permission{
 	"getquoteresponse": signedIn, "respondtoquote": signedIn, "getquoteresponsepdf": signedIn,
 	// The customer's "I have paid" page for an invoice e-mail (M42), likewise.
 	"getinvoiceresponse": signedIn, "markinvoicepaidbycustomer": signedIn, "getinvoiceresponsepdf": signedIn,
+	// The customer's account page through a statement e-mail's link (M59), likewise.
+	"getportal": signedIn, "getportalstatementpdf": signedIn, "getportalinvoicepdf": signedIn,
 	"sendquote": {domain.PermQuotesSend}, "acceptquote": {domain.PermQuotesOutcome}, "declinequote": {domain.PermQuotesOutcome},
 	// Making the invoice also needs invoices.create (checked by the use case).
 	"convertquote":       {domain.PermQuotesConvert},

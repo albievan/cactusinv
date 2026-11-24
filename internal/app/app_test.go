@@ -1362,15 +1362,15 @@ func TestStatementOverviewAndBulkSend(t *testing.T) {
 		}
 	}
 
-	res := must(h.svc.SendStatements(h.ctx, []string{h.customer.ID, other.ID, none.ID, "nope"}, false))
+	res := must(h.svc.SendStatements(h.ctx, []string{h.customer.ID, other.ID, none.ID, "nope"}, false, ""))
 	if len(res.Queued) != 2 || res.Queued[0] != h.customer.ID || res.Queued[1] != other.ID ||
 		res.Skipped[none.ID] != "nothing owed" || res.Skipped["nope"] != "customer not found" {
 		t.Fatalf("bulk = %+v", res)
 	}
-	if res := must(h.svc.SendStatements(h.ctx, []string{none.ID}, true)); len(res.Queued) != 1 {
+	if res := must(h.svc.SendStatements(h.ctx, []string{none.ID}, true, "")); len(res.Queued) != 1 {
 		t.Fatal("include zero balances")
 	}
-	if _, err := h.svc.SendStatements(h.ctx, nil, false); !errors.Is(err, domain.ErrValidation) {
+	if _, err := h.svc.SendStatements(h.ctx, nil, false, ""); !errors.Is(err, domain.ErrValidation) {
 		t.Fatal("no customers")
 	}
 }

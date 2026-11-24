@@ -146,7 +146,7 @@ export function InvoiceActions({ inv, onChanged, onError, showLabels = false, wi
       {notes && <NotesSheet inv={inv} open onClose={() => setNotes(false)} onSaved={onChanged} onError={onError} />}
       {can('invoices.pay') && <ActionButton showLabel={showLabels} icon={IconPaid} label="Mark paid" disabled={busy || !open} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-paid', path)), `${inv.number} marked paid`)} />}
       {can('invoices.overdue') && <ActionButton showLabel={showLabels} icon={IconClockAlert} label="Mark overdue" disabled={busy || !(inv.status === 'issued' || inv.status === 'sent')} onClick={() => run(() => unwrap(api.POST('/invoices/{id}/mark-overdue', path)), `${inv.number} marked overdue`)} />}
-      {can('invoices.void') && <ActionButton showLabel={showLabels} icon={IconBan} label="Void" tone="danger" disabled={busy || !open} onClick={() => setVoiding(true)} />}
+      {can('invoices.void') && <ActionButton showLabel={showLabels} icon={IconBan} label="Void" tone="danger" disabled={busy || !open || Number(inv.amountPaid) > 0} onClick={() => setVoiding(true)} />}
       <Sheet title={`Void ${inv.number}`} open={voiding} onClose={() => setVoiding(false)}>
         <div className="vstack gap-3">
           <p className="small text-body-secondary mb-0">The number stays used, scheduled e-mails are cancelled and the void is recorded in the audit trail. This cannot be undone.</p>

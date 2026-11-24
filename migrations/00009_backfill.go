@@ -54,5 +54,8 @@ func backfillAudit(ctx context.Context, tx *sql.Tx) error {
 func GoMigrations() []*goose.Migration {
 	return []*goose.Migration{
 		goose.NewGoMigration(9, &goose.GoFunc{RunTx: backfillAudit}, &goose.GoFunc{RunTx: func(context.Context, *sql.Tx) error { return nil }}),
+		// Down keeps the payments: 00030's down drops them, and the backfill skips invoices
+		// that already have theirs.
+		goose.NewGoMigration(31, &goose.GoFunc{RunTx: backfillPayments}, &goose.GoFunc{RunTx: func(context.Context, *sql.Tx) error { return nil }}),
 	}
 }

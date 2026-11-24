@@ -973,10 +973,47 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 | 57.4 | Web: Settings → **Database & containers**; a View button per secret asks for your password and shows the value (hidden again after a minute); Users & groups shows Admin settings (members only); the dashboard shows health and performance to who may see the database page | done | Vitest `DatabaseStatus.test.tsx` (services, database, filterable variables, reveal after the password and hide, no View without the permission, dashboard health); browser against the throwaway install: light and dark, no sideways scroll at 360 px; the group editor shows Admin settings, members only |
 | 57.5 | Docs (README, ARCHITECTURE, OpenAPI, PLAN), VERSION 1.34.0, signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, domain 96.4 %, app 87.0 %, web 158 tests) |
 
+### M58 — Partial payments (Albie, 2026-11-24)
+
+> "start the next step" — the next item in Later, the owner's choice of 2026-11-14: part-payments recorded against an invoice; balance, statements and the dashboard show what is still owed; paid when covered.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 58.1 | Domain: `Payment` (amount in the invoice's currency, date received, reference); `Invoice.AmountPaid`, `Balance()`; `RecordPayment` (open invoices only, 0 < amount ≤ balance; the invoice is paid when the balance reaches 0); `RemovePayment` (a paid invoice opens again as it was: overdue, sent or issued); `MarkPaid` records the balance; void refused while payments are recorded | done | `TestRecordPayment`, `TestPaymentsReachPaidAndReopenAsIssued` |
+| 58.2 | Store: migration 00030 (`invoice_payments`, `invoices.amount_paid_minor`; paid invoices get one payment of their total on their paid date); totals, top debtors and statements count the balance; the paid-per-month figures count payments by the date received; backups take the new table (found by the snapshot) | done | MariaDB 11: `TestPaymentsPersistence`, `TestPaymentsMigrationBackfill` (down to 29 and up), snapshot table list |
+| 58.3 | App + API: `RecordPayment`, `RemovePayment`, `ListPayments`; `POST /invoices/{id}/payments`, `POST /invoices/{id}/payments/{paymentId}/delete` (permission `invoices.pay`, now labelled "Record payments and mark invoices paid"; audited with the amount and balance); the invoice carries `amountPaid` and `balance`, its detail the payments; a payment may not be dated in the future | done | `TestPartPayments` (statement, dashboard, top debtors, paid per month, audit texts), store-failure cases `RecordPayment`/`RemovePayment`, HTTP flow in `TestInvoiceFlow` |
+| 58.4 | Web: **Payments** card on the invoice (record with amount, date and reference; remove with confirmation), "still owed" under the total and in the invoice list; Void disabled while payments are recorded | done | Vitest `InvoiceDetail.test.tsx` (record body, over-balance refused, remove) |
+| 58.5 | The invoice PDF prints **Paid** and **Balance due** under the total and "Amount due" is the balance; the statement PDF's column reads **Owing**; already-paid invoices get their payment in Go migration 00031, dated in the business's time zone (00030 only adds the table and column) and safe to run again | done | `TestRenderVariants` (part-paid PDF), MariaDB `TestPaymentsMigrationBackfill` (paid 23:30 UTC → the next day in Johannesburg; down to 30 and up adds none) |
+| 58.6 | Docs, VERSION 1.35.0 (with M59, M60), signed release, upgrade 10.101.18.101 with a backup first | done | `make check` exit 0 (0 lint issues, domain 96.4 %, app 87.0 %, web 161 tests); end to end with the real binary on a throwaway MariaDB 11: part-payment, account page, PDFs, link tokens logged as `:token`, light and dark at 390 px without sideways scroll |
+
+### M59 — Customer account page (Albie, 2026-11-24) — v1.35.0
+
+> "complete all except credit notes and payment reminders" — from Later: the customer portal / "view invoice" link.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 59.1 | Store: migration 00032 `customer_portal_tokens` (SHA-256 of the token, customer, expiry 90 days) | done | MariaDB `TestPortalTokenPersistence` (found, then expired) |
+| 59.2 | App: a statement e-mail carries **View your account** (text link and HTML button) at the external / public / request address; `GetPortal` (open invoices with total and balance, the latest 20 paid), `PortalStatementPDF`, `PortalInvoicePDF` (own issued invoices only), PDF views audited as the customer's | done | `TestCustomerPortal` (no address no link; draft refused; expired; audit), `TestStatementEmailHTML` |
+| 59.3 | API: `GET /public/accounts/{token}`, `…/statement`, `…/invoices/{invoiceId}/pdf` (no session); statement sends take `linkBase`; the invoice "I have paid" page shows what is still owed | done | HTTP `TestCustomerPortalOverHTTP` (page, PDFs, a draft 404, unknown token 404) |
+| 59.4 | Web: `/a/:token` account page (still owed, unpaid invoices with PDFs, recently paid, statement PDF), mobile-first | done | Vitest `AccountPage.test.tsx` |
+
+### M60 — Tracing, Helm chart, a smaller first download (Albie, 2026-11-24) — v1.35.0
+
+> "complete all except credit notes and payment reminders" — from Later: OpenTelemetry tracing and a Helm chart; and the open build warnings.
+
+| # | Step | Status | Evidence |
+|---|---|---|---|
+| 60.1 | OpenTelemetry: OTLP/HTTP traces when `OTEL_EXPORTER_OTLP_ENDPOINT` is set; a server span per request named after the operation; a span per database transaction; link-token paths neither traced nor logged in full; `deploy.sh`, compose and the k8s manifest pass the endpoint and service name | done | `TestSetupTracing`, `TestTracingNamesSpansAfterOperations`, `TestRedactPath` |
+| 60.2 | Helm chart `deploy/helm/cactusinv` (app, MariaDB, volumes kept on uninstall, optional Mailpit and Ingress, existing or generated Secret); `appVersion` follows VERSION | done | `deploy/helm` tests render every template with the chart's functions and parse every manifest (defaults, options, required values, appVersion) |
+| 60.3 | Web: pages other than the dashboard and invoices load on first use (first download 528 → 314 kB); Sass on the modern compiler API, no deprecation warnings | done | `pnpm build` without warnings; Vitest 161 tests |
+
 ## Decisions
 
 | Date | Decision | Why |
 |---|---|---|
+| 2026-11-24 | The customer account page (M59) opens from a statement e-mail's link only, valid 90 days, read-only; it shows the open invoices and the latest 20 paid ones, never drafts, void invoices or other customers' | a statement already goes to the customer's address; a link that never expires would be a key forever; read-only so a forwarded e-mail can change nothing |
+| 2026-11-24 | Tracing (M60) is off unless an OTLP endpoint is set; spans are named after operations, link-token paths are not traced; the Helm chart is an alternative to `deploy.sh --k8s`, which stays the supported install and upgrade (it backs up first) | no cost or data leaving the server without a collector; tokens are keys; Helm has no pre-upgrade backup |
+| 2026-11-24 | Partial payments (M58): a payment is recorded against an issued invoice only, in its currency, at most the balance (no overpayments or credit), not dated in the future; an invoice with payments cannot be voided until they are removed; removing a payment reopens a paid invoice as it was; Mark paid records the balance as one payment; the paid-per-month figures count payments by the date received (not the paid time); Go migration 00031 gives each already-paid invoice one payment dated the day it was paid in the business's time zone | the owner's "part-payments recorded against an invoice; balance, statements and the dashboard show what is still owed; paid when covered"; no overpayments because there are no credit notes yet; void with money received would hide money taken |
 | 2026-11-16 | A secret is shown after the viewer types **their own** password again (Administrators and Admin settings only), and each view is audited | sharing one admin password would defeat per-user sign-in and the audit trail; re-entering your own proves it is you at the keyboard |
 | 2026-11-16 | Admin settings changes every Settings page and sees the secrets, but not Users & groups, Backup & restore or installing updates (those stay with Administrators) | "any settings" is the settings pages; user management and restore can replace everything, and stay with Administrators. The secrets include admin_password (the first password) and backup_key, so membership is still a position of trust |
 | 2026-11-16 | Container status is what the app can see from inside its container: itself, MariaDB through its connection, the mail server and the Mailpit test mailbox by a network check | the app has no rights over Docker or the cluster (no socket, no service-account token) and must not get them for a status page |
@@ -1151,11 +1188,9 @@ Not changed, and why (also under Open questions): an expired quote can still be 
 
 ## Later
 
-- **Next (owner's choice, 2026-11-14): partial payments** — part-payments recorded against an
-  invoice; balance, statements and the dashboard show what is still owed; paid when covered.
 - Credit notes; payment reminders for overdue invoices (would reuse the outbox + schedules).
-- Customer portal / "view invoice" link.
-- OpenTelemetry tracing; Helm chart. (Users with access groups: M18.)
+  (Partial payments: M58; customer account page: M59; tracing and a Helm chart: M60; users
+  with access groups: M18.)
 
 ## Open questions
 

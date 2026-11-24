@@ -209,7 +209,7 @@ function BulkSend({ open, ids, items, onClose, onDone }: { open: boolean; ids: s
     setBusy(true)
     setErr(null)
     try {
-      const res = await unwrap(api.POST('/statements/send', { body: { customerIds: ids, includeZero } }))
+      const res = await unwrap(api.POST('/statements/send', { body: { customerIds: ids, includeZero, linkBase: window.location.origin } }))
       const name = (id: string) => items.find((s) => s.customerId === id)?.name ?? id
       const skipped = res.skipped.map((s) => `${name(s.customerId)} (${s.reason})`)
       onDone(`${res.queued.length} statement${res.queued.length === 1 ? '' : 's'} queued for e-mail.${skipped.length ? ` Skipped: ${skipped.join(', ')}.` : ''}`)
@@ -266,7 +266,7 @@ export function StatementView() {
     setErr(null)
     setMsg('')
     try {
-      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: {} }))
+      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: { linkBase: window.location.origin } }))
       setMsg('Statement queued for e-mail.')
       history.reload()
     } catch (e) {

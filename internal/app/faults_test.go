@@ -141,6 +141,15 @@ func TestEveryStoreFailureIsReported(t *testing.T) {
 			inv := issued(t, h)
 			return func() error { _, err := h.svc.MarkInvoicePaid(h.ctx, inv.ID); return err }
 		},
+		"RecordPayment": func(t *testing.T, h *harness) func() error {
+			inv := issued(t, h)
+			return func() error { _, err := h.svc.RecordPayment(h.ctx, inv.ID, app.PaymentInput{Amount: 100}); return err }
+		},
+		"RemovePayment": func(t *testing.T, h *harness) func() error {
+			inv := must(h.svc.RecordPayment(h.ctx, issued(t, h).ID, app.PaymentInput{Amount: 100}))
+			p := must(h.svc.ListPayments(h.ctx, inv.ID))[0]
+			return func() error { _, err := h.svc.RemovePayment(h.ctx, inv.ID, p.ID); return err }
+		},
 		"UpdateInvoiceNotes": func(t *testing.T, h *harness) func() error {
 			inv := issued(t, h)
 			return func() error {

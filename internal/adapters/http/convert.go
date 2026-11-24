@@ -256,6 +256,7 @@ func toAPIInvoice(inv *domain.Invoice, mu minorUnits, today domain.Date) Invoice
 			Subtotal: mu.format(inv.Totals.Subtotal, c), Discount: mu.format(inv.Totals.Discount, c),
 			Vat: mu.format(inv.Totals.Tax, c), Total: mu.format(inv.Totals.Total, c),
 		},
+		AmountPaid: mu.format(inv.AmountPaid, c), Balance: mu.format(inv.Balance(), c),
 		Bank: BankDetails{
 			BankName: b.BankName, Branch: b.Branch, BranchCode: b.BranchCode, AccountName: b.AccountName,
 			AccountNumber: b.AccountNumber, AccountType: b.AccountType, SwiftBic: b.SwiftBIC, Iban: b.IBAN,

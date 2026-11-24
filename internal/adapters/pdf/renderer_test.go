@@ -128,9 +128,17 @@ func TestRenderVariants(t *testing.T) {
 		t.Error("void")
 	}
 	paid := reference(t)
-	_ = paid.Invoice.MarkPaid(time.Now())
+	_, _ = paid.Invoice.MarkPaid(domain.DateOf(time.Now()), time.Now())
 	if _, txt := render(t, paid); !strings.Contains(txt, "PAID") {
 		t.Error("paid")
+	}
+	part := reference(t) // a part-payment (M58): paid and the balance under the total
+	pay := domain.Payment{Amount: 100000, ReceivedOn: domain.DateOf(time.Now())}
+	if err := part.Invoice.RecordPayment(&pay, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, txt := render(t, part); !strings.Contains(txt, "Paid\n-1,000.00\nBalance due\nZAR 2,251.16") || !strings.Contains(txt, "Amount due\nZAR 2,251.16") {
+		t.Errorf("part-paid PDF: %q", txt)
 	}
 	overdue := reference(t)
 	_ = overdue.Invoice.MarkOverdue(time.Now())

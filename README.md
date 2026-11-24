@@ -33,6 +33,14 @@ Released into the public domain — see [LICENSE](LICENSE).
   text); each product has a unit cost per currency.
 - **Stages** — draft → issued → e-mailed → paid, or overdue / void, shown as a progress tracker;
   mark invoices paid, overdue or void.
+- **Part-payments** — on an issued invoice, **Payments → Record a payment** takes the amount
+  received (at most what is still owed), the date it came in and an optional reference. The
+  invoice shows what was paid and what is still owed, and becomes paid when the payments cover
+  the total. **Mark paid** records the rest as one payment received today. A payment entered by
+  mistake, or one that bounced, can be removed: a paid invoice opens again. The invoice list,
+  statements, the dashboard and the top debtors count what is still owed, and the paid-per-month
+  figures count payments in the month they were received. An invoice with payments cannot be
+  voided until they are removed. Needs the **Record payments and mark invoices paid** access.
 - **Customer says paid** — an e-mailed invoice that is still unpaid carries a **Mark as paid**
   button (the plain-text version shows the link). It opens a page, without sign-in, with the
   invoice and its PDF, a **note for the business** (when and how they paid, a reference, any
@@ -44,6 +52,13 @@ Released into the public domain — see [LICENSE](LICENSE).
 - **Statements** — a Statements menu with every customer's balance and aging; open any
   customer's full statement, download the PDF, e-mail one or many statements at once, or
   e-mail them on a schedule.
+- **Customer account page** — every statement e-mail carries a **View your account** button
+  (the plain-text version shows the link). It opens a page, without sign-in, with what the
+  customer owes invoice by invoice (part-payments shown), their latest paid invoices, and each
+  invoice and the statement as a PDF. Each link works for 90 days; drafts, void invoices and
+  other customers' invoices are never shown. The link uses the external address in System
+  Settings (or Settings → Quotes), else the address the statement was sent from; a statement
+  e-mailed on a schedule needs one of those set to carry the link.
 - **E-mail server in the app** — Settings → E-mail server, Gmail by default (with an app
   password), test button, and a **Setup guide** with step-by-step instructions for Gmail,
   Outlook / Microsoft 365 and other servers; once saved, the user name and the password are
@@ -843,6 +858,24 @@ deploy, deploy.sh    Docker Compose, k3s/k8s manifests, MariaDB init (restore st
   `Authorization: Bearer <token>`. The token is the `metrics_token` secret (`--install`
   generates it: `SECRETS_DIR/metrics_token`, or that key of `cactusinv-secrets`); without a
   token the endpoint answers 404, and a wrong one 401.
-- Logs are JSON on stdout and never contain e-mail addresses or bank details.
+- Logs are JSON on stdout and never contain e-mail addresses or bank details; the tokens
+  of customers' links are logged as `:token`.
+- **Tracing (OpenTelemetry)** — set `OTEL_EXPORTER_OTLP_ENDPOINT` (e.g.
+  `http://otel-collector:4318`) in `.env.local` or the environment, and the app sends a trace
+  per request (named after the API operation, e.g. `GetInvoice`) with a span per database
+  transaction, over OTLP/HTTP. The other standard `OTEL_*` settings apply
+  (`OTEL_SERVICE_NAME`, default `cactusinv`; `OTEL_EXPORTER_OTLP_HEADERS`;
+  `OTEL_TRACES_SAMPLER`; `OTEL_SDK_DISABLED=true` turns it off). Health checks, `/metrics`
+  and the customers' link pages are not traced. Without an endpoint nothing is sent.
+- **Helm** — `deploy/helm/cactusinv` installs the same pods as `deploy.sh --k8s` (the app,
+  MariaDB 11, optionally Mailpit and an Ingress) for clusters managed with Helm. Build and push
+  the image first, then for example:
+  `helm install cactusinv deploy/helm/cactusinv -n cactusinv --create-namespace --set
+  image.repository=registry.example.com/cactusinv --set-file secrets.appKey=app_key
+  --set secrets.dbPassword=… --set secrets.dbRootPassword=… --set secrets.adminPassword=…`,
+  or point `secrets.existingSecret` at a Secret you made (keys as in `values.yaml`). The
+  volume claims are kept on `helm uninstall`. `deploy.sh` remains the supported way to install
+  and upgrade (with its backup first); the chart has no upgrade backup of its own, so take
+  one in Settings → Backup before `helm upgrade`.
 - CLI inside the container: `/cactusinv migrate up|down`, `/cactusinv admin create <login>`
   and `/cactusinv admin set-password <login>` (password on stdin).

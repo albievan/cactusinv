@@ -1,0 +1,17 @@
+{{- range $name, $size := dict "mariadb-data" .Values.database.storage "invoices" .Values.persistence.invoices "backups" .Values.persistence.backups }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}
+  labels:
+    {{- include "cactusinv.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep   # an uninstall keeps the data
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $.Values.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: { requests: { storage: {{ $size }} } }
+{{- end }}

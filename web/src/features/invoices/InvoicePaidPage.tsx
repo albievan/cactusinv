@@ -68,6 +68,7 @@ export function InvoicePaidPage() {
               </div>
               <div className="text-end">
                 <div className="fs-4 fw-bold" style={tnum}>{formatMoney(inv.total, inv.currency)}</div>
+                {inv.balance && inv.balance !== inv.total && inv.stage !== 'paid' && <div className="small fw-semibold" style={tnum}>{formatMoney(inv.balance, inv.currency)} still owed</div>}
                 <div className="small text-body-secondary">Due {formatDate(inv.dueDate)}</div>
               </div>
             </div>

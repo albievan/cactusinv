@@ -70,3 +70,9 @@ DELETE FROM product_prices WHERE product_id = ?;
 
 -- name: InsertProductPrice :exec
 INSERT INTO product_prices (product_id, currency_code, unit_price_minor) VALUES (?, ?, ?);
+
+-- name: InsertCustomerPortalToken :exec
+INSERT INTO customer_portal_tokens (token_hash, customer_id, created_at, expires_at) VALUES (?, ?, ?, ?);
+
+-- name: GetCustomerIDByPortalToken :one
+SELECT customer_id FROM customer_portal_tokens WHERE token_hash = ? AND expires_at > ?;

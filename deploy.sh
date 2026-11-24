@@ -262,6 +262,8 @@ load_env
 [[ "${MARIADB_DATABASE:-}" =~ ^[A-Za-z0-9_]{1,57}$ ]] || die "MARIADB_DATABASE must be 1-57 letters, digits or _"
 [[ "${MARIADB_USER:-}" =~ ^[A-Za-z0-9_]{1,80}$ ]] || die "MARIADB_USER must be 1-80 letters, digits or _"
 export CACTUSINV_UPDATE_URL="${CACTUSINV_UPDATE_URL:-}" # (an older .env has none; the manifest names it)
+# OpenTelemetry tracing (M60): off unless an OTLP endpoint is set (in .env.local or the environment).
+export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-}" OTEL_SERVICE_NAME="${OTEL_SERVICE_NAME:-cactusinv}"
 
 
 # Release version (VERSION file) and build number (commit count) shown in the app.

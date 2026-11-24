@@ -702,6 +702,7 @@ paths:
               properties:
                 customerIds: { type: array, minItems: 1, maxItems: 500, items: { type: string } }
                 includeZero: { type: boolean, description: Also e-mail customers who owe nothing. }
+                linkBase: { type: string, maxLength: 300, description: 'The address the request came from, for the account link (M59) when System Settings name no external address.' }
       responses:
         '202':
           description: Statement e-mails queued; customers that were skipped say why.
@@ -907,9 +908,55 @@ paths:
     post:
       tags: [invoices]
       operationId: markInvoicePaid
+      description: >-
+        Records the balance still owed (after any part-payments) as one payment received
+        today, and the invoice paid. Audited as invoice.paid with the amount.
       responses:
         '200':
           description: Marked paid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/payments:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [invoices]
+      operationId: recordPayment
+      description: >-
+        Records money received against an issued, unpaid invoice (M58): more than 0 and at
+        most the balance, received on a date that is not in the future (today when left
+        out). When the payments cover the total the invoice is paid. Audited as
+        invoice.payment_recorded with the amount and the balance.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentRequest' }
+      responses:
+        '200':
+          description: Recorded; the invoice with its new balance.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        default: { $ref: '#/components/responses/Problem' }
+  /invoices/{id}/payments/{paymentId}/delete:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - name: paymentId
+        in: path
+        required: true
+        schema: { type: string, maxLength: 64 }
+    post:
+      tags: [invoices]
+      operationId: removePayment
+      description: >-
+        Takes a payment off an invoice (entered by mistake, or it bounced). A paid invoice
+        opens again. Audited as invoice.payment_removed with the amount and the balance.
+      responses:
+        '200':
+          description: Removed; the invoice with its new balance.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
@@ -1196,6 +1243,60 @@ paths:
       responses:
         '200':
           description: The invoice as a PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+  # The customer's account page through the link in a statement e-mail (M59): no sign-in;
+  # the e-mail's random token is the only key (90 days), and opening it changes nothing.
+  /public/accounts/{token}:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getPortal
+      security: []
+      responses:
+        '200':
+          description: What the customer owes, invoice by invoice, and their latest paid invoices.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Portal' }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/accounts/{token}/statement:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+    get:
+      tags: [public]
+      operationId: getPortalStatementPdf
+      security: []
+      responses:
+        '200':
+          description: The statement as of today, as a PDF.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        default: { $ref: '#/components/responses/Problem' }
+  /public/accounts/{token}/invoices/{invoiceId}/pdf:
+    parameters:
+      - { $ref: '#/components/parameters/ResponseToken' }
+      - name: invoiceId
+        in: path
+        required: true
+        schema: { type: string, maxLength: 64 }
+    get:
+      tags: [public]
+      operationId: getPortalInvoicePdf
+      security: []
+      responses:
+        '200':
+          description: One of the customer's issued invoices as a PDF (not a draft or a void one).
           headers:
             Content-Disposition:
               schema: { type: string }
@@ -2752,7 +2853,7 @@ components:
         version: { type: integer, description: Required on update. }
     Invoice:
       type: object
-      required: [id, status, stage, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, vatPercent, lines, totals, bank, overdue, createdAt, updatedAt, version]
+      required: [id, status, stage, customerId, currency, issueDate, paymentTerms, header, billTo, shipTo, notes, vatPercent, lines, totals, amountPaid, balance, bank, overdue, createdAt, updatedAt, version]
       properties:
         id: { type: string }
         number: { type: string }
@@ -2770,6 +2871,8 @@ components:
         vatPercent: { $ref: '#/components/schemas/Decimal' }
         lines: { type: array, items: { $ref: '#/components/schemas/Line' } }
         totals: { $ref: '#/components/schemas/Totals' }
+        amountPaid: { $ref: '#/components/schemas/Decimal' } # the payments recorded (M58)
+        balance: { $ref: '#/components/schemas/Decimal' } # still owed: the total less the payments
         bank: { $ref: '#/components/schemas/BankDetails' }
         scheduleId: { type: string }
         overdue: { type: boolean }
@@ -2821,11 +2924,28 @@ components:
         reason: { type: string }
     InvoiceDetail:
       type: object
-      required: [invoice, events, emails]
+      required: [invoice, events, emails, payments]
       properties:
         invoice: { $ref: '#/components/schemas/Invoice' }
         events: { type: array, items: { $ref: '#/components/schemas/InvoiceEvent' } }
         emails: { type: array, items: { $ref: '#/components/schemas/EmailMessage' } }
+        payments: { type: array, items: { $ref: '#/components/schemas/Payment' }, description: Oldest received first. }
+    Payment:
+      type: object
+      required: [id, amount, receivedOn, reference, createdAt]
+      properties:
+        id: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        receivedOn: { type: string, format: date }
+        reference: { type: string }
+        createdAt: { type: string, format: date-time }
+    PaymentRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { $ref: '#/components/schemas/Decimal' }
+        receivedOn: { type: string, format: date, x-go-type-skip-optional-pointer: false, description: Today when left out. }
+        reference: { type: string, maxLength: 200, description: 'The customer''s reference or a note, e.g. "EFT 4411".' }
     InvoiceList:
       type: object
       required: [items, total]
@@ -2994,7 +3114,7 @@ components:
         subject: { type: string, maxLength: 300 }
         body: { type: string, maxLength: 20000 }
         sendAt: { type: string, format: date-time, description: Omit to send now., x-go-type-skip-optional-pointer: false }
-        linkBase: { type: string, maxLength: 300, description: 'Quotes and invoices: the address the request came from (e.g. https://invoices.example.com), for the Accept and Decline links when Settings → Quotes names no public address (M41).' }
+        linkBase: { type: string, maxLength: 300, description: 'Quotes, invoices and statements: the address the request came from (e.g. https://invoices.example.com), for the links in the e-mail (Accept and Decline, I have paid, the account page) when no public address is set (M41, M42, M59).' }
 
     EmailStatus:
       type: string
@@ -3247,7 +3367,7 @@ components:
     InvoiceResponse:
       type: object
       description: What the customer's "I have paid" page shows for an invoice e-mail link (M42).
-      required: [number, businessName, businessEmail, billToName, currency, issueDate, dueDate, total, stage, canMark]
+      required: [number, businessName, businessEmail, billToName, currency, issueDate, dueDate, total, balance, stage, canMark]
       properties:
         number: { type: string }
         businessName: { type: string }
@@ -3257,10 +3377,37 @@ components:
         issueDate: { type: string, format: date }
         dueDate: { type: string, format: date }
         total: { type: string }
+        balance: { type: string, description: Still owed after the payments recorded (M58). }
         stage: { $ref: '#/components/schemas/InvoiceStage' }
         canMark: { type: boolean, description: Whether the customer may still say they paid it. }
         customerPaidAt: { type: string, format: date-time, x-go-type-skip-optional-pointer: false }
         customerPaidNote: { type: string }
+    Portal:
+      type: object
+      description: The customer's account page for a statement e-mail link (M59).
+      required: [customerName, businessName, businessEmail, currency, asOf, balance, aging, open, paid]
+      properties:
+        customerName: { type: string }
+        businessName: { type: string }
+        businessEmail: { type: string }
+        currency: { type: string }
+        asOf: { type: string, format: date }
+        balance: { type: string, description: Still owed in all. }
+        aging: { $ref: '#/components/schemas/Aging' }
+        open: { type: array, items: { $ref: '#/components/schemas/PortalInvoice' }, description: Unpaid invoices, oldest first. }
+        paid: { type: array, items: { $ref: '#/components/schemas/PortalInvoice' }, description: The latest paid invoices, newest first. }
+    PortalInvoice:
+      type: object
+      required: [id, number, issueDate, dueDate, total, balance, stage, daysOverdue]
+      properties:
+        id: { type: string }
+        number: { type: string }
+        issueDate: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        total: { type: string }
+        balance: { type: string }
+        stage: { $ref: '#/components/schemas/InvoiceStage' }
+        daysOverdue: { type: integer }
     QuoteResponse:
       type: object
       description: What the customer's page shows for a quote e-mail link (M41).

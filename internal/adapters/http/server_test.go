@@ -325,10 +325,27 @@ func TestInvoicingFlowOverHTTP(t *testing.T) {
 	if inv.Status != "overdue" || inv.Stage != "overdue" || inv.OverdueAt == nil {
 		t.Fatalf("overdue = %+v", inv)
 	}
+	// A part-payment (M58), one too many, then the rest by mark-paid.
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments", obj{"amount": "1000.005"}, &p), 422, "too many decimals")
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments", obj{"amount": "1000", "receivedOn": "2026-08-20", "reference": "EFT 1"}, &inv), 200, "part-payment")
+	if inv.AmountPaid != "1000.00" || inv.Balance != "2251.16" || inv.Status != "overdue" {
+		t.Fatalf("part-paid = %s %s %s", inv.AmountPaid, inv.Balance, inv.Status)
+	}
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments", obj{"amount": "2251.17"}, &p), 422, "more than the balance")
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/mark-paid", nil, &inv), 200, "paid")
-	if inv.Stage != "paid" {
+	if inv.Stage != "paid" || inv.Balance != "0.00" {
 		t.Fatal("stage paid")
 	}
+	c.ok(c.do("GET", "/api/v1/invoices/"+inv.Id, nil, &detail), 200, "detail with payments")
+	if len(detail.Payments) != 2 || detail.Payments[0].Reference != "EFT 1" || detail.Payments[0].ReceivedOn.String() != "2026-08-20" || detail.Payments[1].Amount != "2251.16" {
+		t.Fatalf("payments = %+v", detail.Payments)
+	}
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments/nope/delete", nil, &p), 404, "unknown payment")
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments/"+detail.Payments[1].Id+"/delete", nil, &inv), 200, "remove payment")
+	if inv.Status != "overdue" || inv.Balance != "2251.16" {
+		t.Fatalf("reopened = %s %s", inv.Status, inv.Balance)
+	}
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/mark-paid", nil, &inv), 200, "paid again")
 	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/void", obj{"reason": "x"}, &p), 409, "void paid")
 
 	// A second invoice, voided.

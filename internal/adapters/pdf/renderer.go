@@ -394,6 +394,22 @@ func (p *page) totals(top float64, rows [][2]string, grandLabel, grandValue stri
 	return y + 12
 }
 
+// paidRows draws "Paid" and "Balance due" under the totals box and returns their bottom.
+func (p *page) paidRows(top float64, paid, balance string) float64 {
+	x0 := pageW - margin - 80
+	y := top + 3
+	p.font("", 9)
+	p.color(muted)
+	p.text(x0+3, y, "Paid")
+	p.color(ink)
+	p.textRight(pageW-margin-3, y, "-"+paid)
+	y += 5.5
+	p.font("B", 10)
+	p.text(x0+3, y, "Balance due")
+	p.textRight(pageW-margin-3, y, balance)
+	return y + 3
+}
+
 // payment draws the bank-details card and returns its bottom. Values wrap within the
 // card; a row without a label (a message) spans the full card width.
 func (p *page) payment(top, x, w float64, b domain.BankDetails, reference string) float64 {
@@ -624,7 +640,7 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 		{"Invoice no.", number},
 		{"Date", inv.IssueDate.Long()},
 		{"Due", due},
-		{"Amount due", string(inv.Currency) + " " + p.money(inv.Totals.Total)},
+		{"Amount due", string(inv.Currency) + " " + p.money(inv.Balance())}, // after part-payments (M58)
 	}
 	terms := inv.TermsText
 	if terms == "" {
@@ -661,11 +677,14 @@ func (r Renderer) RenderPDF(_ context.Context, doc ports.InvoiceDocument) ([]byt
 	if inv.TaxRate > 0 {
 		rows = append(rows, [2]string{"VAT " + inv.TaxRate.String() + "%", p.money(t.Tax)})
 	}
-	if y+float64(len(rows))*5.5+66 > bodyBottom {
+	if y+float64(len(rows))*5.5+77 > bodyBottom {
 		p.newPage()
 		y = 20
 	}
 	totalsBottom := p.totals(y+2, rows, "Total "+string(inv.Currency), p.money(t.Total))
+	if inv.AmountPaid > 0 { // part-payments (M58): what was received and what is still owed
+		totalsBottom = p.paidRows(totalsBottom, p.money(inv.AmountPaid), string(inv.Currency)+" "+p.money(inv.Balance()))
+	}
 	payBottom := p.payment(y+4, margin, contentW-90, inv.Bank, inv.Number)
 	p.notes(max(totalsBottom, payBottom)+5, inv.Notes, doc.Disclaimer)
 	if inv.Status == domain.InvoiceVoid && inv.VoidReason != "" {
@@ -809,7 +828,7 @@ func (r Renderer) RenderStatement(_ context.Context, doc ports.StatementDocument
 		{"Account", st.Customer.Code},
 		{"Balance due", string(st.Currency) + " " + p.money(st.Total)},
 	}
-	cols := []column{{"Invoice", 40, "L"}, {"Date", 34, "L"}, {"Due", 34, "L"}, {"Days overdue", 26, "R"}, {"Amount", contentW - 134, "R"}}
+	cols := []column{{"Invoice", 40, "L"}, {"Date", 34, "L"}, {"Due", 34, "L"}, {"Days overdue", 26, "R"}, {"Owing", contentW - 134, "R"}}
 	lines := st.Lines
 	for first := true; first || len(lines) > 0; first = false {
 		var y float64

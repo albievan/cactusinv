@@ -177,7 +177,7 @@ function StatementPanel({ customerId }: { customerId: string }) {
     setErr(null)
     setMsg('')
     try {
-      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: {} }))
+      await unwrap(api.POST('/customers/{id}/statement/send', { params: { path: { id: customerId }, header: { 'Idempotency-Key': uuid() } }, body: { linkBase: window.location.origin } }))
       setMsg('Statement queued for e-mail.')
       reload()
     } catch (e) {

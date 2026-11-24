@@ -82,6 +82,13 @@ type state struct {
 	quoteTokens map[string]string // response token hash → quote ID
 	invTokens   map[string]string // invoice "I have paid" token hash → invoice ID
 	resets      map[string]domain.PasswordReset
+	payments    map[string]domain.Payment // invoice payments by ID (M58)
+	portal      map[string]portalToken    // account-link token hash → customer (M59)
+}
+
+type portalToken struct {
+	customerID string
+	expires    time.Time
 }
 
 func newState() *state {
@@ -97,6 +104,7 @@ func newState() *state {
 		sessions: map[string]domain.Session{}, idempotency: map[string]ports.IdempotencyRecord{},
 		exported: map[string]int{}, quotes: map[string]domain.Quote{}, adhoc: map[string]domain.AdhocCustomer{}, quoteSeq: 1,
 		quoteTokens: map[string]string{}, invTokens: map[string]string{}, resets: map[string]domain.PasswordReset{},
+		payments: map[string]domain.Payment{}, portal: map[string]portalToken{},
 	}
 }
 
@@ -127,6 +135,8 @@ func (s *state) clone() *state {
 	c.quoteTokens = maps.Clone(s.quoteTokens)
 	c.invTokens = maps.Clone(s.invTokens)
 	c.resets = maps.Clone(s.resets)
+	c.payments = maps.Clone(s.payments)
+	c.portal = maps.Clone(s.portal)
 	if s.quoteSet != nil {
 		q := *s.quoteSet
 		c.quoteSet = &q
@@ -491,6 +501,32 @@ func (r customers) Update(_ context.Context, c domain.Customer) error {
 	})
 }
 
+func (r customers) AddPortalToken(_ context.Context, customerID, tokenHash string, _, expires time.Time) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.customers[customerID]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, dup := st.portal[tokenHash]; dup {
+			return domain.ErrConflict
+		}
+		st.portal[tokenHash] = portalToken{customerID: customerID, expires: expires}
+		return nil
+	})
+}
+
+func (r customers) CustomerIDByPortalToken(_ context.Context, tokenHash string, now time.Time) (string, error) {
+	var id string
+	err := r.s.do(func(st *state) error {
+		t, ok := st.portal[tokenHash]
+		if _, live := st.customers[t.customerID]; !ok || !live || !now.Before(t.expires) {
+			return domain.ErrNotFound
+		}
+		id = t.customerID
+		return nil
+	})
+	return id, err
+}
+
 func (r customers) Delete(_ context.Context, id string) error {
 	return r.s.do(func(st *state) error {
 		if _, ok := st.customers[id]; !ok {
@@ -756,12 +792,75 @@ func (r invoices) InvoiceIDByResponseToken(_ context.Context, tokenHash string) 
 	return id, err
 }
 
+func (r invoices) AddPayment(_ context.Context, p domain.Payment) error {
+	return r.s.do(func(st *state) error {
+		if _, ok := st.invoices[p.InvoiceID]; !ok {
+			return domain.ErrNotFound
+		}
+		if _, dup := st.payments[p.ID]; dup {
+			return domain.ErrConflict
+		}
+		st.payments[p.ID] = p
+		return nil
+	})
+}
+
+func (r invoices) ListPayments(_ context.Context, invoiceID string) ([]domain.Payment, error) {
+	var out []domain.Payment
+	err := r.s.do(func(st *state) error {
+		for _, p := range st.payments {
+			if p.InvoiceID == invoiceID {
+				out = append(out, p)
+			}
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].ReceivedOn != out[j].ReceivedOn {
+				return out[i].ReceivedOn.Before(out[j].ReceivedOn)
+			}
+			if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+				return out[i].CreatedAt.Before(out[j].CreatedAt)
+			}
+			return out[i].ID < out[j].ID
+		})
+		return nil
+	})
+	return out, err
+}
+
+func (r invoices) GetPayment(_ context.Context, invoiceID, paymentID string) (domain.Payment, error) {
+	var out domain.Payment
+	err := r.s.do(func(st *state) error {
+		p, ok := st.payments[paymentID]
+		if !ok || p.InvoiceID != invoiceID {
+			return domain.ErrNotFound
+		}
+		out = p
+		return nil
+	})
+	return out, err
+}
+
+func (r invoices) DeletePayment(_ context.Context, invoiceID, paymentID string) error {
+	return r.s.do(func(st *state) error {
+		if p, ok := st.payments[paymentID]; !ok || p.InvoiceID != invoiceID {
+			return domain.ErrNotFound
+		}
+		delete(st.payments, paymentID)
+		return nil
+	})
+}
+
 func (r invoices) Delete(_ context.Context, id string) error {
 	return r.s.do(func(st *state) error {
 		if _, ok := st.invoices[id]; !ok {
 			return domain.ErrNotFound
 		}
 		delete(st.invoices, id)
+		for pid, p := range st.payments { // ON DELETE CASCADE
+			if p.InvoiceID == id {
+				delete(st.payments, pid)
+			}
+		}
 		for qid, q := range st.quotes { // quotes.invoice_id ON DELETE SET NULL
 			if q.InvoiceID == id {
 				q.InvoiceID = ""
@@ -786,10 +885,10 @@ func (r invoices) Totals(_ context.Context, today domain.Date) ([]ports.Currency
 				by[inv.Currency] = t
 			}
 			t.OpenCount++
-			t.Outstanding += inv.Totals.Total
+			t.Outstanding += inv.Balance()
 			if inv.IsOverdue(today) {
 				t.OverdueCount++
-				t.Overdue += inv.Totals.Total
+				t.Overdue += inv.Balance()
 			}
 		}
 		for _, t := range by {
@@ -853,7 +952,7 @@ func (r invoices) MarkExported(_ context.Context, id string, version int) error 
 	})
 }
 
-func (r invoices) Monthly(_ context.Context, since domain.Date, loc *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+func (r invoices) Monthly(_ context.Context, since domain.Date, _ *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
 	var inv, paid []ports.MonthTotal
 	err := r.s.do(func(st *state) error {
 		add := func(list *[]ports.MonthTotal, c domain.CurrencyCode, month string, amt int64) {
@@ -870,8 +969,10 @@ func (r invoices) Monthly(_ context.Context, since domain.Date, loc *time.Locati
 			if x.Status != domain.InvoiceDraft && x.Status != domain.InvoiceVoid && !x.IssueDate.Before(since) {
 				add(&inv, x.Currency, x.IssueDate.Time(time.UTC).Format("2006-01"), x.Totals.Total)
 			}
-			if x.Status == domain.InvoicePaid && !x.PaidAt.Before(since.Time(loc)) {
-				add(&paid, x.Currency, x.PaidAt.In(loc).Format("2006-01"), x.Totals.Total)
+		}
+		for _, p := range st.payments { // by the month received, as MonthlyPaid
+			if x, ok := st.invoices[p.InvoiceID]; ok && x.Status != domain.InvoiceVoid && !p.ReceivedOn.Before(since) {
+				add(&paid, x.Currency, p.ReceivedOn.Time(time.UTC).Format("2006-01"), p.Amount)
 			}
 		}
 		less := func(l []ports.MonthTotal) {
@@ -898,7 +999,7 @@ func (r invoices) TopDebtors(_ context.Context, limit int) ([]ports.Debtor, erro
 				d = &ports.Debtor{CustomerID: x.CustomerID, Name: st.customers[x.CustomerID].Name, Currency: x.Currency}
 				by[k] = d
 			}
-			d.Outstanding += x.Totals.Total
+			d.Outstanding += x.Balance()
 			d.OpenCount++
 		}
 		for _, d := range by {

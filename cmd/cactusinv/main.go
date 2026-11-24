@@ -252,6 +252,17 @@ func (noMailer) Send(context.Context, ports.Mail) error {
 }
 
 func serve(ctx context.Context, cfg config, log *slog.Logger) error {
+	stopTracing, err := setupTracing(ctx, os.Getenv, log)
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
+	}
+	defer func() {
+		flush, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := stopTracing(flush); err != nil {
+			log.Warn("tracing: flush at shutdown failed", "err", err)
+		}
+	}()
 	db, err := openDB(ctx, cfg)
 	if err != nil {
 		return err

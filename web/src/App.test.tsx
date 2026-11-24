@@ -96,7 +96,7 @@ test('the statements page lists balances and e-mails selected statements', async
   await userEvent.click(screen.getByRole('button', { name: /E-mail 1 statement/ }))
   await userEvent.click(screen.getByRole('button', { name: 'E-mail 1' }))
   expect(await screen.findByText('1 statement queued for e-mail.')).toBeInTheDocument()
-  expect(sent).toEqual({ customerIds: ['a'], includeZero: false })
+  expect(sent).toEqual({ customerIds: ['a'], includeZero: false, linkBase: window.location.origin })
   window.history.pushState({}, '', '/')
 })
 

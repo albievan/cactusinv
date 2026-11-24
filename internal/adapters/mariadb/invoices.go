@@ -24,11 +24,12 @@ func toInvoice(r sqlcgen.Invoice) *domain.Invoice {
 			SalesPerson: r.SalesPerson, Job: r.Job, ShippingMethod: r.ShippingMethod, ShippingTerms: r.ShippingTerms,
 			DeliveryDate: fromNullDate(r.DeliveryDate),
 		},
-		BillTo:  domain.Party{Name: r.BillToName, Address: r.BillToAddress, Attention: r.BillToAttention},
-		ShipTo:  domain.Party{Name: r.ShipToName, Address: r.ShipToAddress},
-		Notes:   r.Notes,
-		TaxRate: domain.BasisPoints(r.TaxRateBp),
-		Totals:  domain.Totals{Subtotal: r.SubtotalMinor, Discount: r.DiscountMinor, Tax: r.TaxMinor, Total: r.TotalMinor},
+		BillTo:     domain.Party{Name: r.BillToName, Address: r.BillToAddress, Attention: r.BillToAttention},
+		ShipTo:     domain.Party{Name: r.ShipToName, Address: r.ShipToAddress},
+		Notes:      r.Notes,
+		TaxRate:    domain.BasisPoints(r.TaxRateBp),
+		Totals:     domain.Totals{Subtotal: r.SubtotalMinor, Discount: r.DiscountMinor, Tax: r.TaxMinor, Total: r.TotalMinor},
+		AmountPaid: r.AmountPaidMinor,
 		Bank: domain.BankDetails{
 			BankName: r.BankName, Branch: r.BankBranch, BranchCode: r.BankBranchCode, AccountName: r.BankAccountName,
 			AccountNumber: r.BankAccountNumber, AccountType: r.BankAccountType, SwiftBIC: r.BankSwiftBic, IBAN: r.BankIban,
@@ -118,7 +119,7 @@ func (r invoiceRepo) Update(ctx context.Context, inv *domain.Invoice) error {
 		DeliveryDate: nullDate(inv.Header.DeliveryDate), BillToName: inv.BillTo.Name, BillToAddress: inv.BillTo.Address,
 		BillToAttention: inv.BillTo.Attention, ShipToName: inv.ShipTo.Name, ShipToAddress: inv.ShipTo.Address,
 		Notes: inv.Notes, TaxRateBp: i32(int(inv.TaxRate)), SubtotalMinor: inv.Totals.Subtotal,
-		DiscountMinor: inv.Totals.Discount, TaxMinor: inv.Totals.Tax, TotalMinor: inv.Totals.Total,
+		DiscountMinor: inv.Totals.Discount, TaxMinor: inv.Totals.Tax, TotalMinor: inv.Totals.Total, AmountPaidMinor: inv.AmountPaid,
 		BankName: inv.Bank.BankName, BankBranch: inv.Bank.Branch, BankBranchCode: inv.Bank.BranchCode,
 		BankAccountName: inv.Bank.AccountName, BankAccountNumber: inv.Bank.AccountNumber,
 		BankAccountType: inv.Bank.AccountType, BankSwiftBic: inv.Bank.SwiftBIC, BankIban: inv.Bank.IBAN,
@@ -225,12 +226,12 @@ func (r invoiceRepo) MarkExported(ctx context.Context, id string, version int) e
 	}))
 }
 
-func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date, loc *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
+func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date, _ *time.Location) ([]ports.MonthTotal, []ports.MonthTotal, error) {
 	inv, err := r.q.MonthlyInvoiced(ctx, nullDate(since))
 	if err != nil {
 		return nil, nil, mapErr(err)
 	}
-	paid, err := r.q.MonthlyPaidRows(ctx, nullTime(since.Time(loc)))
+	paid, err := r.q.MonthlyPaid(ctx, since.Time(time.UTC))
 	if err != nil {
 		return nil, nil, mapErr(err)
 	}
@@ -238,22 +239,9 @@ func (r invoiceRepo) Monthly(ctx context.Context, since domain.Date, loc *time.L
 	for _, x := range inv {
 		a = append(a, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
 	}
-	// Paid months in the business's zone: a payment at 00:30 on the 1st is that month's.
-	idx := map[string]int{}
+	// Payments count in the month they were received (a date: no time zone to apply).
 	for _, x := range paid {
-		if !x.PaidAt.Valid {
-			continue
-		}
-		month := x.PaidAt.Time.In(loc).Format("2006-01")
-		k := x.CurrencyCode + "|" + month
-		i, ok := idx[k]
-		if !ok {
-			i = len(b)
-			idx[k] = i
-			b = append(b, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: month})
-		}
-		b[i].Total += x.TotalMinor
-		b[i].Count++
+		b = append(b, ports.MonthTotal{Currency: domain.CurrencyCode(x.CurrencyCode), Month: monthString(x.Month), Total: x.Total, Count: int(x.Count)})
 	}
 	sort.Slice(b, func(i, j int) bool {
 		if b[i].Month != b[j].Month {
@@ -293,4 +281,43 @@ func (r invoiceRepo) TopDebtors(ctx context.Context, limit int) ([]ports.Debtor,
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Currency < out[j].Currency })
 	return out, nil
+}
+
+func toPayment(r sqlcgen.InvoicePayment) domain.Payment {
+	return domain.Payment{
+		ID: r.ID, InvoiceID: r.InvoiceID, Amount: r.AmountMinor, ReceivedOn: fromDate(r.ReceivedOn),
+		Reference: r.Reference, CreatedAt: r.CreatedAt.UTC(),
+	}
+}
+
+func (r invoiceRepo) AddPayment(ctx context.Context, p domain.Payment) error {
+	return mapErr(r.q.InsertInvoicePayment(ctx, sqlcgen.InsertInvoicePaymentParams{
+		ID: p.ID, InvoiceID: p.InvoiceID, AmountMinor: p.Amount, ReceivedOn: p.ReceivedOn.Time(time.UTC),
+		Reference: p.Reference, CreatedAt: p.CreatedAt.UTC(),
+	}))
+}
+
+func (r invoiceRepo) ListPayments(ctx context.Context, invoiceID string) ([]domain.Payment, error) {
+	rows, err := r.q.ListInvoicePayments(ctx, invoiceID)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	out := make([]domain.Payment, len(rows))
+	for i, row := range rows {
+		out[i] = toPayment(row)
+	}
+	return out, nil
+}
+
+func (r invoiceRepo) GetPayment(ctx context.Context, invoiceID, paymentID string) (domain.Payment, error) {
+	row, err := r.q.GetInvoicePayment(ctx, sqlcgen.GetInvoicePaymentParams{InvoiceID: invoiceID, ID: paymentID})
+	if err != nil {
+		return domain.Payment{}, mapErr(err)
+	}
+	return toPayment(row), nil
+}
+
+func (r invoiceRepo) DeletePayment(ctx context.Context, invoiceID, paymentID string) error {
+	n, err := r.q.DeleteInvoicePayment(ctx, sqlcgen.DeleteInvoicePaymentParams{InvoiceID: invoiceID, ID: paymentID})
+	return affected(n, err, domain.ErrNotFound)
 }

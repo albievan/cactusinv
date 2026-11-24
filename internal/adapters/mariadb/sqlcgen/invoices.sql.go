@@ -90,8 +90,25 @@ func (q *Queries) DeleteInvoiceLines(ctx context.Context, invoiceID string) erro
 	return err
 }
 
+const deleteInvoicePayment = `-- name: DeleteInvoicePayment :execrows
+DELETE FROM invoice_payments WHERE invoice_id = ? AND id = ?
+`
+
+type DeleteInvoicePaymentParams struct {
+	InvoiceID string
+	ID        string
+}
+
+func (q *Queries) DeleteInvoicePayment(ctx context.Context, arg DeleteInvoicePaymentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteInvoicePayment, arg.InvoiceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getInvoice = `-- name: GetInvoice :one
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes, customer_paid_at, customer_paid_note FROM invoices WHERE id = ?
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes, customer_paid_at, customer_paid_note, amount_paid_minor FROM invoices WHERE id = ?
 `
 
 func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
@@ -146,6 +163,7 @@ func (q *Queries) GetInvoice(ctx context.Context, id string) (Invoice, error) {
 		&i.Notes,
 		&i.CustomerPaidAt,
 		&i.CustomerPaidNote,
+		&i.AmountPaidMinor,
 	)
 	return i, err
 }
@@ -159,6 +177,29 @@ func (q *Queries) GetInvoiceIDByResponseToken(ctx context.Context, tokenHash str
 	var invoice_id string
 	err := row.Scan(&invoice_id)
 	return invoice_id, err
+}
+
+const getInvoicePayment = `-- name: GetInvoicePayment :one
+SELECT id, invoice_id, amount_minor, received_on, reference, created_at FROM invoice_payments WHERE invoice_id = ? AND id = ?
+`
+
+type GetInvoicePaymentParams struct {
+	InvoiceID string
+	ID        string
+}
+
+func (q *Queries) GetInvoicePayment(ctx context.Context, arg GetInvoicePaymentParams) (InvoicePayment, error) {
+	row := q.db.QueryRowContext(ctx, getInvoicePayment, arg.InvoiceID, arg.ID)
+	var i InvoicePayment
+	err := row.Scan(
+		&i.ID,
+		&i.InvoiceID,
+		&i.AmountMinor,
+		&i.ReceivedOn,
+		&i.Reference,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const insertInvoice = `-- name: InsertInvoice :exec
@@ -300,6 +341,31 @@ func (q *Queries) InsertInvoiceLine(ctx context.Context, arg InsertInvoiceLinePa
 	return err
 }
 
+const insertInvoicePayment = `-- name: InsertInvoicePayment :exec
+INSERT INTO invoice_payments (id, invoice_id, amount_minor, received_on, reference, created_at) VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertInvoicePaymentParams struct {
+	ID          string
+	InvoiceID   string
+	AmountMinor int64
+	ReceivedOn  time.Time
+	Reference   string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) InsertInvoicePayment(ctx context.Context, arg InsertInvoicePaymentParams) error {
+	_, err := q.db.ExecContext(ctx, insertInvoicePayment,
+		arg.ID,
+		arg.InvoiceID,
+		arg.AmountMinor,
+		arg.ReceivedOn,
+		arg.Reference,
+		arg.CreatedAt,
+	)
+	return err
+}
+
 const insertInvoiceResponseToken = `-- name: InsertInvoiceResponseToken :exec
 INSERT INTO invoice_response_tokens (token_hash, invoice_id, created_at) VALUES (?, ?, ?)
 `
@@ -318,9 +384,9 @@ func (q *Queries) InsertInvoiceResponseToken(ctx context.Context, arg InsertInvo
 const invoiceTotals = `-- name: InvoiceTotals :many
 SELECT currency_code,
        CAST(COUNT(*) AS SIGNED) AS open_count,
-       CAST(SUM(total_minor) AS SIGNED) AS outstanding,
+       CAST(SUM(total_minor - amount_paid_minor) AS SIGNED) AS outstanding,
        CAST(SUM(CASE WHEN status = 'overdue' OR due_date < ? THEN 1 ELSE 0 END) AS SIGNED) AS overdue_count,
-       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < ? THEN total_minor ELSE 0 END) AS SIGNED) AS overdue
+       CAST(SUM(CASE WHEN status = 'overdue' OR due_date < ? THEN total_minor - amount_paid_minor ELSE 0 END) AS SIGNED) AS overdue
 FROM invoices
 WHERE status IN ('issued', 'sent', 'overdue')
 GROUP BY currency_code
@@ -404,8 +470,42 @@ func (q *Queries) ListInvoiceLines(ctx context.Context, invoiceID string) ([]Inv
 	return items, nil
 }
 
+const listInvoicePayments = `-- name: ListInvoicePayments :many
+SELECT id, invoice_id, amount_minor, received_on, reference, created_at FROM invoice_payments WHERE invoice_id = ? ORDER BY received_on, created_at, id
+`
+
+func (q *Queries) ListInvoicePayments(ctx context.Context, invoiceID string) ([]InvoicePayment, error) {
+	rows, err := q.db.QueryContext(ctx, listInvoicePayments, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []InvoicePayment{}
+	for rows.Next() {
+		var i InvoicePayment
+		if err := rows.Scan(
+			&i.ID,
+			&i.InvoiceID,
+			&i.AmountMinor,
+			&i.ReceivedOn,
+			&i.Reference,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listInvoices = `-- name: ListInvoices :many
-SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes, customer_paid_at, customer_paid_note FROM invoices
+SELECT id, number, status, customer_id, currency_code, issue_date, due_date, terms_kind, terms_value, terms_text, sales_person, job, shipping_method, shipping_terms, delivery_date, bill_to_name, bill_to_address, bill_to_attention, ship_to_name, ship_to_address, tax_rate_bp, subtotal_minor, discount_minor, tax_minor, total_minor, bank_name, bank_branch, bank_branch_code, bank_account_name, bank_account_number, bank_account_type, bank_swift_bic, bank_iban, schedule_id, issued_at, sent_at, paid_at, voided_at, void_reason, created_at, updated_at, version, exported_version, overdue_at, bank_country, notes, customer_paid_at, customer_paid_note, amount_paid_minor FROM invoices
 WHERE (? = '' OR status = ?)
   AND (? = '' OR customer_id = ?)
   AND (? = '' OR number LIKE CONCAT('%', ?, '%') OR bill_to_name LIKE CONCAT('%', ?, '%'))
@@ -497,6 +597,7 @@ func (q *Queries) ListInvoices(ctx context.Context, arg ListInvoicesParams) ([]I
 			&i.Notes,
 			&i.CustomerPaidAt,
 			&i.CustomerPaidNote,
+			&i.AmountPaidMinor,
 		); err != nil {
 			return nil, err
 		}
@@ -604,31 +705,39 @@ func (q *Queries) MonthlyInvoiced(ctx context.Context, since sql.NullTime) ([]Mo
 	return items, nil
 }
 
-const monthlyPaidRows = `-- name: MonthlyPaidRows :many
-SELECT currency_code, paid_at, total_minor
-FROM invoices
-WHERE status = 'paid' AND paid_at >= ?
-ORDER BY paid_at
+const monthlyPaid = `-- name: MonthlyPaid :many
+SELECT i.currency_code, CAST(DATE_FORMAT(p.received_on, '%Y-%m') AS CHAR(7)) AS month,
+       CAST(SUM(p.amount_minor) AS SIGNED) AS total, CAST(COUNT(*) AS SIGNED) AS count
+FROM invoice_payments p JOIN invoices i ON i.id = p.invoice_id
+WHERE i.status <> 'void' AND p.received_on >= ?
+GROUP BY i.currency_code, month
+ORDER BY month, i.currency_code
 `
 
-type MonthlyPaidRowsRow struct {
+type MonthlyPaidRow struct {
 	CurrencyCode string
-	PaidAt       sql.NullTime
-	TotalMinor   int64
+	Month        interface{}
+	Total        int64
+	Count        int64
 }
 
-// MonthlyPaidRows lists paid invoices since an instant; they are bucketed into months in
-// the business's time zone in Go (paid_at is UTC; the server may lack time-zone tables).
-func (q *Queries) MonthlyPaidRows(ctx context.Context, since sql.NullTime) ([]MonthlyPaidRowsRow, error) {
-	rows, err := q.db.QueryContext(ctx, monthlyPaidRows, since)
+// MonthlyPaid sums the payments received per currency and month since a date (M58: by the
+// date received, so part-payments count in the month they came in).
+func (q *Queries) MonthlyPaid(ctx context.Context, since time.Time) ([]MonthlyPaidRow, error) {
+	rows, err := q.db.QueryContext(ctx, monthlyPaid, since)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MonthlyPaidRowsRow{}
+	items := []MonthlyPaidRow{}
 	for rows.Next() {
-		var i MonthlyPaidRowsRow
-		if err := rows.Scan(&i.CurrencyCode, &i.PaidAt, &i.TotalMinor); err != nil {
+		var i MonthlyPaidRow
+		if err := rows.Scan(
+			&i.CurrencyCode,
+			&i.Month,
+			&i.Total,
+			&i.Count,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -680,7 +789,7 @@ func (q *Queries) SetInvoiceCustomerPaid(ctx context.Context, arg SetInvoiceCust
 
 const topDebtors = `-- name: TopDebtors :many
 SELECT i.customer_id, c.name, i.currency_code,
-       CAST(SUM(i.total_minor) AS SIGNED) AS outstanding, CAST(COUNT(*) AS SIGNED) AS open_count
+       CAST(SUM(i.total_minor - i.amount_paid_minor) AS SIGNED) AS outstanding, CAST(COUNT(*) AS SIGNED) AS open_count
 FROM invoices i JOIN customers c ON c.id = i.customer_id
 WHERE i.status IN ('issued', 'sent', 'overdue')
 GROUP BY i.customer_id, c.name, i.currency_code
@@ -730,7 +839,7 @@ const updateInvoice = `-- name: UpdateInvoice :execrows
 UPDATE invoices SET number = ?, status = ?, issue_date = ?, due_date = ?, terms_kind = ?, terms_value = ?,
     terms_text = ?, sales_person = ?, job = ?, shipping_method = ?, shipping_terms = ?, delivery_date = ?,
     bill_to_name = ?, bill_to_address = ?, bill_to_attention = ?, ship_to_name = ?, ship_to_address = ?, notes = ?,
-    tax_rate_bp = ?, subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, bank_name = ?,
+    tax_rate_bp = ?, subtotal_minor = ?, discount_minor = ?, tax_minor = ?, total_minor = ?, amount_paid_minor = ?, bank_name = ?,
     bank_branch = ?, bank_branch_code = ?, bank_account_name = ?, bank_account_number = ?, bank_account_type = ?,
     bank_swift_bic = ?, bank_iban = ?, bank_country = ?, issued_at = ?, sent_at = ?, paid_at = ?, overdue_at = ?,
     voided_at = ?, void_reason = ?,
@@ -762,6 +871,7 @@ type UpdateInvoiceParams struct {
 	DiscountMinor     int64
 	TaxMinor          int64
 	TotalMinor        int64
+	AmountPaidMinor   int64
 	BankName          string
 	BankBranch        string
 	BankBranchCode    string
@@ -807,6 +917,7 @@ func (q *Queries) UpdateInvoice(ctx context.Context, arg UpdateInvoiceParams) (i
 		arg.DiscountMinor,
 		arg.TaxMinor,
 		arg.TotalMinor,
+		arg.AmountPaidMinor,
 		arg.BankName,
 		arg.BankBranch,
 		arg.BankBranchCode,

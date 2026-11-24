@@ -1,0 +1,10 @@
+cactusInv {{ .Chart.AppVersion }} is starting in namespace {{ .Release.Namespace }}.
+
+Sign in as {{ .Values.config.defaultAdminUser }} with the admin password you set; you are asked to change it.
+{{- if .Values.ingress.enabled }}
+Open https://{{ .Values.ingress.host }}
+{{- else }}
+Try it: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }} 8080:{{ .Values.service.port }}
+(then http://localhost:8080 — with config.cookieSecure=true sign-in needs HTTPS: set it false for a local try.)
+{{- end }}
+The volumes are kept on helm uninstall (helm.sh/resource-policy: keep).

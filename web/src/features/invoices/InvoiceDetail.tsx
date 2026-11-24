@@ -8,6 +8,7 @@ import { formatMoney, groupAmount } from '../../lib/money'
 import { useAsync } from '../../lib/useAsync'
 import { Badge, ConfirmButton, ErrorBanner, Field, Page, Sheet, Spinner, StageTracker } from '../../components/ui'
 import { IconEdit, IconTrash } from '../../components/icons'
+import { Payments } from './Payments'
 
 const tnum = { fontVariantNumeric: 'tabular-nums' } as const
 
@@ -57,6 +58,7 @@ export function InvoiceDetail() {
           <div className="text-end">
             <Badge status={inv.stage} />
             <div className="mt-1 fs-4 fw-bold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</div>
+            {partlyPaid(inv) && <div className="small fw-semibold text-body-secondary" style={tnum}>{formatMoney(inv.balance, inv.currency)} still owed</div>}
           </div>
         </div>
         <CustomerPaid inv={inv} />
@@ -127,6 +129,8 @@ export function InvoiceDetail() {
           <div className="d-flex justify-content-between fs-6 fw-bold"><dt>Total {inv.currency}</dt><dd className="mb-0" style={tnum}>{groupAmount(inv.totals.total)}</dd></div>
         </dl>
       </section>
+
+      <Payments inv={inv} payments={data.payments} busy={busy} act={act} />
 
       {inv.bank.accountNumber && (
         <section className="card card-body mb-3 small">
@@ -220,7 +224,7 @@ const actionLabels: Record<string, string> = {
   'invoice.created': 'Created', 'invoice.updated': 'Edited', 'invoice.issued': 'Issued', 'invoice.email_queued': 'E-mail queued',
   'invoice.email_sent': 'E-mailed', 'invoice.email_failed': 'E-mail failed', 'invoice.email_cancelled': 'E-mail cancelled',
   'invoice.email_retried': 'E-mail retried', 'invoice.overdue': 'Marked overdue', 'invoice.paid': 'Marked paid',
-  'invoice.customer_marked_paid': 'Customer marked as paid',
+  'invoice.customer_marked_paid': 'Customer marked as paid', 'invoice.payment_recorded': 'Payment recorded', 'invoice.payment_removed': 'Payment removed',
   'invoice.voided': 'Voided', 'invoice.deleted': 'Deleted', 'invoice.pdf_viewed': 'PDF viewed', 'invoice.notes_updated': 'Notes edited',
   'quote.created': 'Created', 'quote.updated': 'Edited', 'quote.email_queued': 'E-mail queued', 'quote.email_sent': 'E-mailed',
   'quote.email_failed': 'E-mail failed', 'quote.accepted': 'Marked accepted', 'quote.declined': 'Marked declined',
@@ -229,6 +233,11 @@ const actionLabels: Record<string, string> = {
 
 export function actionLabel(a: string): string {
   return actionLabels[a] ?? a.replace(/^[a-z_]+\./, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+}
+
+/** partlyPaid: payments are recorded against an unpaid invoice (M58). */
+export function partlyPaid(inv: Invoice): boolean {
+  return inv.status !== 'paid' && inv.status !== 'void' && Number(inv.amountPaid) > 0
 }
 
 /** WhoDidWhat summarises the key actions on an invoice and who performed them. */

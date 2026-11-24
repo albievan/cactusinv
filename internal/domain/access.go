@@ -137,7 +137,7 @@ var Permissions = []PermissionInfo{
 	{PermInvoicesIssue, "Invoices", "Issue draft invoices (gives them their number)", []Permission{PermInvoicesView}},
 	{PermInvoicesDelete, "Invoices", "Delete draft invoices", []Permission{PermInvoicesView}},
 	{PermInvoicesSend, "Invoices", "E-mail invoices", []Permission{PermInvoicesView}},
-	{PermInvoicesPay, "Invoices", "Mark invoices paid", []Permission{PermInvoicesView}},
+	{PermInvoicesPay, "Invoices", "Record payments and mark invoices paid", []Permission{PermInvoicesView}},
 	{PermInvoicesOverdue, "Invoices", "Mark invoices overdue", []Permission{PermInvoicesView}},
 	{PermInvoicesVoid, "Invoices", "Void invoices", []Permission{PermInvoicesView}},
 

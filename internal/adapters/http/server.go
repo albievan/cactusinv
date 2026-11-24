@@ -66,7 +66,7 @@ func NewHandler(o Options) http.Handler {
 	}
 	m := newMetrics(o.Registry, o.Stats)
 	h := &handlers{svc: o.Service, clock: o.Clock, cookies: cookieConfig{secure: o.CookieSecure}, version: o.Version, build: o.Build, maxUpload: o.MaxUploadBytes}
-	strict := NewStrictHandlerWithOptions(h, []StrictMiddlewareFunc{sessionGate}, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(h, []StrictMiddlewareFunc{sessionGate, traceOperation}, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  requestErrorHandler,
 		ResponseErrorHandlerFunc: responseErrorHandler(o.Logger),
 	})
@@ -98,7 +98,7 @@ func NewHandler(o Options) http.Handler {
 	if o.Web != nil {
 		root.Handle("/", spa(o.Web))
 	}
-	return withRequestLog(o.Logger, withSecurityHeaders(func() bool { return web.get().HSTS }, root))
+	return withTracing(withRequestLog(o.Logger, withSecurityHeaders(func() bool { return web.get().HSTS }, root)))
 }
 
 // metricsGuard serves next only with the bearer token; without a configured token the

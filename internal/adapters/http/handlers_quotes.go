@@ -335,7 +335,7 @@ func (h *handlers) toInvoiceResponse(ctx context.Context, v app.InvoiceResponseV
 	return InvoiceResponse{
 		Number: inv.Number, BusinessName: v.Business.Name, BusinessEmail: v.Business.Email, BillToName: inv.BillTo.Name,
 		Currency: string(c), IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDate(inv.DueDate),
-		Total: mu.format(inv.Totals.Total, c), Stage: InvoiceStage(inv.Stage(v.Today)),
+		Total: mu.format(inv.Totals.Total, c), Balance: mu.format(inv.Balance(), c), Stage: InvoiceStage(inv.Stage(v.Today)),
 		CanMark:        inv.IsOpen() && inv.CustomerPaidAt.IsZero(),
 		CustomerPaidAt: timePtr(inv.CustomerPaidAt), CustomerPaidNote: inv.CustomerPaidNote,
 	}, nil
@@ -463,4 +463,58 @@ func (h *handlers) UpdateQuoteSettings(ctx context.Context, req UpdateQuoteSetti
 		return nil, err
 	}
 	return UpdateQuoteSettings200JSONResponse(toAPIQuoteSettings(v)), nil
+}
+
+// ---- the customer's account page through a statement e-mail's link (M59; no session) ----
+
+func (h *handlers) GetPortal(ctx context.Context, req GetPortalRequestObject) (GetPortalResponseObject, error) {
+	v, err := h.svc.GetPortal(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	mu, err := h.units(ctx)
+	if err != nil {
+		return nil, err
+	}
+	st, c := v.Statement, v.Statement.Currency
+	out := GetPortal200JSONResponse{
+		CustomerName: st.Customer.Name, BusinessName: v.Business.Name, BusinessEmail: v.Business.Email,
+		Currency: string(c), AsOf: toAPIDate(st.AsOf), Balance: mu.format(st.Total, c), Aging: toAPIAging(mu, st.Aging, c),
+		Open: make([]PortalInvoice, len(st.Lines)), Paid: make([]PortalInvoice, len(v.Paid)),
+	}
+	for i, l := range st.Lines {
+		out.Open[i] = PortalInvoice{
+			Id: l.InvoiceID, Number: l.Number, IssueDate: toAPIDate(l.IssueDate), DueDate: toAPIDate(l.DueDate),
+			Total: mu.format(l.Total, c), Balance: mu.format(l.Amount, c), Stage: InvoiceStage(l.Stage), DaysOverdue: l.DaysOverdue,
+		}
+	}
+	for i, inv := range v.Paid {
+		out.Paid[i] = PortalInvoice{
+			Id: inv.ID, Number: inv.Number, IssueDate: toAPIDate(inv.IssueDate), DueDate: toAPIDate(inv.DueDate),
+			Total: mu.format(inv.Totals.Total, inv.Currency), Balance: mu.format(inv.Balance(), inv.Currency), Stage: InvoiceStage(domain.StagePaid),
+		}
+	}
+	return out, nil
+}
+
+func (h *handlers) GetPortalStatementPdf(ctx context.Context, req GetPortalStatementPdfRequestObject) (GetPortalStatementPdfResponseObject, error) {
+	pdf, name, err := h.svc.PortalStatementPDF(ctx, req.Token)
+	if err != nil {
+		return nil, err
+	}
+	return GetPortalStatementPdf200ApplicationpdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: GetPortalStatementPdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
+	}, nil
+}
+
+func (h *handlers) GetPortalInvoicePdf(ctx context.Context, req GetPortalInvoicePdfRequestObject) (GetPortalInvoicePdfResponseObject, error) {
+	pdf, name, err := h.svc.PortalInvoicePDF(ctx, req.Token, req.InvoiceId)
+	if err != nil {
+		return nil, err
+	}
+	return GetPortalInvoicePdf200ApplicationpdfResponse{
+		Body: bytes.NewReader(pdf), ContentLength: int64(len(pdf)),
+		Headers: GetPortalInvoicePdf200ResponseHeaders{ContentDisposition: `inline; filename="` + name + `"`},
+	}, nil
 }

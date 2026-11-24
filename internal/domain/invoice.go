@@ -115,6 +115,8 @@ type Invoice struct {
 	TaxRate    BasisPoints
 	Lines      []Line
 	Totals     Totals
+	// AmountPaid is the sum of the payments recorded against the invoice (M58).
+	AmountPaid int64
 	Bank       BankDetails // frozen at issue
 	ScheduleID string
 	IssuedAt   time.Time
@@ -329,21 +331,31 @@ func (inv *Invoice) AmendNotes(notes string, now time.Time) error {
 	return nil
 }
 
-// MarkPaid records payment.
-func (inv *Invoice) MarkPaid(now time.Time) error {
+// MarkPaid records that the balance was received on day on (M58: the rest of the money,
+// after any part-payments) and returns that payment, which the caller gives an ID and stores
+// (none when nothing was owed: Amount 0).
+func (inv *Invoice) MarkPaid(on Date, now time.Time) (Payment, error) {
+	p := Payment{Amount: inv.Balance(), ReceivedOn: on}
 	if !inv.IsOpen() {
-		return ErrInvalidTransition
+		return Payment{}, ErrInvalidTransition
 	}
-	inv.Status = InvoicePaid
-	inv.PaidAt = now
-	inv.UpdatedAt = now
-	return nil
+	if p.Amount == 0 { // nothing owed (a zero total): no payment to store
+		inv.Status, inv.PaidAt, inv.UpdatedAt = InvoicePaid, now, now
+		return p, nil
+	}
+	if err := inv.RecordPayment(&p, now); err != nil {
+		return Payment{}, err
+	}
+	return p, nil
 }
 
 // Void cancels an issued invoice. Its number stays used (gap-free numbering).
 func (inv *Invoice) Void(reason string, now time.Time) error {
 	if !inv.IsOpen() {
 		return ErrInvalidTransition
+	}
+	if inv.AmountPaid > 0 {
+		return invalid("payments", "remove the payments recorded against the invoice first")
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" || len(reason) > 500 {

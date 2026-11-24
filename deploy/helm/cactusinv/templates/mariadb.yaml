@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mariadb
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+    app.kubernetes.io/name: mariadb
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: mariadb, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        {{- include "cactusinv.labels" . | nindent 8 }}
+        app.kubernetes.io/name: mariadb
+    spec:
+      # No pod talks to the Kubernetes API; the token mount would also collide with the
+      # read-only /run/secrets volume.
+      automountServiceAccountToken: false
+      containers:
+        - name: mariadb
+          image: {{ .Values.database.image }}
+          env:
+            - { name: TZ, value: {{ .Values.config.timeZone | quote }} }
+            - { name: MARIADB_DATABASE, value: {{ .Values.database.name | quote }} }
+            - { name: MARIADB_USER, value: {{ .Values.database.user | quote }} }
+            - { name: MARIADB_PASSWORD_FILE, value: /run/secrets/db_password }
+            - { name: MARIADB_ROOT_PASSWORD_FILE, value: /run/secrets/db_root_password }
+          ports: [{ containerPort: 3306, name: mysql }]
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/mysql }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+          readinessProbe:
+            exec: { command: [healthcheck.sh, --connect, --innodb_initialized] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.database.resources | nindent 12 }}
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: {{ .Release.Name }}-mariadb-data } }
+        - name: secrets
+          secret:
+            secretName: {{ include "cactusinv.secret" . }}
+            items:
+              - { key: db_password, path: db_password }
+              - { key: db_root_password, path: db_root_password }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-mariadb
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/name: mariadb, app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports: [{ port: 3306, targetPort: mysql }]

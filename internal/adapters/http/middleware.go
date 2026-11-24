@@ -97,7 +97,7 @@ func withRequestLog(log *slog.Logger, next http.Handler) http.Handler {
 		defer func() {
 			if p := recover(); p != nil {
 				if err, ok := p.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-					log.WarnContext(ctx, "response aborted", "request_id", id, "method", r.Method, "path", r.URL.Path)
+					log.WarnContext(ctx, "response aborted", "request_id", id, "method", r.Method, "path", redactPath(r.URL.Path))
 					panic(p) // the server drops the connection: a broken download must not look complete
 				}
 				log.ErrorContext(ctx, "panic", "request_id", id, "panic", p)
@@ -108,7 +108,7 @@ func withRequestLog(log *slog.Logger, next http.Handler) http.Handler {
 			if strings.HasPrefix(r.URL.Path, "/assets/") {
 				return
 			}
-			log.InfoContext(ctx, "http", "request_id", id, "method", r.Method, "path", r.URL.Path,
+			log.InfoContext(ctx, "http", "request_id", id, "method", r.Method, "path", redactPath(r.URL.Path),
 				"status", rec.status, "duration_ms", time.Since(start).Milliseconds())
 		}()
 		next.ServeHTTP(rec, r.WithContext(ctx))

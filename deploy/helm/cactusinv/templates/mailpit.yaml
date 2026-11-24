@@ -1,0 +1,37 @@
+{{- if .Values.mailpit.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mailpit
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+    app.kubernetes.io/name: mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: mailpit, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        {{- include "cactusinv.labels" . | nindent 8 }}
+        app.kubernetes.io/name: mailpit
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: mailpit
+          image: {{ .Values.mailpit.image }}
+          ports: [{ containerPort: 1025, name: smtp }, { containerPort: 8025, name: web }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-mailpit
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: mailpit, app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports:
+    - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: web, port: 8025, targetPort: web }
+{{- end }}

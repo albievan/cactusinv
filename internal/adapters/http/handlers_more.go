@@ -115,7 +115,7 @@ func (h *handlers) GetStatementPdf(ctx context.Context, req GetStatementPdfReque
 func (h *handlers) SendStatement(ctx context.Context, req SendStatementRequestObject) (SendStatementResponseObject, error) {
 	in := app.SendInput{IdempotencyKey: req.Params.IdempotencyKey}
 	if b := req.Body; b != nil {
-		in.To, in.CC, in.Subject, in.Body = b.To, b.Cc, b.Subject, b.Body
+		in.To, in.CC, in.Subject, in.Body, in.LinkBase = b.To, b.Cc, b.Subject, b.Body, b.LinkBase
 		if b.SendAt != nil {
 			in.SendAt = b.SendAt.UTC()
 		}
@@ -208,7 +208,7 @@ func toAPIAging(mu minorUnits, a domain.Aging, c domain.CurrencyCode) Aging {
 }
 
 func (h *handlers) SendStatements(ctx context.Context, req SendStatementsRequestObject) (SendStatementsResponseObject, error) {
-	res, err := h.svc.SendStatements(ctx, req.Body.CustomerIds, req.Body.IncludeZero)
+	res, err := h.svc.SendStatements(ctx, req.Body.CustomerIds, req.Body.IncludeZero, req.Body.LinkBase)
 	if err != nil {
 		return nil, err
 	}

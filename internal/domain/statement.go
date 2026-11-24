@@ -11,7 +11,9 @@ type StatementLine struct {
 	Number      string
 	IssueDate   Date
 	DueDate     Date
-	Amount      int64
+	Amount      int64 // still owed: the total less the payments recorded (M58)
+	Total       int64 // the invoice's total
+	Stage       Stage
 	DaysOverdue int
 	Status      InvoiceStatus
 }
@@ -48,10 +50,10 @@ func NewStatement(c Customer, invoices []Invoice, asOf Date) Statement {
 		if inv.DueDate.Before(asOf) {
 			days = int(asOf.Time(time.UTC).Sub(inv.DueDate.Time(time.UTC)).Hours() / 24)
 		}
-		amt := inv.Totals.Total
+		amt := inv.Balance()
 		st.Lines = append(st.Lines, StatementLine{
 			InvoiceID: inv.ID, Number: inv.Number, IssueDate: inv.IssueDate, DueDate: inv.DueDate,
-			Amount: amt, DaysOverdue: days, Status: inv.Status,
+			Amount: amt, Total: inv.Totals.Total, Stage: inv.Stage(asOf), DaysOverdue: days, Status: inv.Status,
 		})
 		st.Total += amt
 		switch {

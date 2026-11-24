@@ -487,7 +487,14 @@ func (h *handlers) GetInvoice(ctx context.Context, req GetInvoiceRequestObject) 
 	for i, m := range d.Emails {
 		emails[i] = toAPIEmail(m)
 	}
-	return GetInvoice200JSONResponse{Invoice: toAPIInvoice(d.Invoice, mu, today), Events: events, Emails: emails}, nil
+	payments := make([]Payment, len(d.Payments))
+	for i, p := range d.Payments {
+		payments[i] = Payment{
+			Id: p.ID, Amount: mu.format(p.Amount, d.Invoice.Currency), ReceivedOn: toAPIDate(p.ReceivedOn),
+			Reference: p.Reference, CreatedAt: p.CreatedAt.UTC(),
+		}
+	}
+	return GetInvoice200JSONResponse{Invoice: toAPIInvoice(d.Invoice, mu, today), Events: events, Emails: emails, Payments: payments}, nil
 }
 
 func (h *handlers) UpdateInvoice(ctx context.Context, req UpdateInvoiceRequestObject) (UpdateInvoiceResponseObject, error) {
@@ -567,6 +574,39 @@ func (h *handlers) MarkInvoicePaid(ctx context.Context, req MarkInvoicePaidReque
 		return nil, err
 	}
 	return MarkInvoicePaid200JSONResponse(toAPIInvoice(inv, mu, today)), nil
+}
+
+func (h *handlers) RecordPayment(ctx context.Context, req RecordPaymentRequestObject) (RecordPaymentResponseObject, error) {
+	mu, today, err := h.invoiceView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cur, err := h.svc.GetInvoice(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+	amount, err := mu.parse("amount", req.Body.Amount, cur.Invoice.Currency)
+	if err != nil {
+		return nil, err
+	}
+	in := app.PaymentInput{Amount: amount, ReceivedOn: fromAPIDatePtr(req.Body.ReceivedOn), Reference: req.Body.Reference}
+	inv, err := h.svc.RecordPayment(ctx, req.Id, in)
+	if err != nil {
+		return nil, err
+	}
+	return RecordPayment200JSONResponse(toAPIInvoice(inv, mu, today)), nil
+}
+
+func (h *handlers) RemovePayment(ctx context.Context, req RemovePaymentRequestObject) (RemovePaymentResponseObject, error) {
+	mu, today, err := h.invoiceView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := h.svc.RemovePayment(ctx, req.Id, req.PaymentId)
+	if err != nil {
+		return nil, err
+	}
+	return RemovePayment200JSONResponse(toAPIInvoice(inv, mu, today)), nil
 }
 
 func (h *handlers) UpdateInvoiceNotes(ctx context.Context, req UpdateInvoiceNotesRequestObject) (UpdateInvoiceNotesResponseObject, error) {

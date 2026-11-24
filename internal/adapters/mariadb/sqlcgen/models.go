@@ -136,6 +136,13 @@ type Customer struct {
 	Version         int32
 }
 
+type CustomerPortalToken struct {
+	TokenHash  string
+	CustomerID string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
 type EmailOutbox struct {
 	ID             string
 	ToAddrs        string
@@ -214,6 +221,7 @@ type Invoice struct {
 	Notes             string
 	CustomerPaidAt    sql.NullTime
 	CustomerPaidNote  string
+	AmountPaidMinor   int64
 }
 
 type InvoiceLine struct {
@@ -225,6 +233,15 @@ type InvoiceLine struct {
 	UnitPriceMinor int64
 	DiscountBp     int32
 	AmountMinor    int64
+}
+
+type InvoicePayment struct {
+	ID          string
+	InvoiceID   string
+	AmountMinor int64
+	ReceivedOn  time.Time
+	Reference   string
+	CreatedAt   time.Time
 }
 
 type InvoiceResponseToken struct {

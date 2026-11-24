@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 )
 
 const countCustomers = `-- name: CountCustomers :one
@@ -125,6 +126,22 @@ func (q *Queries) GetCustomer(ctx context.Context, id string) (Customer, error) 
 	return i, err
 }
 
+const getCustomerIDByPortalToken = `-- name: GetCustomerIDByPortalToken :one
+SELECT customer_id FROM customer_portal_tokens WHERE token_hash = ? AND expires_at > ?
+`
+
+type GetCustomerIDByPortalTokenParams struct {
+	TokenHash string
+	ExpiresAt time.Time
+}
+
+func (q *Queries) GetCustomerIDByPortalToken(ctx context.Context, arg GetCustomerIDByPortalTokenParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getCustomerIDByPortalToken, arg.TokenHash, arg.ExpiresAt)
+	var customer_id string
+	err := row.Scan(&customer_id)
+	return customer_id, err
+}
+
 const getProduct = `-- name: GetProduct :one
 SELECT id, sku, name, description, unit, active, version FROM products WHERE id = ?
 `
@@ -189,6 +206,27 @@ func (q *Queries) InsertCustomer(ctx context.Context, arg InsertCustomerParams) 
 		arg.BankAccountID,
 		arg.DefaultNotes,
 		arg.Active,
+	)
+	return err
+}
+
+const insertCustomerPortalToken = `-- name: InsertCustomerPortalToken :exec
+INSERT INTO customer_portal_tokens (token_hash, customer_id, created_at, expires_at) VALUES (?, ?, ?, ?)
+`
+
+type InsertCustomerPortalTokenParams struct {
+	TokenHash  string
+	CustomerID string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+}
+
+func (q *Queries) InsertCustomerPortalToken(ctx context.Context, arg InsertCustomerPortalTokenParams) error {
+	_, err := q.db.ExecContext(ctx, insertCustomerPortalToken,
+		arg.TokenHash,
+		arg.CustomerID,
+		arg.CreatedAt,
+		arg.ExpiresAt,
 	)
 	return err
 }

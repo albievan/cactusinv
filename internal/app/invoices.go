@@ -34,11 +34,12 @@ type InvoiceInput struct {
 	Lines      []LineInput
 }
 
-// InvoiceDetail is an invoice with its audit trail and e-mails.
+// InvoiceDetail is an invoice with its audit trail, e-mails and payments.
 type InvoiceDetail struct {
-	Invoice *domain.Invoice
-	Events  []domain.AuditEntry // oldest first, with who did what
-	Emails  []domain.EmailMessage
+	Invoice  *domain.Invoice
+	Events   []domain.AuditEntry // oldest first, with who did what
+	Emails   []domain.EmailMessage
+	Payments []domain.Payment // oldest received first (M58)
 }
 
 // ListInvoices returns a page of invoices (without lines) and the total count.
@@ -69,7 +70,11 @@ func (s *Service) GetInvoice(ctx context.Context, id string) (InvoiceDetail, err
 	if err != nil {
 		return InvoiceDetail{}, wrap("app.GetInvoice", err)
 	}
-	return InvoiceDetail{Invoice: inv, Events: events, Emails: emails}, nil
+	payments, err := r.Invoices.ListPayments(ctx, id)
+	if err != nil {
+		return InvoiceDetail{}, wrap("app.GetInvoice", err)
+	}
+	return InvoiceDetail{Invoice: inv, Events: events, Emails: emails, Payments: payments}, nil
 }
 
 // CreateInvoice creates a draft for a customer, in the customer's currency.
@@ -316,11 +321,17 @@ func (s *Service) MarkInvoiceOverdue(ctx context.Context, id string) (*domain.In
 	}, nil)
 }
 
-// MarkInvoicePaid records payment.
+// MarkInvoicePaid records that the balance was received today (after any part-payments,
+// M58) as one payment, and the invoice paid.
 func (s *Service) MarkInvoicePaid(ctx context.Context, id string) (*domain.Invoice, error) {
-	return s.transition(ctx, "app.MarkInvoicePaid", id, "paid", "", func(inv *domain.Invoice) error {
-		return inv.MarkPaid(s.now())
-	}, nil)
+	return s.payment(ctx, "app.MarkInvoicePaid", id, func(ctx context.Context, r ports.Repos, inv *domain.Invoice, today domain.Date) (string, error) {
+		p, err := inv.MarkPaid(today, s.now())
+		if err != nil || p.Amount == 0 {
+			return "paid", err
+		}
+		p.ID = s.ids.NewID()
+		return "paid", r.Invoices.AddPayment(ctx, p)
+	})
 }
 
 // UpdateInvoiceNotes replaces the notes of an invoice (any status but void). The next PDF

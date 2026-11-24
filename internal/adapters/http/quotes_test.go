@@ -298,3 +298,60 @@ func TestCustomerMarksAnInvoicePaidOverHTTP(t *testing.T) {
 		t.Fatalf("pdf = %d", pdf.StatusCode)
 	}
 }
+
+// The customer's account page over HTTP (M59): a statement e-mail's link opens it without
+// a session; it lists what is owed, and serves the statement and the customer's invoices
+// as PDFs, never anything else.
+func TestCustomerPortalOverHTTP(t *testing.T) {
+	c, _, _, svc := newServer(t)
+	c.login()
+	ctx := context.Background()
+	if _, err := svc.CreateCurrency(ctx, "ZAR", "Rand", "R", 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateBankAccount(ctx, domainBank()); err != nil {
+		t.Fatal(err)
+	}
+	prod, err := svc.CreateProduct(ctx, domain.Product{SKU: "WEB", Name: "Website", Description: "Website build", Prices: map[domain.CurrencyCode]int64{"ZAR": 1500000}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cust, err := svc.CreateCustomer(ctx, domain.Customer{Code: "AC", Name: "Acme", Email: "ap@acme.example", Currency: "ZAR", Terms: domain.PaymentTerms{Kind: domain.TermsOnReceipt}, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inv, draft httpapi.Invoice
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": cust.ID, "lines": []obj{{"productId": prod.ID, "quantity": "1"}}}, &inv), 201, "invoice")
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/issue", obj{}, &inv), 200, "issue")
+	c.ok(c.do("POST", "/api/v1/invoices/"+inv.Id+"/payments", obj{"amount": "5000"}, &inv), 200, "part-payment")
+	c.ok(c.do("POST", "/api/v1/invoices", obj{"customerId": cust.ID, "lines": []obj{{"productId": prod.ID, "quantity": "1"}}}, &draft), 201, "draft")
+	var m httpapi.EmailMessage
+	c.ok(c.do("POST", "/api/v1/customers/"+cust.ID+"/statement/send", obj{"linkBase": "https://inv.example.com"}, &m), 202, "statement")
+	match := regexp.MustCompile(`/a/([A-Za-z0-9_-]{43})\n`).FindStringSubmatch(m.Body)
+	if match == nil {
+		t.Fatalf("no account link in %q", m.Body)
+	}
+	token := match[1]
+
+	anon := &client{t: t, srv: c.srv, http: &http.Client{}}
+	var pg httpapi.Portal
+	anon.ok(anon.do("GET", "/api/v1/public/accounts/"+token, nil, &pg), 200, "account page")
+	if pg.CustomerName != "Acme" || pg.Balance != "10000.00" || len(pg.Open) != 1 || pg.Open[0].Total != "15000.00" ||
+		pg.Open[0].Balance != "10000.00" || len(pg.Paid) != 0 {
+		t.Fatalf("page = %+v", pg)
+	}
+	var p httpapi.Problem
+	anon.ok(anon.do("GET", "/api/v1/public/accounts/"+strings.Repeat("A", 43), nil, &p), 404, "unknown token")
+	for path, want := range map[string]int{
+		"/statement": 200, "/invoices/" + inv.Id + "/pdf": 200, "/invoices/" + draft.Id + "/pdf": 404, "/invoices/nope/pdf": 404,
+	} {
+		resp, err := anon.get("/api/v1/public/accounts/" + token + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != want || (want == 200 && resp.Header.Get("Content-Type") != "application/pdf") {
+			t.Fatalf("%s = %d %s", path, resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+	}
+}

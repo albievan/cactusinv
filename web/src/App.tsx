@@ -1,35 +1,54 @@
+import { lazy, Suspense, type ComponentType } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { NoAccess, RequireAccess } from './components/Access'
 import { AuthProvider, useCan } from './components/auth'
 import { Layout, useNav } from './components/Layout'
-import { CustomerEditor, CustomerList } from './features/customers/Customers'
 import { Dashboard } from './features/dashboard/Dashboard'
-import { Outbox } from './features/emails/Outbox'
-import { AuditLog } from './features/audit/AuditLog'
-import { StatementView, Statements } from './features/statements/Statements'
 import { InvoiceDetail } from './features/invoices/InvoiceDetail'
 import { InvoiceEditor } from './features/invoices/InvoiceEditor'
 import { InvoiceList } from './features/invoices/InvoiceList'
-import { InvoicePaidPage } from './features/invoices/InvoicePaidPage'
-import { ProductEditor, ProductList } from './features/products/Products'
-import { ScheduleDetailPage, ScheduleEditor, ScheduleList } from './features/schedules/Schedules'
-import { AccountSettingsPage, BusinessSettingsPage, CurrencySettingsPage, EmailSettingsPage, More } from './features/settings/Settings'
-import { BackupSettingsPage } from './features/settings/backup/Backup'
-import { ImportExportSettingsPage } from './features/settings/transfer/ImportExport'
-import { SystemSettingsPage } from './features/settings/system/SystemSettings'
-import { DatabaseStatusPage } from './features/settings/system/DatabaseStatus'
-import { UsersSettingsPage } from './features/settings/users/Users'
 import { settingsHref, useSettingsNav } from './features/settings/settingsNav'
-import { QuoteList } from './features/quotes/QuoteList'
-import { QuoteEditor } from './features/quotes/QuoteEditor'
-import { QuoteDetail } from './features/quotes/QuoteDetail'
-import { QuoteResponsePage } from './features/quotes/QuoteResponsePage'
-import { ResetPasswordPage } from './components/ResetPasswordPage'
-import { AdhocCustomers } from './features/quotes/AdhocCustomers'
-import { QuoteSettingsPage } from './features/settings/QuoteSettings'
+
+import { Spinner } from './components/ui'
+
+// Pages other than the dashboard and invoices load when first opened: the first download
+// stays small (one bundle was over 500 kB). Each is its own chunk.
+function lazyPage<K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) {
+  return lazy(() => load().then((m) => ({ default: m[name] })))
+}
+const CustomerEditor = lazyPage(() => import('./features/customers/Customers'), 'CustomerEditor')
+const CustomerList = lazyPage(() => import('./features/customers/Customers'), 'CustomerList')
+const Outbox = lazyPage(() => import('./features/emails/Outbox'), 'Outbox')
+const AuditLog = lazyPage(() => import('./features/audit/AuditLog'), 'AuditLog')
+const StatementView = lazyPage(() => import('./features/statements/Statements'), 'StatementView')
+const Statements = lazyPage(() => import('./features/statements/Statements'), 'Statements')
+const InvoicePaidPage = lazyPage(() => import('./features/invoices/InvoicePaidPage'), 'InvoicePaidPage')
+const AccountPage = lazyPage(() => import('./features/portal/AccountPage'), 'AccountPage')
+const ProductEditor = lazyPage(() => import('./features/products/Products'), 'ProductEditor')
+const ProductList = lazyPage(() => import('./features/products/Products'), 'ProductList')
+const ScheduleDetailPage = lazyPage(() => import('./features/schedules/Schedules'), 'ScheduleDetailPage')
+const ScheduleEditor = lazyPage(() => import('./features/schedules/Schedules'), 'ScheduleEditor')
+const ScheduleList = lazyPage(() => import('./features/schedules/Schedules'), 'ScheduleList')
+const AccountSettingsPage = lazyPage(() => import('./features/settings/Settings'), 'AccountSettingsPage')
+const BusinessSettingsPage = lazyPage(() => import('./features/settings/Settings'), 'BusinessSettingsPage')
+const CurrencySettingsPage = lazyPage(() => import('./features/settings/Settings'), 'CurrencySettingsPage')
+const EmailSettingsPage = lazyPage(() => import('./features/settings/Settings'), 'EmailSettingsPage')
+const More = lazyPage(() => import('./features/settings/Settings'), 'More')
+const BackupSettingsPage = lazyPage(() => import('./features/settings/backup/Backup'), 'BackupSettingsPage')
+const ImportExportSettingsPage = lazyPage(() => import('./features/settings/transfer/ImportExport'), 'ImportExportSettingsPage')
+const SystemSettingsPage = lazyPage(() => import('./features/settings/system/SystemSettings'), 'SystemSettingsPage')
+const DatabaseStatusPage = lazyPage(() => import('./features/settings/system/DatabaseStatus'), 'DatabaseStatusPage')
+const UsersSettingsPage = lazyPage(() => import('./features/settings/users/Users'), 'UsersSettingsPage')
+const QuoteList = lazyPage(() => import('./features/quotes/QuoteList'), 'QuoteList')
+const QuoteEditor = lazyPage(() => import('./features/quotes/QuoteEditor'), 'QuoteEditor')
+const QuoteDetail = lazyPage(() => import('./features/quotes/QuoteDetail'), 'QuoteDetail')
+const QuoteResponsePage = lazyPage(() => import('./features/quotes/QuoteResponsePage'), 'QuoteResponsePage')
+const ResetPasswordPage = lazyPage(() => import('./components/ResetPasswordPage'), 'ResetPasswordPage')
+const AdhocCustomers = lazyPage(() => import('./features/quotes/AdhocCustomers'), 'AdhocCustomers')
+const QuoteSettingsPage = lazyPage(() => import('./features/settings/QuoteSettings'), 'QuoteSettingsPage')
 
 export function AppRoutes() {
-  const need = (p: string | string[], el: JSX.Element) => <RequireAccess need={p}>{el}</RequireAccess>
+  const need = (p: string | string[], el: JSX.Element) => <RequireAccess need={p}>{page(el)}</RequireAccess>
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -57,7 +76,7 @@ export function AppRoutes() {
         <Route path="statements" element={need('statements.view', <Statements />)} />
         <Route path="statements/:customerId" element={need('statements.view', <StatementView />)} />
         <Route path="audit" element={need('audit.view', <AuditLog />)} />
-        <Route path="more" element={<More />} />
+        <Route path="more" element={page(<More />)} />
         <Route path="settings">
           <Route index element={<SettingsHome />} />
           <Route path="business" element={need('settings.business.view', <BusinessSettingsPage />)} />
@@ -69,13 +88,18 @@ export function AppRoutes() {
           <Route path="database" element={need('settings.database.view', <DatabaseStatusPage />)} />
           <Route path="users" element={need('administer', <UsersSettingsPage />)} />
           <Route path="backup" element={need('administer', <BackupSettingsPage />)} />
-          <Route path="account" element={<AccountSettingsPage />} />
+          <Route path="account" element={page(<AccountSettingsPage />)} />
           <Route path="*" element={<SettingsHome />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   )
+}
+
+/** page shows a spinner while a page's code loads. */
+function page(el: JSX.Element) {
+  return <Suspense fallback={<Spinner />}>{el}</Suspense>
 }
 
 /** Home is the dashboard, or the first page the user's groups allow (ADR-012). */
@@ -99,11 +123,13 @@ export function App() {
     <BrowserRouter>
       <Routes>
         {/* The customer's answer to a quote e-mail (M41): no sign-in. */}
-        <Route path="/q/:token" element={<QuoteResponsePage />} />
+        <Route path="/q/:token" element={page(<QuoteResponsePage />)} />
         {/* The customer's "I have paid" page for an invoice e-mail (M42): no sign-in. */}
-        <Route path="/i/:token" element={<InvoicePaidPage />} />
+        <Route path="/i/:token" element={page(<InvoicePaidPage />)} />
+        {/* The customer's account page for a statement e-mail (M59): no sign-in. */}
+        <Route path="/a/:token" element={page(<AccountPage />)} />
         {/* A forgotten password's e-mailed link (M43): no sign-in. */}
-        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+        <Route path="/reset-password/:token" element={page(<ResetPasswordPage />)} />
         <Route path="*" element={<AuthProvider><AppRoutes /></AuthProvider>} />
       </Routes>
     </BrowserRouter>

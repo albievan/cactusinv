@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+    app.kubernetes.io/name: cactusinv
+spec:
+  # One replica: the invoices volume is ReadWriteOnce. With a ReadWriteMany class the app
+  # scales out safely (workers coordinate through row locks).
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: cactusinv, app.kubernetes.io/instance: {{ .Release.Name }} }
+  template:
+    metadata:
+      labels:
+        {{- include "cactusinv.labels" . | nindent 8 }}
+        app.kubernetes.io/name: cactusinv
+      annotations:
+        # A changed configuration rolls the pod.
+        cactusinv/config-hash: {{ toYaml .Values.config | sha256sum | trunc 16 | quote }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532 }
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: cactusinv
+          image: {{ include "cactusinv.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom: [{ configMapRef: { name: {{ .Release.Name }}-config } }]
+          ports: [{ containerPort: 8080, name: http }]
+          volumeMounts:
+            - { name: invoices, mountPath: /data/invoices }
+            - { name: backups, mountPath: /data/backups }
+            - { name: secrets, mountPath: /run/secrets, readOnly: true }
+          readinessProbe: { httpGet: { path: /readyz, port: http }, periodSeconds: 10 }
+          # Up to 15 minutes to connect and migrate before liveness applies: a pod killed
+          # half-way through a (non-transactional) MariaDB migration cannot start again.
+          startupProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 10, failureThreshold: 90 }
+          livenessProbe: { httpGet: { path: /healthz, port: http }, periodSeconds: 20 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - { name: invoices, persistentVolumeClaim: { claimName: {{ .Release.Name }}-invoices } }
+        - { name: backups, persistentVolumeClaim: { claimName: {{ .Release.Name }}-backups } }
+        # Only the keys the app reads (not db_root_password).
+        - name: secrets
+          secret:
+            secretName: {{ include "cactusinv.secret" . }}
+            optional: true
+            items:
+              - { key: db_password, path: db_password }
+              - { key: smtp_password, path: smtp_password }
+              - { key: app_key, path: app_key }
+              - { key: backup_key, path: backup_key }
+              - { key: admin_password, path: admin_password }
+              - { key: metrics_token, path: metrics_token }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  selector: { app.kubernetes.io/name: cactusinv, app.kubernetes.io/instance: {{ .Release.Name }} }
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}

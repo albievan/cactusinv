@@ -8,7 +8,7 @@ import type { Invoice } from '../../lib/api/client'
 const token = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO_-'
 const page = {
   number: 'CD/1201/26', businessName: 'Example Software', businessEmail: 'billing@example.com', billToName: 'Acme Ltd', currency: 'ZAR',
-  issueDate: '2026-11-01', dueDate: '2026-11-30', total: '3250.00', stage: 'emailed', canMark: true,
+  issueDate: '2026-11-01', dueDate: '2026-11-30', total: '3250.00', balance: '3250.00', stage: 'emailed', canMark: true,
 }
 
 afterEach(() => {

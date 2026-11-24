@@ -66,3 +66,14 @@ func TestParsePublicURLAndAnswer(t *testing.T) {
 		t.Fatalf("settings: %v %q", err, s.PublicURL)
 	}
 }
+
+func TestStatementEmailHTML(t *testing.T) {
+	body := AppendPortalLink("Dear Acme,\n\nYour statement.", PortalLink("https://inv.example.com/", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"))
+	html := StatementEmailHTML(body, "Example")
+	if !strings.Contains(html, `href="https://inv.example.com/a/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"`) || !strings.Contains(html, ">View your account<") {
+		t.Fatalf("html = %q", html)
+	}
+	if StatementEmailHTML("Dear Acme,\n\nYour statement.", "Example") != "" {
+		t.Fatal("no link: no HTML")
+	}
+}

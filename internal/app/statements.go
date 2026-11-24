@@ -123,8 +123,12 @@ func (s *Service) enqueueStatement(ctx context.Context, r ports.Repos, customerI
 	if body == "" {
 		body = domain.DefaultStatementBody
 	}
+	text, err := s.addPortalLink(ctx, r, c.ID, in.LinkBase, domain.RenderTemplate(body, data))
+	if err != nil {
+		return nil, err
+	}
 	m, err := domain.NewEmailMessage(s.ids.NewID(), "", to, cc, domain.SubjectLine(subject, data),
-		domain.RenderTemplate(body, data), in.SendAt, s.now(), in.IdempotencyKey)
+		text, in.SendAt, s.now(), in.IdempotencyKey)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +150,7 @@ func (s *Service) deliverStatement(ctx context.Context, m *domain.EmailMessage) 
 	}
 	if err := s.mailer.Send(ctx, ports.Mail{
 		MessageID: m.ID, To: m.To, CC: m.CC, ReplyTo: doc.Business.Email, Subject: m.Subject, Body: m.Body,
+		HTMLBody:    domain.StatementEmailHTML(m.Body, doc.Business.Name), // "" without the account link (M59)
 		Attachments: []ports.Attachment{{Filename: StatementFilename(doc.Statement), ContentType: "application/pdf", Data: pdf}},
 	}); err != nil {
 		return err
@@ -242,7 +247,7 @@ type BulkStatementResult struct {
 // SendStatements queues a statement e-mail for each customer, skipping customers with
 // nothing owed (unless includeZero) or without an e-mail address. Each send is its own
 // transaction, so one failure does not stop the rest.
-func (s *Service) SendStatements(ctx context.Context, customerIDs []string, includeZero bool) (BulkStatementResult, error) {
+func (s *Service) SendStatements(ctx context.Context, customerIDs []string, includeZero bool, linkBase string) (BulkStatementResult, error) {
 	res := BulkStatementResult{Skipped: map[string]string{}}
 	if len(customerIDs) == 0 {
 		return res, wrap("app.SendStatements", domain.ErrValidation)
@@ -260,7 +265,7 @@ func (s *Service) SendStatements(ctx context.Context, customerIDs []string, incl
 			res.Skipped[id] = "nothing owed"
 			continue
 		}
-		if _, err := s.SendStatement(ctx, id, SendInput{}); err != nil {
+		if _, err := s.SendStatement(ctx, id, SendInput{LinkBase: linkBase}); err != nil {
 			res.Skipped[id] = "could not queue the e-mail"
 			continue
 		}

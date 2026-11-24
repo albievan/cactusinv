@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "cactusinv.labels" . | nindent 4 }}
+data:
+  TZ: {{ .Values.config.timeZone | quote }}
+  CACTUSINV_DB_HOST: {{ .Release.Name }}-mariadb
+  CACTUSINV_DB_NAME: {{ .Values.database.name | quote }}
+  CACTUSINV_DB_USER: {{ .Values.database.user | quote }}
+  CACTUSINV_SECRETS: file
+  CACTUSINV_SECRETS_DIR: /run/secrets
+  CACTUSINV_INVOICES_DIR: /data/invoices
+  CACTUSINV_MIGRATE_ON_START: "true"
+  CACTUSINV_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  CACTUSINV_UPDATE_URL: {{ .Values.config.updateURL | quote }}
+  CACTUSINV_COOKIE_SECURE: {{ .Values.config.cookieSecure | quote }}
+  CACTUSINV_TRUSTED_PROXIES: {{ .Values.config.trustedProxies | quote }}
+  CACTUSINV_DEFAULT_ADMIN_USER: {{ .Values.config.defaultAdminUser | quote }}
+  {{- if and .Values.mailpit.enabled (not .Values.config.smtp.host) }}
+  CACTUSINV_SMTP_HOST: {{ .Release.Name }}-mailpit
+  CACTUSINV_SMTP_PORT: "1025"
+  CACTUSINV_SMTP_TLS: none
+  {{- else }}
+  CACTUSINV_SMTP_HOST: {{ .Values.config.smtp.host | quote }}
+  CACTUSINV_SMTP_PORT: {{ .Values.config.smtp.port | quote }}
+  CACTUSINV_SMTP_TLS: {{ .Values.config.smtp.tls | quote }}
+  {{- end }}
+  CACTUSINV_SMTP_USER: {{ .Values.config.smtp.user | quote }}
+  CACTUSINV_SMTP_FROM: {{ .Values.config.smtp.from | quote }}
+  CACTUSINV_BACKUP_DIR: /data/backups
+  CACTUSINV_BACKUP_TIMES: {{ .Values.config.backup.times | quote }}
+  CACTUSINV_BACKUP_RETENTION_DAYS: {{ .Values.config.backup.retentionDays | quote }}
+  CACTUSINV_BACKUP_MAX_UPLOAD_MB: {{ .Values.config.backup.maxUploadMB | quote }}
+  CACTUSINV_DEPLOY_TARGET: k8s
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.config.otel.endpoint | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.config.otel.serviceName | quote }}
+  {{- range $k, $v := .Values.config.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

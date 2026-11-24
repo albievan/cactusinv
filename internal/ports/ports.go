@@ -205,6 +205,12 @@ type CustomerRepository interface {
 	Create(ctx context.Context, c domain.Customer) error
 	Update(ctx context.Context, c domain.Customer) error
 	Delete(ctx context.Context, id string) error
+	// AddPortalToken stores the SHA-256 (hex) of a statement e-mail's account-link token
+	// (M59), valid until expires.
+	AddPortalToken(ctx context.Context, customerID, tokenHash string, now, expires time.Time) error
+	// CustomerIDByPortalToken returns the customer a token hash belongs to while it is
+	// valid at now (ErrNotFound otherwise).
+	CustomerIDByPortalToken(ctx context.Context, tokenHash string, now time.Time) (string, error)
 }
 
 // ProductFilter narrows a product list (the look-up).
@@ -316,8 +322,8 @@ type InvoiceRepository interface {
 	Totals(ctx context.Context, today domain.Date) ([]CurrencyTotals, error)
 	// CountForCustomer counts invoices of any status for a customer.
 	CountForCustomer(ctx context.Context, customerID string) (int, error)
-	// Monthly sums invoiced (by issue month) and paid (by payment month) amounts per
-	// currency since the given date.
+	// Monthly sums invoiced (by issue month) and paid (payments by the month received)
+	// amounts per currency since the given date.
 	Monthly(ctx context.Context, since domain.Date, loc *time.Location) (invoiced, paid []MonthTotal, err error)
 	// TopDebtors returns the customers owing the most (per currency), largest first.
 	TopDebtors(ctx context.Context, limit int) ([]Debtor, error)
@@ -337,6 +343,14 @@ type InvoiceRepository interface {
 	AddResponseToken(ctx context.Context, invoiceID, tokenHash string, now time.Time) error
 	// InvoiceIDByResponseToken returns the invoice a token hash belongs to (ErrNotFound).
 	InvoiceIDByResponseToken(ctx context.Context, tokenHash string) (string, error)
+	// AddPayment stores a payment (M58); the invoice's AmountPaid is saved by Update.
+	AddPayment(ctx context.Context, p domain.Payment) error
+	// ListPayments returns an invoice's payments, oldest received first.
+	ListPayments(ctx context.Context, invoiceID string) ([]domain.Payment, error)
+	// GetPayment returns one payment of an invoice (ErrNotFound).
+	GetPayment(ctx context.Context, invoiceID, paymentID string) (domain.Payment, error)
+	// DeletePayment removes one payment of an invoice (ErrNotFound).
+	DeletePayment(ctx context.Context, invoiceID, paymentID string) error
 }
 
 // MonthTotal is one currency's total for one month ("2026-10").

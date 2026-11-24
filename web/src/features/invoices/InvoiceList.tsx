@@ -9,6 +9,7 @@ import { Badge, Empty, ErrorBanner, ShowMore, Page, SearchBox, Spinner } from '.
 import { IconPlus } from '../../components/icons'
 import { InvoiceActions, ScheduledInvoiceActions } from '../../components/InvoiceActions'
 import { UpcomingInvoices } from './UpcomingInvoices'
+import { partlyPaid } from './InvoiceDetail'
 
 const tnum = { fontVariantNumeric: 'tabular-nums' } as const
 
@@ -101,6 +102,7 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
               </div>
               <div className="text-end">
                 <div className="fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</div>
+                {partlyPaid(inv) && <div className="fs-8 fw-semibold text-body-secondary" style={tnum}>{formatMoney(inv.balance, inv.currency)} owed</div>}
                 <div className="fs-8 text-body-secondary">{inv.dueDate ? `Due ${formatDate(inv.dueDate)}` : formatDate(inv.issueDate)}</div>
               </div>
             </Link>
@@ -132,7 +134,10 @@ export function InvoiceTable({ items, onChanged, onError }: { items: Invoice[]; 
                 <td className="text-nowrap">{formatDate(inv.issueDate)}</td>
                 <td className="text-nowrap">{formatDate(inv.dueDate)}</td>
                 <td><div className="d-flex align-items-center gap-2"><Badge status={inv.stage} />{inv.customerPaidAt && inv.status !== 'paid' && <span className="fs-8 fw-semibold text-success-emphasis text-nowrap">customer says paid</span>}</div></td>
-                <td className="text-nowrap text-end fw-semibold" style={tnum}>{formatMoney(inv.totals.total, inv.currency)}</td>
+                <td className="text-nowrap text-end fw-semibold" style={tnum}>
+                  {formatMoney(inv.totals.total, inv.currency)}
+                  {partlyPaid(inv) && <div className="fs-8 text-body-secondary">{formatMoney(inv.balance, inv.currency)} owed</div>}
+                </td>
                 {onChanged && onError && (
                   <td>
                     <div className="d-flex justify-content-end"><RowActions inv={inv} onChanged={onChanged} onError={onError} /></div>

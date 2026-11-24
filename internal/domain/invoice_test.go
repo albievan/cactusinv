@@ -132,7 +132,7 @@ func TestInvoiceLifecycle(t *testing.T) {
 	if err := inv.MarkSent(t0); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatal("draft cannot be sent")
 	}
-	if err := inv.MarkPaid(t0); !errors.Is(err, ErrInvalidTransition) {
+	if _, err := inv.MarkPaid(DateOf(t0), t0); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatal("draft cannot be paid")
 	}
 	if err := inv.Void("x", t0); !errors.Is(err, ErrInvalidTransition) {
@@ -166,7 +166,7 @@ func TestInvoiceLifecycle(t *testing.T) {
 	if err := inv.MarkSent(later.Add(time.Hour)); err != nil || !inv.SentAt.Equal(later) {
 		t.Fatal("re-send keeps first SentAt")
 	}
-	if err := inv.MarkPaid(later); err != nil || inv.Status != InvoicePaid {
+	if _, err := inv.MarkPaid(DateOf(later), later); err != nil || inv.Status != InvoicePaid {
 		t.Fatal("MarkPaid failed")
 	}
 	if inv.IsOverdue(NewDate(2027, 1, 1)) {
@@ -354,7 +354,7 @@ func TestOverdueStageAndDisclaimer(t *testing.T) {
 	if err := inv.MarkSent(t0); err != nil || inv.Status != InvoiceOverdue || !inv.CanSend() {
 		t.Fatal("re-sending keeps overdue")
 	}
-	if err := inv.MarkPaid(t0); err != nil || inv.Stage(today) != StagePaid {
+	if _, err := inv.MarkPaid(DateOf(t0), t0); err != nil || inv.Stage(today) != StagePaid {
 		t.Fatal("overdue can be paid")
 	}
 	inv2, _ := NewDraftInvoice("j", c, d, t0)
