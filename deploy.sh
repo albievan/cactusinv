@@ -141,7 +141,7 @@ upgrade() {
   command -v git >/dev/null || die "--upgrade needs git"
   git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 || die "--upgrade needs the git checkout cactusInv is installed from"
   local branch remote target old running run_line run_schema new_version new_build cur_version cur_build
-  local old_head new_head changes count backup_out backup_name answer
+  local old_head new_head changes count backup_out backup_name answer rollback_to tagged
   branch="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD)" || die "this checkout is not on a branch; check out main first (nothing was changed)"
   git -C "$ROOT" diff --quiet HEAD -- || die "tracked files have uncommitted changes; commit or stash them first (nothing was changed)"
 
@@ -169,6 +169,16 @@ upgrade() {
   if [[ "$old" == "$target" && "$run_line" == "$cur_version (build $cur_build)" ]]; then
     ok "already the newest version: $run_line"
     return 0
+  fi
+  # Where a rollback goes: this checkout's commit, unless it already is the new version
+  # (released from this folder); then the running version's release tag, so a failed
+  # upgrade goes back to what was running rather than reinstalling the new version.
+  rollback_to="$old"
+  if [[ "$old" == "$target" ]]; then
+    local run_version="${run_line%% (build *}"
+    if tagged="$(git -C "$ROOT" rev-parse --verify --quiet "v${run_version}^{commit}")" && [[ "$tagged" != "$old" ]]; then
+      rollback_to="$tagged"
+    fi
   fi
   old_head="$(schema_head "$old")" new_head="$(schema_head "$target")"
   # The running database's schema, when the install reports it: the checkout may already be
@@ -217,7 +227,7 @@ upgrade() {
     ok "upgraded: ${run_line} → ${new_version} (build ${new_build}); the backup taken first is ${backup_name}"
     return 0
   fi
-  upgrade_rollback "$old" "$old_head" "$new_head" "$run_line" "$backup_name"
+  upgrade_rollback "$rollback_to" "$old_head" "$new_head" "$run_line" "$backup_name"
 }
 
 # upgrade_verify waits (up to a minute) for the running install to report version $1.
